@@ -54,4 +54,19 @@ struct WheelGeometryTests {
             #expect(path.contains(CGPoint(x: d.dx * 90, y: d.dy * 90)))
         }
     }
+
+    @Test func aSingleWedgeIsAFullRing() {
+        let single = WheelLayout(count: 1, innerRadius: 50, outerRadius: 130)
+        #expect(single.hit(dx: 0, dy: -100) == .wedge(0))
+        let path = WedgePath.make(
+            center: .zero, innerRadius: 50, outerRadius: 130,
+            startAngle: single.startAngle(of: 0), endAngle: single.endAngle(of: 0),
+            gap: 4, cornerRadius: 8, yDown: true
+        )
+        for degrees in stride(from: 0.0, to: 360.0, by: 15.0) {
+            let a = degrees * .pi / 180
+            #expect(path.contains(CGPoint(x: 90 * sin(a), y: 90 * cos(a))), "gap at \(degrees)°")
+        }
+        #expect(!path.contains(.zero))
+    }
 }

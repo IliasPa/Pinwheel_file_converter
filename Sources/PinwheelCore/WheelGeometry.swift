@@ -78,6 +78,12 @@ public enum WedgePath {
         cornerRadius: CGFloat,
         yDown: Bool
     ) -> CGPath {
+        // A single wedge covers the whole ring: draw a full ring, no gap.
+        if endAngle - startAngle >= 2 * .pi - 0.0001 {
+            let ring = CGPath(ellipseIn: CGRect(x: c.x - outerRadius, y: c.y - outerRadius, width: outerRadius * 2, height: outerRadius * 2), transform: nil)
+            let hole = CGPath(ellipseIn: CGRect(x: c.x - innerRadius, y: c.y - innerRadius, width: innerRadius * 2, height: innerRadius * 2), transform: nil)
+            return ring.subtracting(hole)
+        }
         let cr = max(0, min(cornerRadius, (outerRadius - innerRadius) / 2 - 0.5))
         // Shrink the wedge by the corner radius, then grow it back with a
         // round-joined stroke: that gives rounded corners on every side.

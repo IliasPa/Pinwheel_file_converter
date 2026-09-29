@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let permission = AccessibilityPermission()
     private let dragMonitor = DragMonitor()
     private let wheel = WheelController()
+    private let jobs = JobQueue()
     private var menuBar: MenuBarController?
     private var onboarding: OnboardingWindowController?
 
@@ -34,6 +35,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         dragMonitor.start()
 
+        wheel.onDrop = { [weak self] files, action in
+            self?.jobs.enqueue(files: files, action: action)
+        }
+        jobs.onBatchFinished = { [weak self] batch in
+            self?.batchFinished(batch)
+        }
+
         // Re-register the event monitors once macOS grants the permission.
         permission.onGranted = { [weak self] in self?.dragMonitor.start() }
         if !permission.isTrusted {
@@ -43,6 +51,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         dragMonitor.stop()
+    }
+
+    /// Shows the new files in Finder, and explains anything that failed.
+    private func batchFinished(_ batch: [Job]) {
+        let outputs = batch.flatMap(\.outputs)
+        if !outputs.isEmpty {
+            NSWorkspace.shared.activateFileViewerSelecting(outputs)
+        }
+        let failures = batch.compactMap { job -> String? in
+            guard case .failed(let message) = job.state else { return nil }
+            return "\(job.file.url.lastPathComponent): \(message)"
+        }
+        guard !failures.isEmpty else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = failures.count == 1 ? "A file couldn't be converted" : "\(failures.count) files couldn't be converted"
+        alert.informativeText = failures.joined(separator: "\n\n")
+        NSApp.activate()
+        alert.runModal()
     }
 
     private func showOnboarding() {
