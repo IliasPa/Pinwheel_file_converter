@@ -1,0 +1,9 @@
+# Build output lives outside this folder (see scripts/build-app.sh),
+# but ignore SwiftPM's local files just in case.
+.build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+build/
+.DS_Store
