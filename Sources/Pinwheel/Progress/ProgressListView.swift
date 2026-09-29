@@ -3,6 +3,7 @@ import PinwheelCore
 
 struct ProgressListView: View {
     @ObservedObject var queue: JobQueue
+    @ObservedObject var settings: SettingsStore
     @ObservedObject var hover: HoverTracker
     var onReveal: (Job) -> Void
     var onClose: () -> Void
@@ -31,6 +32,7 @@ struct ProgressListView: View {
             }
             Spacer(minLength: 0)
         }
+        .background(GlassSurface(level: settings.glassLevel.effective, cornerRadius: ProgressPanel.cornerRadius))
         .onHover { hover.isHovering = $0 }
     }
 

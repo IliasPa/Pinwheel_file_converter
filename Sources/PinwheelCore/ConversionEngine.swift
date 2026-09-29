@@ -28,7 +28,7 @@ public enum ConversionEngine {
             }
             return OutputPlan(suffix: "converted", fileExtension: format.fileExtension)
         case .tool(let tool):
-            return OutputPlan(suffix: tool.nameSuffix, fileExtension: file.url.pathExtension.lowercased())
+            return OutputPlan(suffix: tool.nameSuffix, fileExtension: ToolConverter.outputExtension(for: tool, file: file))
         }
     }
 
@@ -37,6 +37,8 @@ public enum ConversionEngine {
         switch (file.kind, action) {
         case (.video, .convert(.gif)), (.video, .convert(.mp3)), (.audio, .convert(.mp3)):
             true
+        case (.video, .tool(let tool)), (.audio, .tool(let tool)):
+            ToolConverter.usesFFmpeg(tool, for: file)
         case (.video, _), (.audio, _):
             file.needsFFmpegToRead
         default:
@@ -47,24 +49,14 @@ public enum ConversionEngine {
     /// Whether a wedge can be used right now (it's grayed out otherwise).
     public static func availability(of action: WheelAction, for files: [SourceFile], ffmpegAvailable: Bool) -> Availability {
         for file in files {
-            guard let kind = file.kind else {
+            guard file.kind != nil else {
                 return .unavailable("Pinwheel can't convert this kind of file")
-            }
-            guard isImplemented(action, for: kind) else {
-                return .unavailable("Coming in the next update")
             }
             if usesFFmpeg(action, for: file) && !ffmpegAvailable {
                 return .unavailable("Needs ffmpeg (brew install ffmpeg)")
             }
         }
         return .available
-    }
-
-    static func isImplemented(_ action: WheelAction, for kind: FileKind) -> Bool {
-        switch (kind, action) {
-        case (_, .convert), (.pdf, .tool(.compress)): true
-        default: false
-        }
     }
 
     /// Runs one conversion off the main thread. Returns what it wrote (a file,
@@ -89,13 +81,10 @@ public enum ConversionEngine {
                 try ImageConverter.convert(file.url, to: format, destination: destination, options: options)
             case (.pdf, .convert(let format)):
                 _ = try PDFConverter.renderPages(file.url, to: format, destination: destination, options: options, progress: progress)
-            case (.pdf, .tool(.compress)):
-                progress(0.1)
-                try PDFConverter.compress(file.url, destination: destination, quality: options.compressQuality)
             case (.video, .convert(let format)), (.audio, .convert(let format)):
                 try await MediaConverter.convert(file, to: format, destination: destination, options: options, progress: progress)
-            default:
-                throw ConversionError.unsupported("\(action.title(in: .convert)) for \(file.url.lastPathComponent)")
+            case (_, .tool(let tool)):
+                try await ToolConverter.run(tool, file: file, destination: destination, options: options, progress: progress)
             }
             try Task.checkCancellation()
             progress(1)

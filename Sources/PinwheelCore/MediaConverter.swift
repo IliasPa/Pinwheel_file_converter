@@ -123,6 +123,7 @@ enum MediaConverter {
         preset: String,
         fileType: AVFileType,
         to url: URL,
+        stripMetadata: Bool = false,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         try Task.checkCancellation()
@@ -132,6 +133,12 @@ enum MediaConverter {
         session.outputURL = url
         session.outputFileType = fileType
         session.shouldOptimizeForNetworkUse = true
+        if stripMetadata {
+            // No title, location, device or dates; the filter also catches
+            // anything left inside the individual tracks.
+            session.metadata = []
+            session.metadataItemFilter = AVMetadataItemFilter.forSharing()
+        }
         let box = ExportSessionBox(session)
 
         let poller = Task {

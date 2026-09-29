@@ -24,19 +24,31 @@ enum MediaFixtures {
         try file.write(from: buffer)
     }
 
-    /// An H.264 QuickTime movie with an AAC soundtrack (or none).
-    static func makeVideo(at url: URL, seconds: Double = 1, width: Int = 160, height: Int = 120, withAudio: Bool = true) async throws {
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
-        let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
-        ])
-        video.expectsMediaDataInRealTime = false
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: video, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: width,
-            kCVPixelBufferHeightKey as String: height,
-        ])
-        writer.add(video)
+    /// An H.264 movie with an AAC soundtrack (either can be left out), plus
+    /// optional metadata such as a title or GPS location.
+    static func makeVideo(
+        at url: URL, seconds: Double = 1, width: Int = 160, height: Int = 120,
+        withAudio: Bool = true, withVideo: Bool = true, fileType: AVFileType = .mov,
+        metadata: [AVMetadataItem] = []
+    ) async throws {
+        let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
+        writer.metadata = metadata
+
+        var video: AVAssetWriterInput?
+        var adaptor: AVAssetWriterInputPixelBufferAdaptor?
+        if withVideo {
+            let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
+            ])
+            input.expectsMediaDataInRealTime = false
+            adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height,
+            ])
+            writer.add(input)
+            video = input
+        }
 
         let sampleRate = 44_100
         var audio: AVAssetWriterInput?
@@ -54,16 +66,16 @@ enum MediaFixtures {
         writer.startSession(atSourceTime: .zero)
 
         let fps: Int32 = 15
-        let frameCount = Int(seconds * Double(fps))
-        let audioFrames = Int(seconds * Double(sampleRate))
+        let frameCount = video == nil ? 0 : Int(seconds * Double(fps))
+        let audioFrames = audio == nil ? 0 : Int(seconds * Double(sampleRate))
         let pcm = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: Double(sampleRate), channels: 1, interleaved: true)!
         var nextFrame = 0
         var nextSample = 0
 
         // Feed both tracks in turn; AVAssetWriter wants them interleaved.
-        while nextFrame < frameCount || (audio != nil && nextSample < audioFrames) {
+        while nextFrame < frameCount || nextSample < audioFrames {
             var fed = false
-            if nextFrame < frameCount, video.isReadyForMoreMediaData, let pool = adaptor.pixelBufferPool {
+            if let video, let adaptor, nextFrame < frameCount, video.isReadyForMoreMediaData, let pool = adaptor.pixelBufferPool {
                 var pixelBuffer: CVPixelBuffer?
                 CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
                 guard let pixelBuffer else { throw CocoaError(.fileWriteUnknown) }
@@ -92,6 +104,27 @@ enum MediaFixtures {
         }
         await writer.finishWriting()
         guard writer.status == .completed else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+    }
+
+    /// A title and a GPS location, the kind of thing Strip Info should remove.
+    static func privateMetadata() -> [AVMetadataItem] {
+        let title = AVMutableMetadataItem()
+        title.identifier = .quickTimeMetadataTitle
+        title.value = "Secret trip" as NSString
+        title.dataType = kCMMetadataBaseDataType_UTF8 as String
+        let location = AVMutableMetadataItem()
+        location.identifier = .quickTimeMetadataLocationISO6709
+        location.value = "+37.9838+023.7275+000.000/" as NSString
+        location.dataType = kCMMetadataDataType_QuickTimeMetadataLocation_ISO6709 as String
+        return [title, location]
+    }
+
+    /// An iTunes-style title tag, for .m4a files.
+    static func titleTag() -> [AVMetadataItem] {
+        let title = AVMutableMetadataItem()
+        title.identifier = .iTunesMetadataSongName
+        title.value = "Secret song" as NSString
+        return [title]
     }
 
     private static func sampleBuffer(_ buffer: AVAudioPCMBuffer, at time: CMTime) throws -> CMSampleBuffer {

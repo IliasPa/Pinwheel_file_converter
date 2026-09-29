@@ -17,40 +17,48 @@ final class WheelController {
         ConversionEngine.availability(of: $0, for: $1, ffmpegAvailable: false)
     }
 
+    private let settings: SettingsStore
     private lazy var panel: WheelPanel = makePanel()
     private var files: [SourceFile] = []
     private var hideGeneration = 0
     private var pendingHide: Date?
+    /// True while "Show on Desktop" is displaying a sample wheel (no drops).
+    private var isDemo = false
+
+    init(settings: SettingsStore) {
+        self.settings = settings
+    }
 
     func show(urls: [URL], mode: WheelMode, at location: NSPoint) {
-        hideGeneration += 1
-        pendingHide = nil
+        isDemo = false
         files = urls.map(SourceFile.init)
-        model.summary = FormatCatalog.summary(for: files)
-        model.summarySymbol = FormatCatalog.symbolName(for: files)
-        model.hovered = nil
-        model.confirmed = false
-        apply(mode: mode)
+        model.load(files: files, mode: mode, availability: availability)
+        present(at: location)
+    }
 
-        let size = Self.panelSize
-        let center = clampedCenter(for: location)
-        panel.setFrame(NSRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size), display: false)
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            panel.animator().alphaValue = 1
+    /// Shows a sample wheel for a few seconds so the glass setting can be
+    /// seen over the real desktop. Placed beside `avoiding` (the Settings window).
+    func showDemo(avoiding frame: NSRect?) {
+        isDemo = true
+        files = [SourceFile.sample]
+        model.load(files: files, mode: .convert) { _, _ in .available }
+
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        var location = NSPoint(x: screen?.visibleFrame.midX ?? 600, y: screen?.visibleFrame.midY ?? 400)
+        if let frame, let visible = screen?.visibleFrame {
+            let room = WheelView.diameter / 2 + 40
+            location.y = frame.midY
+            location.x = frame.minX - room >= visible.minX + room ? frame.minX - room : frame.maxX + room
         }
-
-        // Start from the "hidden" state, then spring in on the next frame.
-        model.isPresented = false
-        Task { @MainActor in self.model.isPresented = true }
+        present(at: location)
+        model.hovered = .wedge(1)
+        hide(after: 3)
     }
 
     func setMode(_ mode: WheelMode) {
-        guard mode != model.mode else { return }
+        guard mode != model.mode, !isDemo else { return }
         model.hovered = nil
-        apply(mode: mode)
+        model.load(files: files, mode: mode, availability: availability)
     }
 
     /// Hides the wheel. When several hide requests overlap, the earliest wins.
@@ -73,26 +81,31 @@ final class WheelController {
             self.panel.orderOut(nil)
             self.model.hovered = nil
             self.pendingHide = nil
+            self.isDemo = false
         }
     }
 
     // MARK: - Private
 
-    private func apply(mode: WheelMode) {
-        model.mode = mode
-        let kinds = Set(files.map(\.kind))
-        let commonKind = kinds.count == 1 ? kinds.first! : nil
-        model.items = FormatCatalog.actions(for: files, mode: mode).map { action in
-            var reason: String?
-            if case .unavailable(let why) = availability(action, files) { reason = why }
-            return WheelItem(
-                action: action,
-                title: action.title(in: mode),
-                symbolName: action.symbolName(in: mode),
-                detail: action.detail(for: commonKind),
-                unavailableReason: reason
-            )
+    private func present(at location: NSPoint) {
+        hideGeneration += 1
+        pendingHide = nil
+        model.hovered = nil
+        model.confirmed = false
+
+        let size = Self.panelSize
+        let center = clampedCenter(for: location)
+        panel.setFrame(NSRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size), display: false)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            panel.animator().alphaValue = 1
         }
+
+        // Start from the "hidden" state, then spring in on the next frame.
+        model.isPresented = false
+        Task { @MainActor in self.model.isPresented = true }
     }
 
     private func item(for hit: WheelLayout.Hit) -> WheelItem? {
@@ -100,8 +113,17 @@ final class WheelController {
         return model.items[index]
     }
 
+    private func hoverChanged(to hit: WheelLayout.Hit?) {
+        guard model.hovered != hit else { return }
+        model.hovered = hit
+        // A gentle tick on Force Touch trackpads when landing on a usable wedge.
+        if settings.hapticFeedback, let hit, item(for: hit)?.isEnabled == true {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
+    }
+
     private func handleDrop(_ hit: WheelLayout.Hit, urls: [URL]) -> Bool {
-        guard let item = item(for: hit), item.isEnabled else { return false }
+        guard !isDemo, let item = item(for: hit), item.isEnabled else { return false }
         // Normally the dropped files are the ones seen when the drag started.
         let dropped = urls.isEmpty || Set(urls) == Set(files.map(\.url)) ? files : urls.map(SourceFile.init)
         onDrop?(dropped, item.action)
@@ -128,17 +150,17 @@ final class WheelController {
             return WheelView.layout(count: self.model.items.count).hit(dx: point.x, dy: point.y)
         }
         dropView.canDrop = { [weak self] hit in
-            self?.item(for: hit)?.isEnabled == true
+            guard let self, !self.isDemo else { return false }
+            return self.item(for: hit)?.isEnabled == true
         }
         dropView.onHover = { [weak self] hit in
-            guard let self, self.model.hovered != hit else { return }
-            self.model.hovered = hit
+            self?.hoverChanged(to: hit)
         }
         dropView.onDrop = { [weak self] hit, urls in
             self?.handleDrop(hit, urls: urls) ?? false
         }
 
-        let hosting = PassthroughHostingView(rootView: WheelView(model: model))
+        let hosting = PassthroughHostingView(rootView: WheelView(model: model, settings: settings))
         hosting.frame = dropView.bounds
         hosting.autoresizingMask = [.width, .height]
         hosting.unregisterDraggedTypes()

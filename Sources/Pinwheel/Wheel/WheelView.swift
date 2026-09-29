@@ -3,6 +3,9 @@ import PinwheelCore
 
 struct WheelView: View {
     @ObservedObject var model: WheelModel
+    @ObservedObject var settings: SettingsStore
+    /// The Settings preview blurs the picture behind it, not the desktop.
+    var blending: NSVisualEffectView.BlendingMode = .behindWindow
 
     static let diameter: CGFloat = 260
     static let outerRadius: CGFloat = 126
@@ -14,22 +17,31 @@ struct WheelView: View {
         WheelLayout(count: count, innerRadius: innerRadius, outerRadius: outerRadius)
     }
 
+    private var level: GlassLevel { settings.glassLevel.effective }
+    private var isCrystal: Bool { level == .crystal }
+
     var body: some View {
         ZStack {
-            // Soft shadow, then the frosted glass disc.
-            Circle()
-                .fill(Color.black.opacity(0.22))
-                .blur(radius: 14)
-                .offset(y: 6)
-            WheelBackdrop(diameter: Self.diameter)
-            Circle()
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+            if !isCrystal {
+                if level == .frosted {
+                    // Soft shadow under the disc (glass brings its own depth).
+                    Circle()
+                        .fill(Color.black.opacity(0.22))
+                        .blur(radius: 14)
+                        .offset(y: 6)
+                }
+                GlassSurface(level: level, cornerRadius: Self.diameter / 2, blending: blending)
+                Circle()
+                    .strokeBorder(Color.primary.opacity(level == .frosted ? 0.12 : 0.06), lineWidth: 0.5)
+            }
 
-            ZStack {
-                wedges
-                    .id(model.mode)  // cross-fade when switching between formats and tools
-                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
-                HubView(model: model)
+            GlassGroup(enabled: isCrystal) {
+                ZStack {
+                    wedges
+                        .id(model.mode)  // cross-fade when switching between formats and tools
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                    HubView(model: model, crystal: isCrystal)
+                }
             }
             .scaleEffect(model.isPresented ? 1 : (model.confirmed ? 1.08 : 0.7))
             .rotationEffect(.degrees(model.isPresented || model.confirmed ? 0 : -14))
@@ -39,13 +51,17 @@ struct WheelView: View {
         }
         .frame(width: Self.diameter, height: Self.diameter)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.25), value: settings.glassLevel)
     }
 
     private var wedges: some View {
         let layout = Self.layout(count: model.items.count)
         return ZStack {
             ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
-                WedgeCell(item: item, index: index, layout: layout, isHovered: model.hovered == .wedge(index))
+                WedgeCell(
+                    item: item, index: index, layout: layout,
+                    isHovered: model.hovered == .wedge(index), crystal: isCrystal
+                )
             }
         }
     }
@@ -74,6 +90,8 @@ private struct WedgeCell: View {
     let index: Int
     let layout: WheelLayout
     let isHovered: Bool
+    /// Crystal level: the wedge itself is a piece of clear glass.
+    let crystal: Bool
 
     private var isHighlighted: Bool { isHovered && item.isEnabled }
 
@@ -82,14 +100,20 @@ private struct WedgeCell: View {
         // A lone wedge is a full ring; sliding it sideways would look odd.
         let pop = isHighlighted && layout.count > 1 ? WheelView.popOut : 0
         let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
+        let shape = WedgeShape(layout: layout, index: index)
         ZStack {
-            WedgeShape(layout: layout, index: index)
-                .fill(fill)
-                .overlay {
-                    WedgeShape(layout: layout, index: index)
-                        .stroke(Color.primary.opacity(isHighlighted ? 0 : 0.10), lineWidth: 0.5)
-                }
-                .shadow(color: Brand.indigo.opacity(isHighlighted ? 0.45 : 0), radius: 10, y: 3)
+            if crystal {
+                Color.clear
+                    .crystalGlass(enabled: true, in: shape)
+                    .overlay(shape.fill(Brand.gradient).opacity(isHighlighted ? 0.85 : 0))
+            } else {
+                shape
+                    .fill(fill)
+                    .overlay {
+                        shape.stroke(Color.primary.opacity(isHighlighted ? 0 : 0.10), lineWidth: 0.5)
+                    }
+                    .shadow(color: Brand.indigo.opacity(isHighlighted ? 0.45 : 0), radius: 10, y: 3)
+            }
 
             VStack(spacing: 3) {
                 Image(systemName: item.symbolName)
@@ -119,6 +143,7 @@ private struct WedgeCell: View {
 /// The circle in the middle: what's being dragged, or what the hovered wedge does.
 private struct HubView: View {
     @ObservedObject var model: WheelModel
+    let crystal: Bool
 
     private enum Content: Hashable {
         case idle, nothing, cancel, item(String)
@@ -133,10 +158,14 @@ private struct HubView: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(Color.primary.opacity(content == .cancel ? 0.12 : 0.05))
-            Circle()
-                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+            if crystal {
+                Color.clear.crystalGlass(enabled: true, in: Circle())
+            } else {
+                Circle()
+                    .fill(Color.primary.opacity(content == .cancel ? 0.12 : 0.05))
+                Circle()
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+            }
             label
                 .frame(width: 84)
                 .id(content)

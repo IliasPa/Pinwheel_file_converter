@@ -3,28 +3,36 @@ import PinwheelCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let settings = SettingsStore()
+    private let recents = RecentsStore()
+    private let launch = LaunchAtLogin()
     private let permission = AccessibilityPermission()
     private let dragMonitor = DragMonitor()
-    private let wheel = WheelController()
     private let jobs = JobQueue()
-    private lazy var progress = ProgressController(queue: jobs)
+    private lazy var wheel = WheelController(settings: settings)
+    private lazy var progress = ProgressController(queue: jobs, settings: settings)
     private var menuBar: MenuBarController?
     private var onboarding: OnboardingWindowController?
+    private var settingsWindow: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let permission = self.permission
+        let settings = self.settings
         menuBar = MenuBarController(
             actions: .init(
+                showSettings: { [weak self] in self?.showSettings() },
                 showPermissions: { [weak self] in self?.showOnboarding() },
                 showProgress: { [weak self] in self?.progress.show() },
                 showFFmpegHelp: { [weak self] in self?.showFFmpegHelp() },
                 quit: { NSApp.terminate(nil) }
             ),
+            recents: recents,
+            launch: launch,
             isTrusted: {
                 permission.refresh()
                 return permission.isTrusted
             },
-            hasFFmpeg: { FFmpeg.locate() != nil }
+            hasFFmpeg: { settings.ffmpegURL != nil }
         )
 
         dragMonitor.onShow = { [weak self] urls, mode, location in
@@ -40,25 +48,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dragMonitor.start()
 
         wheel.availability = { action, files in
-            ConversionEngine.availability(of: action, for: files, ffmpegAvailable: FFmpeg.locate() != nil)
+            ConversionEngine.availability(of: action, for: files, ffmpegAvailable: settings.ffmpegURL != nil)
         }
         wheel.onDrop = { [weak self] files, action in
             self?.jobs.enqueue(files: files, action: action)
         }
-        jobs.optionsProvider = {
-            var options = ConversionOptions()
-            options.ffmpegURL = FFmpeg.locate()
-            return options
-        }
+        jobs.optionsProvider = { settings.conversionOptions }
         jobs.onChange = { [weak self] in
             self?.progress.jobsChanged()
         }
-        jobs.onBatchFinished = { batch in
-            // Failures stay listed in the progress window; show what worked.
-            let outputs = batch.flatMap(\.outputs)
-            if !outputs.isEmpty {
-                NSWorkspace.shared.activateFileViewerSelecting(outputs)
-            }
+        jobs.onBatchFinished = { [weak self] batch in
+            self?.batchFinished(batch)
         }
 
         // Re-register the event monitors once macOS grants the permission.
@@ -70,6 +70,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         dragMonitor.stop()
+    }
+
+    // MARK: - Private
+
+    /// Remembers what worked and shows it in Finder. Failures stay listed in
+    /// the progress window.
+    private func batchFinished(_ batch: [Job]) {
+        for job in batch where job.state == .finished {
+            recents.add(job.outputs, action: job.action.title(in: .tools))
+        }
+        let outputs = batch.flatMap(\.outputs)
+        if settings.revealInFinder && !outputs.isEmpty {
+            NSWorkspace.shared.activateFileViewerSelecting(outputs)
+        }
+    }
+
+    private func showSettings() {
+        if settingsWindow == nil {
+            let view = SettingsView(
+                settings: settings,
+                launch: launch,
+                permission: permission,
+                onShowDemo: { [weak self] in
+                    self?.wheel.showDemo(avoiding: self?.settingsWindow?.window?.frame)
+                },
+                onShowPermissions: { [weak self] in self?.showOnboarding() },
+                onShowFFmpegHelp: { [weak self] in self?.showFFmpegHelp() }
+            )
+            settingsWindow = SettingsWindowController(view: view)
+        }
+        settingsWindow?.present()
     }
 
     private func showOnboarding() {

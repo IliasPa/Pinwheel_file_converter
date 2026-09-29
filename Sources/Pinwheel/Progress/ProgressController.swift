@@ -18,18 +18,21 @@ final class ProgressController {
     static let maxVisibleRows = 5
 
     private let queue: JobQueue
+    private let settings: SettingsStore
     private let hover = HoverTracker()
     private var panel: ProgressPanel?
     private var autoHide: Task<Void, Never>?
 
-    init(queue: JobQueue) {
+    init(queue: JobQueue, settings: SettingsStore) {
         self.queue = queue
+        self.settings = settings
     }
 
     /// Call whenever the queue changes.
     func jobsChanged() {
         if !queue.jobs.isEmpty && panel?.isVisible != true {
-            show()
+            // Opens by itself only when that's switched on in Settings.
+            if settings.showProgressWindow && !queue.isIdle { show() }
         } else {
             resize(animated: true)
         }
@@ -95,6 +98,7 @@ final class ProgressController {
         let panel = ProgressPanel(size: NSSize(width: Self.width, height: contentHeight))
         let view = ProgressListView(
             queue: queue,
+            settings: settings,
             hover: hover,
             onReveal: { job in NSWorkspace.shared.activateFileViewerSelecting(job.outputs) },
             onClose: { [weak self] in self?.close() }
@@ -104,10 +108,11 @@ final class ProgressController {
     }
 }
 
-/// Borderless floating panel with a frosted, rounded background. It can take
-/// clicks (for the buttons) without pulling Pinwheel or the panel to the front.
+/// Borderless floating panel (its glass or frosted background is drawn by
+/// the SwiftUI view). It can take clicks (for the buttons) without pulling
+/// Pinwheel or the panel to the front.
 final class ProgressPanel: NSPanel {
-    private static let cornerRadius: CGFloat = 14
+    static let cornerRadius: CGFloat = 14
 
     init(size: NSSize) {
         super.init(
@@ -133,35 +138,10 @@ final class ProgressPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     func setContent<Content: View>(_ view: Content) {
-        let background = NSVisualEffectView()
-        background.material = .popover
-        background.blendingMode = .behindWindow
-        background.state = .active
-        background.maskImage = Self.roundedMask(radius: Self.cornerRadius)
-
         let hosting = FirstClickHostingView(rootView: view)
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        background.addSubview(hosting)
-        NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: background.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-        ])
-        contentView = background
-    }
-
-    /// A stretchable rounded rectangle used to shape the frosted background.
-    private static func roundedMask(radius: CGFloat) -> NSImage {
-        let edge = radius * 2 + 1
-        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
+        hosting.frame = NSRect(origin: .zero, size: frame.size)
+        hosting.autoresizingMask = [.width, .height]
+        contentView = hosting
     }
 }
 

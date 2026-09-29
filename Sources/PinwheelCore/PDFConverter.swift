@@ -58,6 +58,15 @@ enum PDFConverter {
         guard written else { throw ConversionError.cannotWrite(destination.lastPathComponent) }
     }
 
+    /// Removes the author, title, subject, keywords and app names.
+    static func stripMetadata(_ source: URL, destination: URL) throws {
+        let document = try open(source)
+        document.documentAttributes = [:]
+        guard document.write(to: destination) else {
+            throw ConversionError.cannotWrite(destination.lastPathComponent)
+        }
+    }
+
     static func reduceSizeFilter(quality: Double) -> QuartzFilter? {
         let properties: [String: Any] = [
             "Name": "Pinwheel Smaller PDF",
