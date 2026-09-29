@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import PinwheelCore
 
 /// One file being converted.
@@ -18,10 +18,13 @@ final class Job: ObservableObject, Identifiable {
     let file: SourceFile
     let action: WheelAction
     let destination: URL
+    let icon: NSImage
+    let sourceSize: Int64?
 
     @Published fileprivate(set) var state: State = .waiting
     @Published fileprivate(set) var progress: Double = 0
     @Published fileprivate(set) var outputs: [URL] = []
+    @Published fileprivate(set) var outputSize: Int64?
     fileprivate var task: Task<Void, Never>?
 
     init(batch: UUID, file: SourceFile, action: WheelAction, destination: URL) {
@@ -29,6 +32,8 @@ final class Job: ObservableObject, Identifiable {
         self.file = file
         self.action = action
         self.destination = destination
+        self.icon = NSWorkspace.shared.icon(forFile: file.url.path)
+        self.sourceSize = Self.size(of: file.url)
     }
 
     var isDone: Bool {
@@ -36,6 +41,26 @@ final class Job: ObservableObject, Identifiable {
         case .finished, .failed, .cancelled: true
         case .waiting, .running: false
         }
+    }
+
+    var isFailed: Bool {
+        if case .failed = state { return true }
+        return false
+    }
+
+    /// Bytes in a file, or in all files inside a folder.
+    static func size(of url: URL) -> Int64? {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .totalFileAllocatedSizeKey, .fileSizeKey]
+        guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
+        if values.isDirectory == true {
+            let items = FileManager.default.enumerator(at: url, includingPropertiesForKeys: Array(keys))
+            var total: Int64 = 0
+            while let item = items?.nextObject() as? URL {
+                total += Int64((try? item.resourceValues(forKeys: keys))?.fileSize ?? 0)
+            }
+            return total
+        }
+        return values.fileSize.map(Int64.init)
     }
 }
 
@@ -48,6 +73,11 @@ final class JobQueue: ObservableObject {
     var optionsProvider: () -> ConversionOptions = { ConversionOptions() }
     /// Called when every job from one drop is done (finished, failed or cancelled).
     var onBatchFinished: (([Job]) -> Void)?
+    /// Called whenever jobs are added, start, end, or are cleared.
+    var onChange: (() -> Void)?
+
+    var isIdle: Bool { jobs.allSatisfy(\.isDone) }
+    var hasFailures: Bool { jobs.contains(where: \.isFailed) }
 
     func enqueue(files: [SourceFile], action: WheelAction) {
         let batch = UUID()
@@ -60,6 +90,7 @@ final class JobQueue: ObservableObject {
         }
         jobs.append(contentsOf: newJobs)
         pump()
+        onChange?()
     }
 
     func cancel(_ job: Job) {
@@ -75,6 +106,12 @@ final class JobQueue: ObservableObject {
         }
     }
 
+    /// Removes finished, failed and cancelled jobs from the list.
+    func clearFinished() {
+        jobs.removeAll(where: \.isDone)
+        onChange?()
+    }
+
     // MARK: - Private
 
     private func pump() {
@@ -85,6 +122,7 @@ final class JobQueue: ObservableObject {
     }
 
     private func start(_ job: Job) {
+        objectWillChange.send()
         job.state = .running
         let options = optionsProvider()
         let file = job.file
@@ -99,6 +137,7 @@ final class JobQueue: ObservableObject {
                     Task { @MainActor in job.progress = max(job.progress, value) }
                 }
                 job.outputs = outputs
+                job.outputSize = outputs.compactMap(Job.size(of:)).reduce(0, +)
                 job.progress = 1
                 job.state = .finished
             } catch {
@@ -112,10 +151,12 @@ final class JobQueue: ObservableObject {
     }
 
     private func jobDidEnd(_ job: Job) {
+        objectWillChange.send()
         pump()
         let batchJobs = jobs.filter { $0.batch == job.batch }
         if batchJobs.allSatisfy(\.isDone) {
             onBatchFinished?(batchJobs)
         }
+        onChange?()
     }
 }

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let dragMonitor = DragMonitor()
     private let wheel = WheelController()
     private let jobs = JobQueue()
+    private lazy var progress = ProgressController(queue: jobs)
     private var menuBar: MenuBarController?
     private var onboarding: OnboardingWindowController?
 
@@ -15,12 +16,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar = MenuBarController(
             actions: .init(
                 showPermissions: { [weak self] in self?.showOnboarding() },
+                showProgress: { [weak self] in self?.progress.show() },
+                showFFmpegHelp: { [weak self] in self?.showFFmpegHelp() },
                 quit: { NSApp.terminate(nil) }
             ),
             isTrusted: {
                 permission.refresh()
                 return permission.isTrusted
-            }
+            },
+            hasFFmpeg: { FFmpeg.locate() != nil }
         )
 
         dragMonitor.onShow = { [weak self] urls, mode, location in
@@ -35,11 +39,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         dragMonitor.start()
 
+        wheel.availability = { action, files in
+            ConversionEngine.availability(of: action, for: files, ffmpegAvailable: FFmpeg.locate() != nil)
+        }
         wheel.onDrop = { [weak self] files, action in
             self?.jobs.enqueue(files: files, action: action)
         }
-        jobs.onBatchFinished = { [weak self] batch in
-            self?.batchFinished(batch)
+        jobs.optionsProvider = {
+            var options = ConversionOptions()
+            options.ffmpegURL = FFmpeg.locate()
+            return options
+        }
+        jobs.onChange = { [weak self] in
+            self?.progress.jobsChanged()
+        }
+        jobs.onBatchFinished = { batch in
+            // Failures stay listed in the progress window; show what worked.
+            let outputs = batch.flatMap(\.outputs)
+            if !outputs.isEmpty {
+                NSWorkspace.shared.activateFileViewerSelecting(outputs)
+            }
         }
 
         // Re-register the event monitors once macOS grants the permission.
@@ -53,25 +72,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dragMonitor.stop()
     }
 
-    /// Shows the new files in Finder, and explains anything that failed.
-    private func batchFinished(_ batch: [Job]) {
-        let outputs = batch.flatMap(\.outputs)
-        if !outputs.isEmpty {
-            NSWorkspace.shared.activateFileViewerSelecting(outputs)
-        }
-        let failures = batch.compactMap { job -> String? in
-            guard case .failed(let message) = job.state else { return nil }
-            return "\(job.file.url.lastPathComponent): \(message)"
-        }
-        guard !failures.isEmpty else { return }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = failures.count == 1 ? "A file couldn't be converted" : "\(failures.count) files couldn't be converted"
-        alert.informativeText = failures.joined(separator: "\n\n")
-        NSApp.activate()
-        alert.runModal()
-    }
-
     private func showOnboarding() {
         if onboarding == nil {
             let controller = OnboardingWindowController(permission: permission)
@@ -79,5 +79,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onboarding = controller
         }
         onboarding?.present()
+    }
+
+    private func showFFmpegHelp() {
+        let alert = NSAlert()
+        alert.messageText = "ffmpeg isn't installed"
+        alert.informativeText = """
+            Pinwheel uses the free tool ffmpeg for MP3 files, GIFs made from videos, \
+            and MKV, WebM or OGG files. Everything else works without it.
+
+            To install it:
+            1. Open Terminal (Applications › Utilities).
+            2. Paste the command below and press Return:
+                  \(FFmpeg.installCommand)
+            3. Wait until it finishes. Pinwheel finds it by itself, with no restart needed.
+
+            No Homebrew yet? Get it first at brew.sh.
+            """
+        alert.addButton(withTitle: "Copy Command")
+        alert.addButton(withTitle: "Close")
+        NSApp.activate()
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(FFmpeg.installCommand, forType: .string)
+        }
     }
 }

@@ -6,7 +6,7 @@ public struct ConversionOptions: Sendable, Equatable {
     public var jpegQuality: Double = 0.85
     /// 0...1 quality for HEIC output.
     public var heicQuality: Double = 0.80
-    /// 0...1 quality used by the Compress tool for images.
+    /// 0...1 quality used by the Compress tool (images, and pictures inside PDFs).
     public var compressQuality: Double = 0.60
     /// Width in pixels of GIFs made from video (height keeps the aspect ratio).
     public var gifWidth: Int = 480

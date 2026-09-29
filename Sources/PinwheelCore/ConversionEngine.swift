@@ -23,9 +23,24 @@ public enum ConversionEngine {
     public static func plan(for file: SourceFile, action: WheelAction) -> OutputPlan {
         switch action {
         case .convert(let format):
-            OutputPlan(suffix: "converted", fileExtension: format.fileExtension)
+            if file.kind == .pdf, PDFConverter.pageCount(of: file.url) > 1 {
+                return OutputPlan(suffix: "converted", fileExtension: nil)
+            }
+            return OutputPlan(suffix: "converted", fileExtension: format.fileExtension)
         case .tool(let tool):
-            OutputPlan(suffix: tool.nameSuffix, fileExtension: file.url.pathExtension.lowercased())
+            return OutputPlan(suffix: tool.nameSuffix, fileExtension: file.url.pathExtension.lowercased())
+        }
+    }
+
+    /// Whether ffmpeg is needed for this action on this file.
+    public static func usesFFmpeg(_ action: WheelAction, for file: SourceFile) -> Bool {
+        switch (file.kind, action) {
+        case (.video, .convert(.gif)), (.video, .convert(.mp3)), (.audio, .convert(.mp3)):
+            true
+        case (.video, _), (.audio, _):
+            file.needsFFmpegToRead
+        default:
+            false
         }
     }
 
@@ -35,18 +50,26 @@ public enum ConversionEngine {
             guard let kind = file.kind else {
                 return .unavailable("Pinwheel can't convert this kind of file")
             }
-            switch (kind, action) {
-            case (.image, .convert):
-                continue
-            default:
+            guard isImplemented(action, for: kind) else {
                 return .unavailable("Coming in the next update")
+            }
+            if usesFFmpeg(action, for: file) && !ffmpegAvailable {
+                return .unavailable("Needs ffmpeg (brew install ffmpeg)")
             }
         }
         return .available
     }
 
-    /// Runs one conversion off the main thread. Returns the files it wrote.
-    /// On failure or cancellation, anything half-written is deleted.
+    static func isImplemented(_ action: WheelAction, for kind: FileKind) -> Bool {
+        switch (kind, action) {
+        case (_, .convert), (.pdf, .tool(.compress)): true
+        default: false
+        }
+    }
+
+    /// Runs one conversion off the main thread. Returns what it wrote (a file,
+    /// or a folder for multi-page PDFs). On failure or cancellation, anything
+    /// half-written is deleted.
     @concurrent
     public static func run(
         file: SourceFile,
@@ -60,18 +83,23 @@ public enum ConversionEngine {
         }
         do {
             try Task.checkCancellation()
-            let outputs: [URL]
             switch (kind, action) {
             case (.image, .convert(let format)):
                 progress(0.1)
                 try ImageConverter.convert(file.url, to: format, destination: destination, options: options)
-                outputs = [destination]
+            case (.pdf, .convert(let format)):
+                _ = try PDFConverter.renderPages(file.url, to: format, destination: destination, options: options, progress: progress)
+            case (.pdf, .tool(.compress)):
+                progress(0.1)
+                try PDFConverter.compress(file.url, destination: destination, quality: options.compressQuality)
+            case (.video, .convert(let format)), (.audio, .convert(let format)):
+                try await MediaConverter.convert(file, to: format, destination: destination, options: options, progress: progress)
             default:
                 throw ConversionError.unsupported("\(action.title(in: .convert)) for \(file.url.lastPathComponent)")
             }
             try Task.checkCancellation()
             progress(1)
-            return outputs
+            return [destination]
         } catch {
             // The destination was a fresh, unused name, so removing it can't
             // touch anything that existed before.

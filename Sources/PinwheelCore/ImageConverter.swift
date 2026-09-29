@@ -15,14 +15,7 @@ public enum ImageConverter {
         }
 
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
-        var settings: [CFString: Any] = [:]
-        switch format {
-        case .jpeg: settings[kCGImageDestinationLossyCompressionQuality] = options.jpegQuality
-        case .heic: settings[kCGImageDestinationLossyCompressionQuality] = options.heicQuality
-        case .tiff: settings[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFCompression: 5]  // LZW, lossless
-        default: break
-        }
-
+        let settings = encoderSettings(for: format, options: options)
         let dest = try makeDestination(destination, format: format)
         if format == .jpeg, properties[kCGImagePropertyHasAlpha] as? Bool == true {
             // JPEG has no transparency. Without this, see-through areas turn black.
@@ -38,7 +31,23 @@ public enum ImageConverter {
         try finalize(dest, destination)
     }
 
+    /// Saves an image that was drawn in memory (e.g. a PDF page).
+    static func write(_ image: CGImage, to url: URL, format: OutputFormat, options: ConversionOptions) throws {
+        let dest = try makeDestination(url, format: format)
+        CGImageDestinationAddImage(dest, image, encoderSettings(for: format, options: options) as CFDictionary)
+        try finalize(dest, url)
+    }
+
     // MARK: - Helpers shared with the image tools
+
+    static func encoderSettings(for format: OutputFormat, options: ConversionOptions) -> [CFString: Any] {
+        switch format {
+        case .jpeg: [kCGImageDestinationLossyCompressionQuality: options.jpegQuality]
+        case .heic: [kCGImageDestinationLossyCompressionQuality: options.heicQuality]
+        case .tiff: [kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: 5]]  // LZW, lossless
+        default: [:]
+        }
+    }
 
     static func open(_ url: URL) throws -> CGImageSource {
         guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),

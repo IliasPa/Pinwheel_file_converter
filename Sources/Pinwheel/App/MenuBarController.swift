@@ -5,6 +5,8 @@ import AppKit
 final class MenuBarController: NSObject, NSMenuDelegate {
     struct Actions {
         var showPermissions: @MainActor () -> Void
+        var showProgress: @MainActor () -> Void
+        var showFFmpegHelp: @MainActor () -> Void
         var quit: @MainActor () -> Void
     }
 
@@ -12,10 +14,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let actions: Actions
     private let isTrusted: @MainActor () -> Bool
+    private let hasFFmpeg: @MainActor () -> Bool
 
-    init(actions: Actions, isTrusted: @escaping @MainActor () -> Bool) {
+    init(
+        actions: Actions,
+        isTrusted: @escaping @MainActor () -> Bool,
+        hasFFmpeg: @escaping @MainActor () -> Bool
+    ) {
         self.actions = actions
         self.isTrusted = isTrusted
+        self.hasFFmpeg = hasFFmpeg
         super.init()
         statusItem.button?.image = StatusIcon.make()
         statusItem.button?.toolTip = "Pinwheel — hold ⇧ while dragging files"
@@ -27,14 +35,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
+        var warned = false
         if !isTrusted() {
             menu.addItem(item("⚠︎ Accessibility permission needed…", #selector(showPermissions)))
-            menu.addItem(.separator())
+            warned = true
         }
+        if !hasFFmpeg() {
+            menu.addItem(item("ffmpeg not found: some formats are off…", #selector(showFFmpegHelp)))
+            warned = true
+        }
+        if warned { menu.addItem(.separator()) }
 
         menu.addItem(hint("Drag files and hold ⇧ Shift to convert"))
         menu.addItem(hint("Hold ⌥ Option + ⇧ Shift for tools"))
         menu.addItem(.separator())
+        menu.addItem(item("Show Progress Window", #selector(showProgress)))
         menu.addItem(item("Permissions Help…", #selector(showPermissions)))
         menu.addItem(.separator())
         menu.addItem(item("Quit Pinwheel", #selector(quit), key: "q"))
@@ -55,5 +70,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func showPermissions() { actions.showPermissions() }
+    @objc private func showProgress() { actions.showProgress() }
+    @objc private func showFFmpegHelp() { actions.showFFmpegHelp() }
     @objc private func quit() { actions.quit() }
 }
