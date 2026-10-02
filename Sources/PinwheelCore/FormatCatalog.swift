@@ -13,7 +13,7 @@ public enum FormatCatalog {
         case (.pdf, .convert):
             [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .tool(.compress)]
         case (.image, .tools):
-            [.tool(.compress), .tool(.resizeHalf), .tool(.stripMetadata)]
+            [.tool(.compress), .tool(.resize), .tool(.stripMetadata)]
         case (.video, .tools):
             [.tool(.compress), .tool(.stripMetadata), .tool(.extractAudio)]
         case (.audio, .tools):

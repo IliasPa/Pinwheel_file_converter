@@ -1,21 +1,22 @@
 import AppKit
+import Observation
 import SwiftUI
 
 /// Tracks whether the pointer is over the progress window (so it stays open).
-@MainActor
-final class HoverTracker: ObservableObject {
-    @Published var isHovering = false
+@Observable
+final class HoverTracker {
+    var isHovering = false
 }
 
 /// A small floating window in the top-right corner listing each job.
 /// It opens when a conversion starts and closes a few seconds after the last
 /// one finishes, unless something failed or the pointer is over it.
-@MainActor
 final class ProgressController {
-    static let width: CGFloat = 360
+    static let width: CGFloat = 380
     static let headerHeight: CGFloat = 44
-    static let rowHeight: CGFloat = 54
+    static let rowHeight: CGFloat = 58
     static let maxVisibleRows = 5
+    static let cornerRadius: CGFloat = 16
 
     private let queue: JobQueue
     private let settings: SettingsStore
@@ -84,7 +85,7 @@ final class ProgressController {
     private func scheduleAutoHide() {
         autoHide?.cancel()
         guard panel?.isVisible == true, !queue.jobs.isEmpty, queue.isIdle, !queue.hasFailures else { return }
-        autoHide = Task { @MainActor [weak self] in
+        autoHide = Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
             while self?.hover.isHovering == true, !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -112,8 +113,6 @@ final class ProgressController {
 /// the SwiftUI view). It can take clicks (for the buttons) without pulling
 /// Pinwheel or the panel to the front.
 final class ProgressPanel: NSPanel {
-    static let cornerRadius: CGFloat = 14
-
     init(size: NSSize) {
         super.init(
             contentRect: NSRect(origin: .zero, size: size),

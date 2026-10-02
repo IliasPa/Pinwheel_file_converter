@@ -2,17 +2,20 @@ import SwiftUI
 import PinwheelCore
 
 struct ProgressListView: View {
-    @ObservedObject var queue: JobQueue
-    @ObservedObject var settings: SettingsStore
-    @ObservedObject var hover: HoverTracker
+    var queue: JobQueue
+    var settings: SettingsStore
+    var hover: HoverTracker
     var onReveal: (Job) -> Void
     var onClose: () -> Void
+
+    /// Lists stay readable on Crystal by using Clear Glass's light shade.
+    private var level: GlassLevel { settings.glassLevel == .crystal ? .clear : settings.glassLevel }
 
     var body: some View {
         VStack(spacing: 0) {
             header
                 .frame(height: ProgressController.headerHeight)
-            Divider().opacity(0.6)
+            Divider().opacity(0.5)
             if queue.jobs.isEmpty {
                 Text("No conversions yet. Drag files and hold ⇧ Shift.")
                     .font(.callout)
@@ -32,15 +35,15 @@ struct ProgressListView: View {
             }
             Spacer(minLength: 0)
         }
-        .background(GlassSurface(level: settings.glassLevel.effective, cornerRadius: ProgressPanel.cornerRadius))
+        .glassSurface(level, cornerRadius: ProgressController.cornerRadius)
         .onHover { hover.isHovering = $0 }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: queue.isIdle ? (queue.hasFailures ? "exclamationmark.circle.fill" : "checkmark.circle.fill") : "arrow.triangle.2.circlepath")
+            Image(systemName: headerSymbol)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(queue.isIdle ? (queue.hasFailures ? AnyShapeStyle(.orange) : AnyShapeStyle(.green)) : AnyShapeStyle(Brand.gradient))
+                .foregroundStyle(headerStyle)
                 .symbolEffect(.pulse, isActive: !queue.isIdle)
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
@@ -61,6 +64,16 @@ struct ProgressListView: View {
         .padding(.horizontal, 14)
     }
 
+    private var headerSymbol: String {
+        if !queue.isIdle { return "arrow.triangle.2.circlepath" }
+        return queue.hasFailures ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
+    }
+
+    private var headerStyle: AnyShapeStyle {
+        if !queue.isIdle { return AnyShapeStyle(Brand.gradient) }
+        return queue.hasFailures ? AnyShapeStyle(.orange) : AnyShapeStyle(.green)
+    }
+
     private var title: String {
         let active = queue.jobs.filter { !$0.isDone }.count
         if active > 0 { return active == 1 ? "Converting 1 file…" : "Converting \(active) files…" }
@@ -71,7 +84,7 @@ struct ProgressListView: View {
 }
 
 private struct JobRow: View {
-    @ObservedObject var job: Job
+    var job: Job
     var onCancel: () -> Void
     var onReveal: () -> Void
 
@@ -80,13 +93,13 @@ private struct JobRow: View {
             Image(nsImage: job.icon)
                 .resizable()
                 .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 4) {
-                    Text(job.file.url.lastPathComponent)
+                    Text(job.title)
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text("→ \(job.action.title(in: .tools))")
+                    Text("→ \(job.actionLabel)")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize()
@@ -119,16 +132,23 @@ private struct JobRow: View {
             .controlSize(.small)
             .tint(Brand.blue)
         case .finished:
-            Text(finishedText).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            statusText(finishedText, color: .secondary)
+        case .skipped(let reason):
+            statusText(reason, color: .secondary)
         case .failed(let message):
-            Text(message)
-                .font(.system(size: 11))
-                .foregroundStyle(.red)
-                .lineLimit(2)
-                .help(message)
+            statusText(message, color: .red)
         case .cancelled:
-            Text("Cancelled").font(.system(size: 11)).foregroundStyle(.secondary)
+            statusText("Cancelled", color: .secondary)
         }
+    }
+
+    private func statusText(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(color)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .help(text)
     }
 
     @ViewBuilder
@@ -146,6 +166,8 @@ private struct JobRow: View {
             }
             .buttonStyle(.plain)
             .help("Show in Finder")
+        case .skipped:
+            Image(systemName: "minus.circle").font(.system(size: 14)).foregroundStyle(.secondary)
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 14)).foregroundStyle(.orange)
         case .cancelled:
@@ -153,19 +175,19 @@ private struct JobRow: View {
         }
     }
 
+    /// "2.4 MB → 1.1 MB (−54%)", plus any note and "original in Trash".
     private var finishedText: String {
-        job.originalTrashed ? "\(resultText) · original in Trash" : resultText
-    }
-
-    private var resultText: String {
-        let name = job.outputs.first?.lastPathComponent ?? "Done"
-        guard let after = job.outputSize else { return name }
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        if case .tool(.compress) = job.action, let before = job.sourceSize, before > 0 {
+        var parts: [String] = []
+        if let before = job.sourceSize, let after = job.outputSize, before > 0 {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
             let change = Int(((Double(after) / Double(before)) - 1) * 100)
-            return "\(formatter.string(fromByteCount: before)) → \(formatter.string(fromByteCount: after)) (\(change > 0 ? "+" : "")\(change)%)"
+            parts.append("\(formatter.string(fromByteCount: before)) → \(formatter.string(fromByteCount: after)) (\(change > 0 ? "+" : "")\(change)%)")
+        } else if let name = job.outputs.first?.lastPathComponent {
+            parts.append(name)
         }
-        return "\(name) · \(formatter.string(fromByteCount: after))"
+        if let note = job.note { parts.append(note) }
+        if job.originalTrashed { parts.append("Original in Trash.") }
+        return parts.joined(separator: " · ")
     }
 }

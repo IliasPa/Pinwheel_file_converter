@@ -1,7 +1,6 @@
 import AppKit
 
 /// The little click (and trackpad tap) when the pointer moves onto a wedge.
-@MainActor
 final class HoverFeedback {
     /// Short macOS system sounds that work well as a tick.
     static let soundNames = ["Tink", "Pop", "Bottle", "Morse", "Purr", "Frog"]

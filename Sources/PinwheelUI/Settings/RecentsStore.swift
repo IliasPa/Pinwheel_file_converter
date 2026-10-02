@@ -1,8 +1,9 @@
 import Foundation
+import Observation
 
 /// The last few files Pinwheel made, for the menu's "Recent Conversions".
-@MainActor
-final class RecentsStore: ObservableObject {
+@Observable
+final class RecentsStore {
     struct Item: Codable, Equatable, Identifiable {
         var id = UUID()
         let path: String
@@ -16,9 +17,9 @@ final class RecentsStore: ObservableObject {
 
     static let limit = 10
     private static let key = "recentConversions"
-    private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: UserDefaults
 
-    @Published private(set) var items: [Item] = []
+    private(set) var items: [Item] = []
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

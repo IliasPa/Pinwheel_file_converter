@@ -113,13 +113,10 @@ public enum ImageConverter {
 
     /// One PDF page, sized so the image prints at its own resolution.
     static func writePDF(from src: CGImageSource, index: Int, title: String, destination: URL) throws {
-        let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
-        let image = try orientedImage(src, index: index)
-        var dpi = properties[kCGImagePropertyDPIWidth] as? Double ?? 72
-        if dpi < 1 { dpi = 72 }
-        var box = CGRect(x: 0, y: 0, width: CGFloat(image.width) * 72 / dpi, height: CGFloat(image.height) * 72 / dpi)
+        let (image, box) = try pdfPage(src, index: index)
+        var mediaBox = box
         let info = [kCGPDFContextTitle: title, kCGPDFContextCreator: "Pinwheel"] as CFDictionary
-        guard let ctx = CGContext(destination as CFURL, mediaBox: &box, info) else {
+        guard let ctx = CGContext(destination as CFURL, mediaBox: &mediaBox, info) else {
             throw ConversionError.cannotWrite(destination.lastPathComponent)
         }
         ctx.beginPDFPage(nil)
@@ -127,5 +124,38 @@ public enum ImageConverter {
         ctx.draw(image, in: box)
         ctx.endPDFPage()
         ctx.closePDF()
+    }
+
+    /// Several images in one PDF, a page each, in the order of their names.
+    static func combineIntoPDF(_ sources: [URL], destination: URL, progress: @Sendable (Double) -> Void) throws {
+        let ordered = sources.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+        let info = [kCGPDFContextCreator: "Pinwheel"] as CFDictionary
+        guard let ctx = CGContext(destination as CFURL, mediaBox: nil, info) else {
+            throw ConversionError.cannotWrite(destination.lastPathComponent)
+        }
+        for (number, url) in ordered.enumerated() {
+            try Task.checkCancellation()
+            let src = try open(url)
+            var (image, box) = try pdfPage(src, index: CGImageSourceGetPrimaryImageIndex(src))
+            let pageInfo = [kCGPDFContextMediaBox: Data(bytes: &box, count: MemoryLayout<CGRect>.size)] as CFDictionary
+            ctx.beginPDFPage(pageInfo)
+            ctx.interpolationQuality = .high
+            ctx.draw(image, in: box)
+            ctx.endPDFPage()
+            progress(Double(number + 1) / Double(ordered.count))
+        }
+        ctx.closePDF()
+    }
+
+    /// The upright image and a page box that prints it at its own resolution.
+    private static func pdfPage(_ src: CGImageSource, index: Int) throws -> (CGImage, CGRect) {
+        let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
+        let image = try orientedImage(src, index: index)
+        var dpi = properties[kCGImagePropertyDPIWidth] as? Double ?? 72
+        if dpi < 1 { dpi = 72 }
+        let box = CGRect(x: 0, y: 0, width: CGFloat(image.width) * 72 / dpi, height: CGFloat(image.height) * 72 / dpi)
+        return (image, box)
     }
 }

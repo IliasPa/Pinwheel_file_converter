@@ -1,8 +1,9 @@
 import AppKit
 import PinwheelCore
 
-@MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+/// Connects the parts: drag detection → wheel → jobs → progress window,
+/// plus the menu, Settings and notifications.
+public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = SettingsStore()
     private let recents = RecentsStore()
     private let launch = LaunchAtLogin()
@@ -11,10 +12,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let jobs = JobQueue()
     private lazy var wheel = WheelController(settings: settings)
     private lazy var progress = ProgressController(queue: jobs, settings: settings)
+    private lazy var notifier = Notifier()
     private var menuBar: MenuBarController?
     private var settingsWindow: SettingsWindowController?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    override public init() {
+        super.init()
+    }
+
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         let permission = self.permission
         let settings = self.settings
         menuBar = MenuBarController(
@@ -52,7 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.jobs.enqueue(files: files, action: action)
         }
         jobs.optionsProvider = { settings.conversionOptions }
+        jobs.maxConcurrent = { settings.maxConcurrentJobs }
         jobs.shouldTrashOriginals = { settings.moveOriginalToTrash }
+        jobs.actionLabel = { action in action.title(in: .tools, options: settings.conversionOptions) }
         jobs.onChange = { [weak self] in
             self?.progress.jobsChanged()
         }
@@ -71,21 +79,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    public func applicationWillTerminate(_ notification: Notification) {
         dragMonitor.stop()
     }
 
     // MARK: - Private
 
-    /// Remembers what worked and shows it in Finder. Failures stay listed in
-    /// the progress window.
+    /// Remembers what worked, shows it in Finder, and sends a notification
+    /// for long conversions. Failures stay listed in the progress window.
     private func batchFinished(_ batch: [Job]) {
         for job in batch where job.state == .finished {
-            recents.add(job.outputs, action: job.action.title(in: .tools))
+            recents.add(job.outputs, action: job.actionLabel)
         }
         let outputs = batch.flatMap(\.outputs)
         if settings.revealInFinder && !outputs.isEmpty {
             NSWorkspace.shared.activateFileViewerSelecting(outputs)
+        }
+        if settings.notifyWhenDone {
+            notifier.batchFinished(batch)
         }
     }
 
@@ -95,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 settings: settings,
                 launch: launch,
                 permission: permission,
+                state: SettingsViewState(),
                 onShowDemo: { [weak self] in
                     self?.wheel.showDemo(avoiding: self?.settingsWindow?.window?.frame)
                 },

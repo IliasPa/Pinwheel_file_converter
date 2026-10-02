@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import PinwheelCore
 
 /// One wedge on the wheel.
@@ -15,16 +16,16 @@ struct WheelItem: Identifiable, Equatable {
 }
 
 /// Everything the wheel view needs to draw itself.
-@MainActor
-final class WheelModel: ObservableObject {
-    @Published var isPresented = false
+@Observable
+final class WheelModel {
+    var isPresented = false
     /// True when the wheel closes because something was dropped on it.
-    @Published var confirmed = false
-    @Published var mode: WheelMode = .convert
-    @Published var items: [WheelItem] = []
-    @Published var hovered: WheelLayout.Hit?
-    @Published var summary = ""
-    @Published var summarySymbol = "doc"
+    var confirmed = false
+    var mode: WheelMode = .convert
+    var items: [WheelItem] = []
+    var hovered: WheelLayout.Hit?
+    var summary = ""
+    var summarySymbol = "doc"
 
     var hoveredItem: WheelItem? {
         guard case .wedge(let index)? = hovered, items.indices.contains(index) else { return nil }
@@ -35,6 +36,7 @@ final class WheelModel: ObservableObject {
     func load(
         files: [SourceFile],
         mode: WheelMode,
+        options: ConversionOptions,
         availability: (WheelAction, [SourceFile]) -> Availability
     ) {
         self.mode = mode
@@ -47,9 +49,9 @@ final class WheelModel: ObservableObject {
             if case .unavailable(let why) = availability(action, files) { reason = why }
             return WheelItem(
                 action: action,
-                title: action.title(in: mode),
+                title: action.title(in: mode, options: options),
                 symbolName: action.symbolName(in: mode),
-                detail: action.detail(for: commonKind),
+                detail: action.detail(for: commonKind, options: options),
                 unavailableReason: reason
             )
         }
@@ -58,7 +60,7 @@ final class WheelModel: ObservableObject {
     /// A still wheel for the Settings preview and "Show on Desktop".
     static func sample(hovered: Int = 1) -> WheelModel {
         let model = WheelModel()
-        model.load(files: [SourceFile.sample], mode: .convert) { _, _ in .available }
+        model.load(files: [SourceFile.sample], mode: .convert, options: ConversionOptions()) { _, _ in .available }
         model.hovered = .wedge(hovered)
         model.isPresented = true
         return model

@@ -1,12 +1,13 @@
 import Foundation
+import Observation
 import ServiceManagement
 
 /// Starts Pinwheel when you log in, using macOS's Login Items
 /// (System Settings › General › Login Items & Extensions).
-@MainActor
-final class LaunchAtLogin: ObservableObject {
-    @Published private(set) var status: SMAppService.Status = SMAppService.mainApp.status
-    @Published private(set) var lastError: String?
+@Observable
+final class LaunchAtLogin {
+    private(set) var status: SMAppService.Status = SMAppService.mainApp.status
+    private(set) var lastError: String?
 
     var isEnabled: Bool { status == .enabled }
     /// Registered, but macOS wants you to switch it on in System Settings.

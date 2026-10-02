@@ -4,31 +4,48 @@ import Foundation
 /// Video and audio conversions. Apple's frameworks do the work when they can;
 /// ffmpeg only handles MP3, GIFs from video, and files AVFoundation can't open.
 enum MediaConverter {
+    /// Returns a note for the progress window (e.g. "only the first 15 seconds").
     static func convert(
         _ file: SourceFile,
         to format: OutputFormat,
         destination: URL,
         options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
-    ) async throws {
+    ) async throws -> String? {
         if ConversionEngine.usesFFmpeg(.convert(format), for: file) {
             guard let ffmpeg = options.ffmpegURL else { throw ConversionError.needsFFmpeg }
-            try await convertWithFFmpeg(file, to: format, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
-            return
+            return try await convertWithFFmpeg(file, to: format, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
         }
-        do {
+        var note: String?
+        try await appleThenFFmpeg(destination: destination, ffmpegURL: options.ffmpegURL) {
             try await convertWithApple(file, to: format, destination: destination, progress: progress)
+        } ffmpeg: { ffmpeg in
+            note = try await convertWithFFmpeg(file, to: format, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
+        }
+        return note
+    }
+
+    /// Apple's frameworks first. If they fail on a file they said they could
+    /// read (some OGG or FLAC variants, unusual codecs), ffmpeg gets a try;
+    /// if that fails too, the first (clearer) error is reported.
+    static func appleThenFFmpeg(
+        destination: URL,
+        ffmpegURL: URL?,
+        apple: () async throws -> Void,
+        ffmpeg: (URL) async throws -> Void
+    ) async throws {
+        do {
+            try await apple()
         } catch is CancellationError {
             throw CancellationError()
+        } catch let skip as NothingToDo {
+            throw skip
         } catch {
-            // macOS said it could read the file but couldn't (some OGG or FLAC
-            // variants, unusual codecs). ffmpeg may still manage; if it can't
-            // either, report the original, clearer error.
             let original = error
-            guard let ffmpeg = options.ffmpegURL else { throw original }
+            guard let ffmpegURL else { throw original }
             try? FileManager.default.removeItem(at: destination)
             do {
-                try await convertWithFFmpeg(file, to: format, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
+                try await ffmpeg(ffmpegURL)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -40,13 +57,22 @@ enum MediaConverter {
     private static func convertWithFFmpeg(
         _ file: SourceFile, to format: OutputFormat, destination: URL, ffmpeg: URL,
         options: ConversionOptions, progress: @escaping @Sendable (Double) -> Void
-    ) async throws {
-        let duration = await FFmpeg.duration(of: file, ffmpeg: ffmpeg)
+    ) async throws -> String? {
+        var arguments = ffmpegArguments(for: format, options: options)
+        var duration = await FFmpeg.duration(of: file, ffmpeg: ffmpeg)
+        var note: String?
+        if format == .gif, let limit = options.gifMaxSeconds {
+            arguments = ["-t", "\(limit)"] + arguments
+            if let full = duration, full > Double(limit) + 0.5 {
+                note = "Only the first \(limit) seconds (you can change this in Settings)."
+            }
+            duration = duration.map { min($0, Double(limit)) }
+        }
         try await FFmpeg.convert(
             ffmpeg: ffmpeg, input: file.url, output: destination,
-            arguments: ffmpegArguments(for: format, options: options),
-            duration: duration, progress: progress
+            arguments: arguments, duration: duration, progress: progress
         )
+        return note
     }
 
     private static func convertWithApple(
@@ -118,8 +144,10 @@ enum MediaConverter {
         try await export(asset, preset: AVAssetExportPresetAppleM4A, fileType: .m4a, to: destination, progress: progress)
     }
 
+    /// Exports with AVAssetExportSession, reporting progress. Cancelling the
+    /// task cancels the export.
     static func export(
-        _ asset: AVAsset,
+        _ asset: AVURLAsset,
         preset: String,
         fileType: AVFileType,
         to url: URL,
@@ -130,8 +158,6 @@ enum MediaConverter {
         guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
             throw ConversionError.failed("macOS can't export this file.")
         }
-        session.outputURL = url
-        session.outputFileType = fileType
         session.shouldOptimizeForNetworkUse = true
         if stripMetadata {
             // No title, location, device or dates; the filter also catches
@@ -139,33 +165,19 @@ enum MediaConverter {
             session.metadata = []
             session.metadataItemFilter = AVMetadataItemFilter.forSharing()
         }
-        let box = ExportSessionBox(session)
-
-        let poller = Task {
-            while !Task.isCancelled {
-                progress(Double(box.session.progress))
-                try? await Task.sleep(for: .milliseconds(150))
+        // The watcher only reads the session's progress stream, which is
+        // made for exactly that, so sharing the session with it is safe.
+        let shared = ExportSessionBox(session)
+        let watcher = Task {
+            for await state in shared.session.states(updateInterval: 0.15) {
+                if case .exporting(let exportProgress) = state {
+                    progress(exportProgress.fractionCompleted)
+                }
             }
         }
-        defer { poller.cancel() }
-
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                box.session.exportAsynchronously { continuation.resume() }
-            }
-        } onCancel: {
-            box.session.cancelExport()
-        }
-        try Task.checkCancellation()
-
-        switch box.session.status {
-        case .completed:
-            progress(1)
-        case .cancelled:
-            throw CancellationError()
-        default:
-            throw ConversionError.failed(box.session.error?.localizedDescription ?? "The export failed.")
-        }
+        defer { watcher.cancel() }
+        try await session.export(to: url, as: fileType)
+        progress(1)
     }
 
     // MARK: - ffmpeg
@@ -197,7 +209,6 @@ enum MediaConverter {
     }
 }
 
-/// Lets the cancellation handler reach the export session from any thread.
 private final class ExportSessionBox: @unchecked Sendable {
     let session: AVAssetExportSession
     init(_ session: AVAssetExportSession) { self.session = session }
@@ -239,13 +250,13 @@ enum AudioFileConverter {
             settings[AVChannelLayoutKey] = Data(bytes: layout.layout, count: MemoryLayout<AudioChannelLayout>.size)
         }
 
-        // The output file is closed when `output` goes away at the end of this scope.
         let output: AVAudioFile
         do {
             output = try AVAudioFile(forWriting: destination, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
         } catch {
             throw ConversionError.cannotWrite(destination.lastPathComponent)
         }
+        defer { output.close() }
         guard let buffer = AVAudioPCMBuffer(pcmFormat: input.processingFormat, frameCapacity: 65_536) else {
             throw ConversionError.failed("Not enough memory to convert the audio.")
         }

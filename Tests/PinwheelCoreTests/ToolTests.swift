@@ -27,7 +27,9 @@ struct ImageToolTests {
     @Test func compressKeepsJPEGAndMakesItSmaller() async throws {
         let folder = try TempFolder()
         let source = folder.file("photo.jpg")
-        try makeCameraPhoto(at: source)
+        try Fixtures.makePhoto(at: source, type: .jpeg, properties: [
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFMake: "PinwheelCam"],
+        ])
         let output = try await runConversion(source, .tool(.compress))
         #expect(output.lastPathComponent == "photo (compressed).jpg")
         let before = try #require(try FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int)
@@ -37,26 +39,48 @@ struct ImageToolTests {
         #expect(tiff?[kCGImagePropertyTIFFMake] as? String == "PinwheelCam")  // compress keeps metadata
     }
 
-    @Test func compressPicksJPEGOrHEICForPNGs() async throws {
+    @Test(.enabled(if: pngquantInstalled))
+    func compressKeepsPNGsAsPNG() async throws {
         let folder = try TempFolder()
-        let transparent = folder.file("logo.png")
-        try Fixtures.makeImage(at: transparent)
-        let flattened = folder.file("flat.jpg")
-        try Fixtures.makeImage(at: flattened, type: .jpeg)
-        let opaquePNG = folder.file("opaque.png")
-        try ImageConverter.convert(flattened, to: .png, destination: opaquePNG, options: ConversionOptions())
+        for (name, alpha) in [("photo.png", false), ("logo.png", true)] {
+            let source = folder.file(name)
+            try Fixtures.makePhoto(at: source, alpha: alpha)
+            let output = try await runConversion(source, .tool(.compress))
+            #expect(output.pathExtension == "png")
+            #expect(Fixtures.readImage(output)?.type == "public.png")
+            let before = try #require(FileSize.of(source))
+            let after = try #require(FileSize.of(output))
+            #expect(after < before / 2, "pngquant should shrink a photo-like PNG a lot")
+        }
+    }
 
-        let fromTransparent = try await runConversion(transparent, .tool(.compress))
-        #expect(fromTransparent.pathExtension == "heic")  // keeps the see-through parts
-        let fromOpaque = try await runConversion(opaquePNG, .tool(.compress))
-        #expect(fromOpaque.pathExtension == "jpg")
+    @Test func pngCompressWithoutPngquantExplainsWhatToInstall() async throws {
+        let folder = try TempFolder()
+        let source = folder.file("photo.png")
+        try Fixtures.makePhoto(at: source)
+        var options = ConversionOptions()
+        options.pngquantURL = nil
+        let result = try await runRequest(ConversionRequest(file: SourceFile(url: source), action: .tool(.compress)), options: options, findTools: false)
+        if result.skipped {
+            #expect(result.note?.contains("brew install pngquant") == true)
+        } else {
+            #expect(result.outputs.first?.pathExtension == "png")  // still PNG either way
+        }
+    }
+
+    @Test func compressTurnsTIFFIntoHEIC() async throws {
+        let folder = try TempFolder()
+        let source = folder.file("scan.tiff")
+        try Fixtures.makePhoto(at: source, type: .tiff)
+        let output = try await runConversion(source, .tool(.compress))
+        #expect(output.lastPathComponent == "scan (compressed).heic")
     }
 
     @Test func resizeHalvesAndTurnsUpright() async throws {
         let folder = try TempFolder()
         let source = folder.file("photo.jpg")
         try makeCameraPhoto(at: source)  // 400×300 stored, shown as 300×400
-        let output = try await runConversion(source, .tool(.resizeHalf))
+        let output = try await runConversion(source, .tool(.resize))
         #expect(output.lastPathComponent == "photo (50%).jpg")
         let info = try #require(Fixtures.readImage(output))
         #expect(info.width == 150 && info.height == 200)
@@ -67,7 +91,7 @@ struct ImageToolTests {
         let folder = try TempFolder()
         let source = folder.file("art.png")
         try Fixtures.makeImage(at: source, width: 100, height: 60)
-        let output = try await runConversion(source, .tool(.resizeHalf))
+        let output = try await runConversion(source, .tool(.resize))
         let info = try #require(Fixtures.readImage(output))
         #expect(output.pathExtension == "png" && info.width == 50 && info.height == 30)
     }
@@ -103,7 +127,7 @@ struct ImageToolTests {
         CGImageDestinationAddImage(dest, frame, nil)
         CGImageDestinationAddImage(dest, frame, nil)
         #expect(CGImageDestinationFinalize(dest))
-        await #expect(throws: ConversionError.self) { try await runConversion(gif, .tool(.resizeHalf)) }
+        await #expect(throws: ConversionError.self) { try await runConversion(gif, .tool(.resize)) }
     }
 }
 
@@ -115,7 +139,7 @@ struct MediaToolTests {
     @Test func videoCompressMakesAPlayableMP4() async throws {
         let folder = try TempFolder()
         let source = folder.file("clip.mov")
-        try await MediaFixtures.makeVideo(at: source, width: 320, height: 240)
+        try await MediaFixtures.makeVideo(at: source, width: 320, height: 240, noisy: true)
         let output = try await runConversion(source, .tool(.compress))
         #expect(output.lastPathComponent == "clip (compressed).mp4")
         let asset = AVURLAsset(url: output)
@@ -232,16 +256,19 @@ struct ToolAvailabilityTests {
 
     @Test func outputNames() {
         func plan(_ name: String, _ tool: ToolAction) -> String? {
-            ConversionEngine.plan(for: SourceFile(url: URL(fileURLWithPath: "/tmp/\(name)")), action: .tool(tool)).fileExtension
+            let request = ConversionRequest(file: SourceFile(url: URL(fileURLWithPath: "/tmp/\(name)")), action: .tool(tool))
+            return OutputPlanner.plan(request, options: ConversionOptions()).fileExtension
         }
         #expect(plan("a.mov", .compress) == "mp4")
+        #expect(plan("a.png", .compress) == "png")
+        #expect(plan("a.tiff", .compress) == "heic")
         #expect(plan("a.mov", .extractAudio) == "m4a")
         #expect(plan("a.mov", .stripMetadata) == "mov")
         #expect(plan("a.wav", .compress) == "m4a")
         #expect(plan("a.mp3", .stripMetadata) == "mp3")
         #expect(plan("a.pdf", .compress) == "pdf")
-        #expect(plan("a.bmp", .resizeHalf) == "png")
-        #expect(plan("a.JPEG", .resizeHalf) == "jpeg")
-        #expect(ToolAction.resizeHalf.nameSuffix == "50%")
+        #expect(plan("a.bmp", .resize) == "png")
+        #expect(plan("a.JPEG", .resize) == "jpeg")
+        #expect(ToolAction.resize.nameSuffix() == "50%")
     }
 }

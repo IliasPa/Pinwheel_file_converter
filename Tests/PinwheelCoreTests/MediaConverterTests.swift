@@ -150,18 +150,16 @@ struct MediaConverterTests {
         let folder = try TempFolder()
         let source = folder.file("long.mov")
         try await MediaFixtures.makeVideo(at: source, seconds: 40, width: 640, height: 480, withAudio: false)
-        let file = SourceFile(url: source)
-        let destination = folder.file("long (converted).gif")
         var options = ConversionOptions()
-        options.ffmpegURL = FFmpeg.locate()
         options.gifWidth = 640
-        let job = Task {
-            try await ConversionEngine.run(file: file, action: .convert(.gif), destination: destination, options: options) { _ in }
-        }
+        options.gifMaxSeconds = nil
+        let request = ConversionRequest(file: SourceFile(url: source), action: .convert(.gif))
+        let job = Task { try await runRequest(request, options: options) }
         try await Task.sleep(for: .milliseconds(400))
         job.cancel()
         await #expect(throws: CancellationError.self) { try await job.value }
-        #expect(!FileManager.default.fileExists(atPath: destination.path))
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.url.path)
+        #expect(left == ["long.mov"])
     }
 
     // MARK: - Availability

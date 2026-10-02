@@ -86,14 +86,15 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
 /// Extra jobs offered on the Option+Shift wheel.
 public enum ToolAction: String, CaseIterable, Codable, Sendable {
     case compress
-    case resizeHalf
+    case resize
     case stripMetadata
     case extractAudio
 
+    /// The general name; Resize shows its chosen size on the wheel instead.
     public var title: String {
         switch self {
         case .compress: "Compress"
-        case .resizeHalf: "Resize 50%"
+        case .resize: "Resize"
         case .stripMetadata: "Strip Info"
         case .extractAudio: "Get Audio"
         }
@@ -102,33 +103,33 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
     public var symbolName: String {
         switch self {
         case .compress: "rectangle.compress.vertical"
-        case .resizeHalf: "arrow.down.right.and.arrow.up.left"
+        case .resize: "arrow.down.right.and.arrow.up.left"
         case .stripMetadata: "tag.slash"
         case .extractAudio: "speaker.wave.2"
         }
     }
 
-    public func detail(for kind: FileKind?) -> String {
+    public func detail(for kind: FileKind?, options: ConversionOptions = ConversionOptions()) -> String {
         switch self {
         case .compress:
             switch kind {
-            case .image: "Smaller file, still looks good"
+            case .image: "Smaller file in the same format"
             case .video: "Smaller HEVC video"
             case .audio: "Smaller AAC audio file"
             case .pdf: "Shrinks the images inside"
             case nil: "Smaller files"
             }
-        case .resizeHalf: "Half the width and height"
+        case .resize: options.resize.detail
         case .stripMetadata: "Removes location, camera and other hidden info"
         case .extractAudio: "Saves the soundtrack as M4A"
         }
     }
 
     /// Goes in the output name: "photo (compressed).jpg".
-    public var nameSuffix: String {
+    public func nameSuffix(options: ConversionOptions = ConversionOptions()) -> String {
         switch self {
         case .compress: "compressed"
-        case .resizeHalf: "50%"
+        case .resize: options.resize.nameSuffix
         case .stripMetadata: "no metadata"
         case .extractAudio: "audio"
         }
@@ -147,11 +148,13 @@ public enum WheelAction: Hashable, Codable, Sendable {
         }
     }
 
-    /// "Compress" sits on the PDF format wheel as "Smaller PDF".
-    public func title(in mode: WheelMode) -> String {
+    /// "Compress" sits on the PDF format wheel as "Smaller PDF"; Resize
+    /// shows its chosen size.
+    public func title(in mode: WheelMode, options: ConversionOptions = ConversionOptions()) -> String {
         switch self {
         case .convert(let format): format.title
         case .tool(.compress) where mode == .convert: "Smaller PDF"
+        case .tool(.resize): options.resize.title
         case .tool(let tool): tool.title
         }
     }
@@ -164,10 +167,10 @@ public enum WheelAction: Hashable, Codable, Sendable {
         }
     }
 
-    public func detail(for kind: FileKind?) -> String {
+    public func detail(for kind: FileKind?, options: ConversionOptions = ConversionOptions()) -> String {
         switch self {
         case .convert(let format): format.detail(from: kind)
-        case .tool(let tool): tool.detail(for: kind)
+        case .tool(let tool): tool.detail(for: kind, options: options)
         }
     }
 

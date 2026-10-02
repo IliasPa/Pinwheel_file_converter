@@ -29,7 +29,7 @@ enum MediaFixtures {
     static func makeVideo(
         at url: URL, seconds: Double = 1, width: Int = 160, height: Int = 120,
         withAudio: Bool = true, withVideo: Bool = true, fileType: AVFileType = .mov,
-        metadata: [AVMetadataItem] = []
+        metadata: [AVMetadataItem] = [], noisy: Bool = false
     ) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
         writer.metadata = metadata
@@ -80,8 +80,18 @@ enum MediaFixtures {
                 CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
                 guard let pixelBuffer else { throw CocoaError(.fileWriteUnknown) }
                 CVPixelBufferLockBaseAddress(pixelBuffer, [])
-                memset(CVPixelBufferGetBaseAddress(pixelBuffer), Int32(40 + nextFrame * 10 % 200),
-                       CVPixelBufferGetBytesPerRow(pixelBuffer) * height)
+                let byteCount = CVPixelBufferGetBytesPerRow(pixelBuffer) * height
+                if noisy {
+                    // Busy, changing pictures give the encoder real work (like a real video).
+                    let bytes = CVPixelBufferGetBaseAddress(pixelBuffer)!.assumingMemoryBound(to: UInt8.self)
+                    var seed = UInt32(truncatingIfNeeded: nextFrame &* 2_654_435_761)
+                    for i in 0..<byteCount {
+                        seed = seed &* 1_664_525 &+ 1_013_904_223
+                        bytes[i] = UInt8(truncatingIfNeeded: seed >> 24)
+                    }
+                } else {
+                    memset(CVPixelBufferGetBaseAddress(pixelBuffer), Int32(40 + nextFrame * 10 % 200), byteCount)
+                }
                 CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
                 adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: CMTimeValue(nextFrame), timescale: fps))
                 nextFrame += 1
@@ -192,16 +202,28 @@ enum MediaFixtures {
     }
 }
 
-/// Runs a conversion the same way the app does, with a fresh name.
-func runConversion(_ source: URL, _ action: WheelAction, options: ConversionOptions? = nil,
-                   progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
+/// Runs a conversion the same way the app does. ffmpeg and pngquant are
+/// used when installed, unless `findTools` is false.
+func runRequest(
+    _ request: ConversionRequest, options: ConversionOptions? = nil, findTools: Bool = true,
+    progress: @escaping @Sendable (Double) -> Void = { _ in }
+) async throws -> ConversionResult {
     var options = options ?? ConversionOptions()
-    if options.ffmpegURL == nil { options.ffmpegURL = FFmpeg.locate() }
-    let file = SourceFile(url: source)
-    let plan = ConversionEngine.plan(for: file, action: action)
-    let destination = OutputNaming().reserve(for: source, suffix: plan.suffix, fileExtension: plan.fileExtension)
-    let outputs = try await ConversionEngine.run(file: file, action: action, destination: destination, options: options, progress: progress)
-    return try #require(outputs.first)
+    if findTools {
+        options.ffmpegURL = options.ffmpegURL ?? FFmpeg.locate()
+        options.pngquantURL = options.pngquantURL ?? ExternalTool.pngquant.locate()
+    }
+    return try await ConversionEngine.run(request, options: options, naming: OutputNaming(), progress: progress)
+}
+
+/// Converts one file and returns what was written (fails the test if nothing was).
+func runConversion(
+    _ source: URL, _ action: WheelAction, options: ConversionOptions? = nil,
+    progress: @escaping @Sendable (Double) -> Void = { _ in }
+) async throws -> URL {
+    let result = try await runRequest(ConversionRequest(file: SourceFile(url: source), action: action), options: options, progress: progress)
+    return try #require(result.outputs.first, "expected an output, got: \(result.note ?? "nothing")")
 }
 
 let ffmpegInstalled = FFmpeg.locate() != nil
+let pngquantInstalled = ExternalTool.pngquant.locate() != nil

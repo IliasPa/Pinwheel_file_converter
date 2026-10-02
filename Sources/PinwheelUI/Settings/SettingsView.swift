@@ -1,17 +1,24 @@
 import AppKit
+import Observation
 import SwiftUI
 import PinwheelCore
 
+/// The Settings window's own bits of state. (Kept outside the view because
+/// SwiftUI's @State is a macro whose plugin only ships with Xcode.)
+@Observable
+final class SettingsViewState {
+    var confirmReset = false
+    let preview = WheelModel.sample()
+    @ObservationIgnored let soundPreview = HoverFeedback()
+}
+
 struct SettingsView: View {
-    @ObservedObject var settings: SettingsStore
-    @ObservedObject var launch: LaunchAtLogin
-    @ObservedObject var permission: AccessibilityPermission
+    @Bindable var settings: SettingsStore
+    var launch: LaunchAtLogin
+    var permission: AccessibilityPermission
+    @Bindable var state: SettingsViewState
     var onShowDemo: () -> Void
     var onShowFFmpegHelp: () -> Void
-
-    // Not @State: in the macOS 27 SDK @State is a macro whose plugin only ships
-    // with Xcode, so with the Command Line Tools use @StateObject instead.
-    @StateObject private var local = LocalState()
 
     var body: some View {
         Form {
@@ -19,7 +26,9 @@ struct SettingsView: View {
             appearance
             feedback
             afterConverting
-            quality
+            saving
+            images
+            media
             system
             Section {
                 HStack {
@@ -29,12 +38,12 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 520, idealWidth: 560, minHeight: 480, idealHeight: 760)
+        .frame(minWidth: 540, idealWidth: 580, minHeight: 480, idealHeight: 780)
         .onAppear {
             launch.refresh()
             permission.refresh()
         }
-        .alert("Reset the permission?", isPresented: $local.confirmReset) {
+        .alert("Reset the permission?", isPresented: $state.confirmReset) {
             Button("Reset", role: .destructive) { permission.resetAndAskAgain() }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -89,7 +98,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Reset Permission…") { local.confirmReset = true }
+                Button("Reset Permission…") { state.confirmReset = true }
             }
             if let message = permission.resetMessage {
                 Text(message).font(.caption).foregroundStyle(.secondary)
@@ -112,13 +121,10 @@ struct SettingsView: View {
                     Slider(value: glassBinding, in: 1...5, step: 1)
                     Text("Crystal").font(.caption).foregroundStyle(.secondary)
                 }
-                .disabled(!GlassLevel.isLiquidGlassAvailable)
-                Text(GlassLevel.isLiquidGlassAvailable
-                     ? settings.glassLevel.detail
-                     : "Liquid Glass needs macOS 26 or later, so Pinwheel uses Frosted.")
+                Text(settings.glassLevel.detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                GlassPreview(settings: settings)
+                GlassPreview(settings: settings, model: state.preview)
                 HStack {
                     Button("Show on Desktop", action: onShowDemo)
                     Text("Shows the real wheel over your desktop for 3 seconds.")
@@ -152,9 +158,7 @@ struct SettingsView: View {
         } header: {
             Text("Wheel feedback")
         } footer: {
-            Text("Plays when the pointer moves onto a format. Vibration needs a Force Touch trackpad and is felt only while your finger is on it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            footnote("Plays when the pointer moves onto a format. Vibration needs a Force Touch trackpad and is felt only while your finger is on it.")
         }
     }
 
@@ -162,25 +166,71 @@ struct SettingsView: View {
         Section {
             Toggle("Show the progress window", isOn: $settings.showProgressWindow)
             Toggle("Show the new files in Finder", isOn: $settings.revealInFinder)
+            Toggle("Notify me when a long conversion finishes", isOn: $settings.notifyWhenDone)
             Toggle("Move the original to the Trash", isOn: $settings.moveOriginalToTrash)
         } header: {
             Text("After converting")
         } footer: {
-            Text("The original goes to the Trash only after the new file is saved. You can put it back from the Trash.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            footnote("Notifications are for conversions that take 10 seconds or more. The original goes to the Trash only after the new file is saved; you can put it back from the Trash.")
         }
     }
 
-    private var quality: some View {
+    private var saving: some View {
+        Section {
+            Picker("Save new files", selection: $settings.saveLocation) {
+                ForEach(SaveLocationChoice.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            if settings.saveLocation == .custom {
+                LabeledContent("Folder") {
+                    HStack {
+                        Text(settings.customFolderPath.isEmpty ? "None chosen" : settings.customFolderPath)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Button("Choose…", action: chooseFolder)
+                    }
+                }
+            }
+        } header: {
+            Text("Saving")
+        } footer: {
+            footnote("If that place can't be written to (a disk image, a read-only shared drive), files go to Downloads instead and the progress window says so.")
+        }
+    }
+
+    private var images: some View {
         Section {
             percentSlider("JPEG quality", value: $settings.jpegQuality, range: 0.5...1)
             percentSlider("HEIC quality", value: $settings.heicQuality, range: 0.5...1)
-            percentSlider("Compress tool quality", value: $settings.compressQuality, range: 0.3...0.9)
+            percentSlider("Compress quality", value: $settings.compressQuality, range: 0.3...0.9)
+            Picker("Resize", selection: $settings.resize) {
+                ForEach(ResizeOption.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Toggle("Several images on PDF make one combined PDF", isOn: $settings.combineImagesIntoOnePDF)
             Picker("PDF pages to images", selection: $settings.pdfDPI) {
                 Text("72 DPI (screen)").tag(72)
                 Text("150 DPI (standard)").tag(150)
                 Text("300 DPI (print)").tag(300)
+            }
+        } header: {
+            Text("Images and PDFs")
+        } footer: {
+            footnote(settings.pngquantURL == nil
+                     ? "Compress keeps JPEG, HEIC and PNG in their format. For much smaller PNGs, install pngquant: brew install pngquant"
+                     : "Compress keeps JPEG, HEIC and PNG in their format (PNGs are shrunk with pngquant). A combined PDF has one page per image, in name order.")
+        }
+    }
+
+    private var media: some View {
+        Section {
+            Picker("Video compress quality", selection: $settings.videoQuality) {
+                ForEach(VideoQuality.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Picker("Video compress size", selection: $settings.videoMaxSize) {
+                ForEach(VideoMaxSize.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Picker("Audio compress bit rate", selection: $settings.audioBitRate) {
+                ForEach([96, 128, 160, 192, 256], id: \.self) { Text("\($0) kbps").tag($0) }
             }
             Picker("GIF width", selection: $settings.gifWidth) {
                 ForEach([320, 480, 640, 800, 1080], id: \.self) { Text("\($0) pixels").tag($0) }
@@ -188,12 +238,14 @@ struct SettingsView: View {
             Picker("GIF frame rate", selection: $settings.gifFPS) {
                 ForEach([10, 12, 15, 20, 24], id: \.self) { Text("\($0) frames per second").tag($0) }
             }
+            Picker("GIF length", selection: $settings.gifMaxSeconds) {
+                ForEach([5, 10, 15, 30, 60], id: \.self) { Text("First \($0) seconds").tag($0) }
+                Text("Whole video").tag(0)
+            }
         } header: {
-            Text("Quality")
+            Text("Video and audio")
         } footer: {
-            Text("Higher quality means bigger files. Compress also shrinks the pictures inside PDFs.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            footnote("Compress never aims above the original's bit rate, and a result that isn't smaller is thrown away. GIFs grow fast: a long one can be hundreds of megabytes.")
         }
     }
 
@@ -214,22 +266,12 @@ struct SettingsView: View {
             if let error = launch.lastError {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
-
-            LabeledContent("ffmpeg") {
-                HStack {
-                    if let url = settings.ffmpegURL {
-                        Label(url.path, systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    } else {
-                        Label("Not found", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Button("How to Install…", action: onShowFFmpegHelp)
-                    }
-                }
+            Picker("Convert at the same time", selection: $settings.maxConcurrentJobs) {
+                ForEach(1...4, id: \.self) { Text($0 == 1 ? "1 file" : "\($0) files").tag($0) }
             }
+            toolStatus("ffmpeg", url: settings.ffmpegURL, missingAction: onShowFFmpegHelp)
             TextField("Custom ffmpeg location", text: $settings.ffmpegPath, prompt: Text("Automatic"))
+            toolStatus("pngquant", url: settings.pngquantURL, missingAction: nil)
         }
     }
 
@@ -238,12 +280,49 @@ struct SettingsView: View {
     private var glassBinding: Binding<Double> {
         Binding(
             get: { Double(settings.glassLevel.rawValue) },
-            set: { settings.glassLevel = GlassLevel(rawValue: Int($0.rounded())) ?? GlassLevel.defaultLevel }
+            set: { settings.glassLevel = GlassLevel(rawValue: Int($0.rounded())) ?? .defaultLevel }
         )
     }
 
     private func playSample() {
-        local.soundPreview.playSound(named: settings.hoverSoundName, volume: settings.hoverSoundVolume)
+        state.soundPreview.playSound(named: settings.hoverSoundName, volume: settings.hoverSoundVolume)
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.message = "Choose where Pinwheel saves new files."
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.customFolderPath = url.path
+        }
+    }
+
+    private func toolStatus(_ name: String, url: URL?, missingAction: (() -> Void)?) -> some View {
+        LabeledContent(name) {
+            HStack {
+                if let url {
+                    Label(url.path, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Label("Not installed (brew install \(name))", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    if let missingAction {
+                        Button("How to Install…", action: missingAction)
+                    }
+                }
+            }
+        }
+    }
+
+    private func footnote(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
     }
 
     private func step(_ number: Int, _ text: LocalizedStringKey) -> some View {
@@ -270,17 +349,10 @@ struct SettingsView: View {
     }
 }
 
-/// The Settings window's own bits of state.
-@MainActor
-private final class LocalState: ObservableObject {
-    @Published var confirmReset = false
-    let soundPreview = HoverFeedback()
-}
-
 /// A live wheel over a colorful picture, so the glass can be seen changing.
 private struct GlassPreview: View {
-    @ObservedObject var settings: SettingsStore
-    @StateObject private var model = WheelModel.sample()
+    var settings: SettingsStore
+    var model: WheelModel
 
     var body: some View {
         ZStack {
@@ -331,7 +403,6 @@ private struct PreviewBackdrop: View {
 }
 
 /// Hosts the settings in a normal window.
-@MainActor
 final class SettingsWindowController: NSWindowController {
     init(view: SettingsView) {
         let hosting = NSHostingController(rootView: view)
@@ -339,7 +410,7 @@ final class SettingsWindowController: NSWindowController {
         window.title = "Pinwheel Settings"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 560, height: 760))
+        window.setContentSize(NSSize(width: 580, height: 780))
         window.center()
         super.init(window: window)
     }

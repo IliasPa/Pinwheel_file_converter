@@ -3,6 +3,59 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v0.5 — 2026-10-02
+
+**Redesigned**
+- **Liquid Glass, done properly.** The whole wheel is now one piece of glass,
+  with the icons, labels and thin dividers inside it as its content (so
+  Liquid Glass keeps them legible). The gray wedge fills that made it look
+  like frosted plastic are gone; only the chosen wedge is colored. The five
+  steps are now: Frosted, Tinted Glass, Liquid Glass, Clear Glass (with a
+  light shade) and Crystal (fully clear). Crystal is the clearest version of
+  the same wheel instead of separate bubbles. The progress window uses the
+  same glass.
+
+**Compress, Resize and friends**
+- **Compress checks its result.** If the file isn't clearly smaller (at least
+  3%), nothing is saved and the progress window says "Already as small as it
+  gets".
+- **PNGs stay PNG.** Compress shrinks them with pngquant (installed with
+  Homebrew). JPEG and HEIC keep their format too; TIFF, BMP and RAW become HEIC.
+- **Video Compress settings:** quality (Smallest file / Balanced / Best
+  quality) and size (keep the original size, 4K, 1080p, 720p). It no longer
+  shrinks 4K videos to 1080p behind your back, never aims above the
+  original's bit rate, and copies an already-small soundtrack as it is.
+- **Resize settings:** 25%, 50%, 75%, or fit within 1280/1920/2560/3840
+  pixels. The wedge shows the choice ("Fit 1920 px"); images already small
+  enough are left alone.
+- **GIF length limit:** GIFs from videos use the first 5/10/15/30/60 seconds
+  or the whole video (default 15 seconds).
+- **Several images → one PDF:** dropping several images on PDF makes one
+  PDF with a page per image, in name order (can be switched off).
+- **Read-only folders:** if the original's folder can't be written to (a disk
+  image, a read-only share), the file is saved in Downloads and you're told.
+- **Choose where files go:** next to the original, Downloads, or a folder.
+
+**Extras**
+- Notification when a conversion of 10 seconds or more finishes (click it to
+  see the files).
+- Every finished job shows its size before and after.
+- Audio Compress bit rate and "files at the same time" are settings now.
+- Settings shows whether pngquant is installed.
+
+**Cleaner code**
+- Each job is planned once (format, name, folder) and the converters just
+  follow the plan; planning now happens in the background, not when you drop.
+- One shared "try Apple's frameworks, then ffmpeg" helper instead of two copies.
+- Fixed numbers (bit rates, PDF picture resolution, parallel jobs) moved into
+  the options and Settings.
+- Minimum macOS is now 26: no more version checks, Apple's newer
+  video-export API, `@Observable` models, Swift 6 language mode with the app
+  code on the main thread by default.
+- The app code is a library (`PinwheelUI`), so it has its own tests (job
+  queue, settings, wheel labels, drawing at every glass level).
+- At most ~10 progress updates a second per job.
+
 ## v0.4 — 2026-10-02
 
 **Fixed**

@@ -7,7 +7,6 @@ import PinwheelCore
 /// How it knows a file drag started: macOS puts dragged items on a special
 /// "drag" pasteboard. If that pasteboard changes between mouse-down and the
 /// first mouse-dragged event, a new drag began, and we can read its file URLs.
-@MainActor
 final class DragMonitor {
     /// The wheel should appear for these files, at this screen point.
     var onShow: ((_ urls: [URL], _ mode: WheelMode, _ location: NSPoint) -> Void)?

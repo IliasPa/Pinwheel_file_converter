@@ -2,29 +2,8 @@ import AVFoundation
 import Foundation
 import ImageIO
 
-/// The Option+Shift tools: Compress, Resize 50%, Strip Info, Get Audio.
+/// The Option+Shift tools: Compress, Resize, Strip Info, Get Audio.
 enum ToolConverter {
-    /// The extension of a tool's output, e.g. a PNG with transparency
-    /// compresses to HEIC, an opaque one to JPEG.
-    static func outputExtension(for tool: ToolAction, file: SourceFile) -> String {
-        let ext = file.url.pathExtension.lowercased()
-        switch (file.kind, tool) {
-        case (.image, .compress):
-            if file.format == .jpeg || file.format == .heic { return ext }
-            return ImageTools.hasAlpha(file.url) ? OutputFormat.heic.fileExtension : OutputFormat.jpeg.fileExtension
-        case (.image, _):
-            return ImageTools.canWriteOwnFormat(file) ? ext : OutputFormat.png.fileExtension
-        case (.video, .compress):
-            return OutputFormat.mp4.fileExtension
-        case (.video, .extractAudio), (.audio, .compress):
-            return OutputFormat.m4a.fileExtension
-        case (.pdf, _):
-            return OutputFormat.pdf.fileExtension
-        default:
-            return ext
-        }
-    }
-
     /// Containers AVFoundation can re-save with the metadata removed.
     static let avVideoContainers: [String: AVFileType] = ["mov": .mov, "mp4": .mp4, "m4v": .m4v, "3gp": .mobile3GPP]
     static let avAudioContainers: [String: AVFileType] = [
@@ -44,20 +23,25 @@ enum ToolConverter {
     static func run(
         _ tool: ToolAction,
         file: SourceFile,
+        plan: OutputPlan,
         destination: URL,
         options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         switch file.kind {
         case .image:
+            guard let format = plan.format else { throw ConversionError.unsupported(destination.pathExtension.uppercased()) }
             progress(0.1)
-            try ImageTools.run(tool, source: file.url, destination: destination, options: options)
+            try await ImageTools.run(tool, source: file.url, format: format, destination: destination, options: options)
         case .pdf:
             progress(0.1)
             switch tool {
-            case .compress: try PDFConverter.compress(file.url, destination: destination, quality: options.compressQuality)
-            case .stripMetadata: try PDFConverter.stripMetadata(file.url, destination: destination)
-            default: throw ConversionError.unsupported("\(tool.title) for PDFs")
+            case .compress:
+                try PDFConverter.compress(file.url, destination: destination, quality: options.compressQuality, dpi: options.pdfImageDPI)
+            case .stripMetadata:
+                try PDFConverter.stripMetadata(file.url, destination: destination)
+            default:
+                throw ConversionError.unsupported("\(tool.title) for PDFs")
             }
         case .video, .audio:
             try await MediaTools.run(tool, file: file, destination: destination, options: options, progress: progress)
@@ -70,32 +54,23 @@ enum ToolConverter {
 // MARK: - Images
 
 enum ImageTools {
-    static func run(_ tool: ToolAction, source: URL, destination: URL, options: ConversionOptions) throws {
-        guard let format = OutputFormat.matching(destination) else {
-            throw ConversionError.unsupported(destination.pathExtension.uppercased())
-        }
+    static func run(_ tool: ToolAction, source: URL, format: OutputFormat, destination: URL, options: ConversionOptions) async throws {
         let src = try ImageConverter.open(source)
         if CGImageSourceGetCount(src) > 1, CGImageSourceGetType(src) as String? == OutputFormat.gif.utType.identifier {
             throw ConversionError.failed("\(tool.title) doesn't work on animated GIFs yet.")
         }
         switch tool {
-        case .compress: try compress(src, to: destination, format: format, quality: options.compressQuality)
-        case .resizeHalf: try resizeHalf(src, to: destination, format: format, options: options)
-        case .stripMetadata: try stripMetadata(src, to: destination, format: format)
-        case .extractAudio: throw ConversionError.unsupported("Getting audio from an image")
+        case .compress where format == .png:
+            try await compressPNG(source, src, to: destination, options: options)
+        case .compress:
+            try compress(src, to: destination, format: format, quality: options.compressQuality)
+        case .resize:
+            try resize(src, to: destination, format: format, options: options)
+        case .stripMetadata:
+            try stripMetadata(src, to: destination, format: format)
+        case .extractAudio:
+            throw ConversionError.unsupported("Getting audio from an image")
         }
-    }
-
-    static func hasAlpha(_ url: URL) -> Bool {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(src, CGImageSourceGetPrimaryImageIndex(src), nil) as? [CFString: Any]
-        else { return false }
-        return props[kCGImagePropertyHasAlpha] as? Bool ?? false
-    }
-
-    static func canWriteOwnFormat(_ file: SourceFile) -> Bool {
-        guard let format = file.format else { return false }
-        return [.png, .jpeg, .heic, .tiff, .gif].contains(format)
     }
 
     /// Same pixels, lower quality setting. Metadata is kept.
@@ -114,13 +89,43 @@ enum ImageTools {
         try ImageConverter.finalize(dest, url)
     }
 
-    /// Half the width and height, upright, metadata kept.
-    static func resizeHalf(_ src: CGImageSource, to url: URL, format: OutputFormat, options: ConversionOptions) throws {
+    /// PNG stays PNG. pngquant (if installed) reduces the colors, usually
+    /// shrinking the file a lot with no visible change; without it only a
+    /// lossless re-save is possible, which rarely helps.
+    static func compressPNG(_ source: URL, _ src: CGImageSource, to url: URL, options: ConversionOptions) async throws {
+        guard let pngquant = options.pngquantURL else {
+            let dest = try ImageConverter.makeDestination(url, format: .png)
+            CGImageDestinationAddImageFromSource(dest, src, CGImageSourceGetPrimaryImageIndex(src), nil)
+            try ImageConverter.finalize(dest, url)
+            return
+        }
+        let quality = Int((options.compressQuality * 100).rounded())
+        let result = try await ProcessRunner.run(pngquant, [
+            "--quality=\(max(0, quality - 20))-\(min(100, quality + 25))",
+            "--speed=3", "--strip",
+            "--output", url.path, "--", source.path,
+        ])
+        switch result.status {
+        case 0:
+            return
+        case 98, 99:
+            throw NothingToDo(reason: "This PNG can't get smaller without visible changes, so nothing was saved.")
+        default:
+            let reason = result.stderr.split(whereSeparator: \.isNewline).last.map(String.init) ?? "it stopped with an error"
+            throw ConversionError.failed("pngquant: \(reason)")
+        }
+    }
+
+    /// Resizes as chosen in Settings, upright, metadata kept.
+    static func resize(_ src: CGImageSource, to url: URL, format: OutputFormat, options: ConversionOptions) throws {
         let index = CGImageSourceGetPrimaryImageIndex(src)
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
         let width = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
         let height = properties[kCGImagePropertyPixelHeight] as? Int ?? 0
-        let image = try ImageConverter.orientedImage(src, index: index, maxPixelSize: max(1, max(width, height) / 2))
+        guard let newLongSide = options.resize.newLongSide(from: max(width, height)) else {
+            throw NothingToDo(reason: "Already no bigger than \(options.resize.fitSize ?? 0) pixels, so nothing was changed.")
+        }
+        let image = try ImageConverter.orientedImage(src, index: index, maxPixelSize: newLongSide)
 
         // The new image is already upright, and its size has changed.
         var metadata = ImageConverter.metadata(from: properties)
@@ -210,25 +215,13 @@ enum MediaTools {
     ) async throws {
         if ToolConverter.usesFFmpeg(tool, for: file) {
             guard let ffmpeg = options.ffmpegURL else { throw ConversionError.needsFFmpeg }
-            try await runFFmpeg(tool, file: file, destination: destination, ffmpeg: ffmpeg, progress: progress)
+            try await runFFmpeg(tool, file: file, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
             return
         }
-        do {
+        try await MediaConverter.appleThenFFmpeg(destination: destination, ffmpegURL: options.ffmpegURL) {
             try await runApple(tool, file: file, destination: destination, options: options, progress: progress)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            // Same safety net as conversions: try ffmpeg before giving up.
-            let original = error
-            guard let ffmpeg = options.ffmpegURL else { throw original }
-            try? FileManager.default.removeItem(at: destination)
-            do {
-                try await runFFmpeg(tool, file: file, destination: destination, ffmpeg: ffmpeg, progress: progress)
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                throw original
-            }
+        } ffmpeg: { ffmpeg in
+            try await runFFmpeg(tool, file: file, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
         }
     }
 
@@ -236,15 +229,9 @@ enum MediaTools {
         _ tool: ToolAction, file: SourceFile, destination: URL, options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        let asset = AVURLAsset(url: file.url)
         switch (file.kind, tool) {
         case (.video, .compress):
-            // HEVC at up to 1080p: about half the size of H.264 at the same quality.
-            let hevc = await AVAssetExportSession.compatibility(
-                ofExportPreset: AVAssetExportPresetHEVC1920x1080, with: asset, outputFileType: .mp4
-            )
-            let preset = hevc ? AVAssetExportPresetHEVC1920x1080 : AVAssetExportPresetMediumQuality
-            try await MediaConverter.export(asset, preset: preset, fileType: .mp4, to: destination, progress: progress)
+            try await VideoCompressor.compress(file.url, destination: destination, options: options, progress: progress)
         case (.video, .extractAudio):
             try await MediaConverter.exportAudioM4A(file.url, destination: destination, progress: progress)
         case (.video, .stripMetadata), (.audio, .stripMetadata):
@@ -253,11 +240,11 @@ enum MediaTools {
                 throw ConversionError.needsFFmpeg
             }
             try await MediaConverter.export(
-                asset, preset: AVAssetExportPresetPassthrough, fileType: fileType, to: destination,
-                stripMetadata: true, progress: progress
+                AVURLAsset(url: file.url), preset: AVAssetExportPresetPassthrough, fileType: fileType,
+                to: destination, stripMetadata: true, progress: progress
             )
         case (.audio, .compress):
-            try await AudioCompressor.compress(file.url, destination: destination, bitRate: 128_000, progress: progress)
+            try await AudioCompressor.compress(file.url, destination: destination, bitRate: options.audioBitRate, progress: progress)
         default:
             throw ConversionError.unsupported("\(tool.title) for \(file.url.lastPathComponent)")
         }
@@ -265,21 +252,24 @@ enum MediaTools {
 
     private static func runFFmpeg(
         _ tool: ToolAction, file: SourceFile, destination: URL, ffmpeg: URL,
-        progress: @escaping @Sendable (Double) -> Void
+        options: ConversionOptions, progress: @escaping @Sendable (Double) -> Void
     ) async throws {
+        let audioRate = "\(options.audioBitRate / 1000)k"
         let arguments: [String]
         switch (file.kind, tool) {
         case (.video, .compress):
-            arguments = [
-                "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "medium", "-crf", "28",
-                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-            ]
+            var video = ["-c:v", "libx264", "-preset", "medium", "-crf", "\(options.videoQuality.crf)", "-pix_fmt", "yuv420p"]
+            if let side = options.videoMaxSize.longSide {
+                // Fit inside side×side, keep the shape, never enlarge.
+                video += ["-vf", "scale='min(\(side),iw)':'min(\(side),ih)':force_original_aspect_ratio=decrease:force_divisible_by=2"]
+            }
+            arguments = ["-map", "0:v:0", "-map", "0:a:0?"] + video + ["-c:a", "aac", "-b:a", audioRate, "-movflags", "+faststart"]
         case (.video, .extractAudio):
             arguments = ["-vn", "-c:a", "aac", "-b:a", "256k"]
         case (.video, .stripMetadata):
             arguments = ["-map", "0", "-map_metadata", "-1", "-map_chapters", "-1", "-c", "copy"]
         case (.audio, .compress):
-            arguments = ["-vn", "-c:a", "aac", "-b:a", "128k"]
+            arguments = ["-vn", "-c:a", "aac", "-b:a", audioRate]
         case (.audio, .stripMetadata):
             // Audio only: this also drops embedded cover art.
             arguments = ["-map", "0:a", "-map_metadata", "-1", "-c", "copy"]
@@ -306,31 +296,15 @@ enum AudioCompressor {
         }
         let duration = try await asset.load(.duration).seconds
         let metadata = try await asset.load(.metadata)
-        let descriptions = try await track.load(.formatDescriptions)
-        let stream = descriptions.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee }
-        let channels = max(1, min(Int(stream?.mChannelsPerFrame ?? 2), 2))
-        let sampleRate = min(stream?.mSampleRate ?? 44_100, 48_000)  // AAC's limit
+        let format = try await AudioFormat.of(track)
 
         let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: channels,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: false,
-        ])
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: format.pcmSettings)
         reader.add(output)
 
         let writer = try AVAssetWriter(outputURL: destination, fileType: .m4a)
         writer.metadata = metadata
-        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: channels,
-            AVEncoderBitRateKey: bitRate,
-        ])
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: format.aacSettings(bitRate: bitRate))
         input.expectsMediaDataInRealTime = false
         writer.add(input)
 
@@ -364,5 +338,42 @@ enum AudioCompressor {
         guard writer.status == .completed else {
             throw ConversionError.failed(writer.error?.localizedDescription ?? "Couldn't write the audio.")
         }
+    }
+}
+
+/// Channels and sample rate of a soundtrack, and the settings to read it as
+/// PCM and write it as AAC (which allows at most 2 channels and 48 kHz).
+struct AudioFormat {
+    let channels: Int
+    let sampleRate: Double
+
+    static func of(_ track: AVAssetTrack) async throws -> AudioFormat {
+        let descriptions = try await track.load(.formatDescriptions)
+        let stream = descriptions.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee }
+        return AudioFormat(
+            channels: max(1, min(Int(stream?.mChannelsPerFrame ?? 2), 2)),
+            sampleRate: min(stream?.mSampleRate ?? 44_100, 48_000)
+        )
+    }
+
+    var pcmSettings: [String: Any] {
+        [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: channels,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+    }
+
+    func aacSettings(bitRate: Int) -> [String: Any] {
+        [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: channels,
+            AVEncoderBitRateKey: bitRate,
+        ]
     }
 }

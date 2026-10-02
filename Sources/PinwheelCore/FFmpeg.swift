@@ -1,15 +1,19 @@
 import AVFoundation
 import Foundation
 
-/// Finds and runs ffmpeg, used only for what Apple's frameworks can't do:
-/// MP3 encoding, GIFs from video, and reading MKV/WebM/OGG and similar files.
-public enum FFmpeg {
-    public static let searchPaths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]
-    public static let installCommand = "brew install ffmpeg"
+/// Optional command-line helpers from Homebrew.
+public enum ExternalTool: String, Sendable {
+    /// MP3, GIFs from video, and files macOS can't open (MKV, WebM…).
+    case ffmpeg
+    /// Smaller PNGs that stay PNG.
+    case pngquant
 
-    /// The ffmpeg to use, or nil when none is installed.
-    public static func locate(customPath: String? = nil) -> URL? {
-        var candidates = searchPaths
+    public var installCommand: String { "brew install \(rawValue)" }
+
+    /// The tool to use: `customPath` if it works, else the usual Homebrew
+    /// places. nil when it isn't installed.
+    public func locate(customPath: String? = nil) -> URL? {
+        var candidates = ["/opt/homebrew/bin/\(rawValue)", "/usr/local/bin/\(rawValue)"]
         if let customPath, !customPath.isEmpty {
             candidates.insert((customPath as NSString).expandingTildeInPath, at: 0)
         }
@@ -17,6 +21,17 @@ public enum FFmpeg {
             return URL(fileURLWithPath: path)
         }
         return nil
+    }
+}
+
+/// Runs ffmpeg, used only for what Apple's frameworks can't do:
+/// MP3 encoding, GIFs from video, and reading MKV/WebM/OGG and similar files.
+public enum FFmpeg {
+    public static let installCommand = ExternalTool.ffmpeg.installCommand
+
+    /// The ffmpeg to use, or nil when none is installed.
+    public static func locate(customPath: String? = nil) -> URL? {
+        ExternalTool.ffmpeg.locate(customPath: customPath)
     }
 
     /// Converts `input` into `output`, reporting progress 0...1.

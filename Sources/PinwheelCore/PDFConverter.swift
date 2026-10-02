@@ -10,14 +10,14 @@ enum PDFConverter {
     }
 
     /// One image per page. A one-page PDF becomes a single image; a longer
-    /// one becomes a folder of images. Returns the file or folder written.
+    /// one becomes a folder of images (`destination` is then the folder).
     static func renderPages(
         _ source: URL,
         to format: OutputFormat,
         destination: URL,
         options: ConversionOptions,
         progress: @Sendable (Double) -> Void
-    ) throws -> URL {
+    ) throws {
         let document = try open(source)
         let count = document.pageCount
         guard count > 0 else { throw ConversionError.failed("\(source.lastPathComponent) has no pages.") }
@@ -39,17 +39,16 @@ enum PDFConverter {
             try ImageConverter.write(image, to: url, format: format, options: options)
             progress(Double(index + 1) / Double(count))
         }
-        return destination
     }
 
     /// Re-saves the PDF with its pictures as JPEGs at screen resolution (like
     /// Preview's "Reduce File Size", but at a quality you choose). Text and
     /// drawings stay sharp and selectable.
-    static func compress(_ source: URL, destination: URL, quality: Double) throws {
+    static func compress(_ source: URL, destination: URL, quality: Double, dpi: Double) throws {
         let document = try open(source)
         // PDFKit's own "save images as JPEG" options don't change the file on
         // current macOS, so apply a Quartz filter while saving instead.
-        guard let filter = reduceSizeFilter(quality: quality) else {
+        guard let filter = reduceSizeFilter(quality: quality, dpi: dpi) else {
             throw ConversionError.failed("macOS's PDF size filter isn't available.")
         }
         let written = document.write(to: destination, withOptions: [
@@ -67,7 +66,7 @@ enum PDFConverter {
         }
     }
 
-    static func reduceSizeFilter(quality: Double) -> QuartzFilter? {
+    static func reduceSizeFilter(quality: Double, dpi: Double) -> QuartzFilter? {
         let properties: [String: Any] = [
             "Name": "Pinwheel Smaller PDF",
             "FilterType": 1,
@@ -76,7 +75,7 @@ enum PDFConverter {
                 "Compression Quality": min(max(quality, 0.1), 1),
                 "ImageCompression": "ImageJPEGCompress",
                 "ImageScaleSettings": [
-                    "ImageResolution": 144,
+                    "ImageResolution": dpi,
                     "ImageScaleInterpolate": true,
                     "ImageSizeMax": 2400,
                     "ImageSizeMin": 0,

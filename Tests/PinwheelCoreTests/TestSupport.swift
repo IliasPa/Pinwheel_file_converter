@@ -44,6 +44,37 @@ enum Fixtures {
         guard CGImageDestinationFinalize(dest) else { throw CocoaError(.fileWriteUnknown) }
     }
 
+    /// A photo-like picture: smooth color gradients with fine grain, which
+    /// compresses the way real photos do.
+    static func makePhoto(
+        at url: URL, width: Int = 800, height: Int = 600, type: UTType = .png, alpha: Bool = false,
+        properties: [CFString: Any] = [:]
+    ) throws {
+        let ctx = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: (alpha ? CGImageAlphaInfo.premultipliedLast : CGImageAlphaInfo.noneSkipLast).rawValue
+        )!
+        let data = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        var seed: UInt32 = 12_345
+        for y in 0..<height {
+            for x in 0..<width {
+                seed = seed &* 1_664_525 &+ 1_013_904_223
+                let grain = Int(seed >> 28) - 8
+                let i = y * ctx.bytesPerRow + x * 4
+                let clear = alpha && x < width / 4  // a see-through strip on the left
+                data[i] = clear ? 0 : UInt8(clamping: x * 255 / width + grain)
+                data[i + 1] = clear ? 0 : UInt8(clamping: y * 255 / height + grain)
+                data[i + 2] = clear ? 0 : UInt8(clamping: 160 + grain)
+                data[i + 3] = clear ? 0 : 255
+            }
+        }
+        let dest = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil)!
+        let settings = properties.merging([kCGImageDestinationLossyCompressionQuality: 1.0]) { current, _ in current }
+        CGImageDestinationAddImage(dest, ctx.makeImage()!, settings as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { throw CocoaError(.fileWriteUnknown) }
+    }
+
     struct ImageInfo {
         let type: String
         let width: Int

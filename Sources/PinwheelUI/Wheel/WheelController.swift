@@ -3,7 +3,6 @@ import SwiftUI
 import PinwheelCore
 
 /// Shows, moves and hides the wheel panel, and turns drops into jobs.
-@MainActor
 final class WheelController {
     /// Room around the wheel for its shadow and for a hovered wedge popping out.
     static let padding: CGFloat = 36
@@ -33,7 +32,7 @@ final class WheelController {
     func show(urls: [URL], mode: WheelMode, at location: NSPoint) {
         isDemo = false
         files = urls.map(SourceFile.init)
-        model.load(files: files, mode: mode, availability: availability)
+        model.load(files: files, mode: mode, options: settings.conversionOptions, availability: availability)
         present(at: location)
     }
 
@@ -42,7 +41,7 @@ final class WheelController {
     func showDemo(avoiding frame: NSRect?) {
         isDemo = true
         files = [SourceFile.sample]
-        model.load(files: files, mode: .convert) { _, _ in .available }
+        model.load(files: files, mode: .convert, options: settings.conversionOptions) { _, _ in .available }
 
         let screen = NSScreen.main ?? NSScreen.screens.first
         var location = NSPoint(x: screen?.visibleFrame.midX ?? 600, y: screen?.visibleFrame.midY ?? 400)
@@ -59,7 +58,7 @@ final class WheelController {
     func setMode(_ mode: WheelMode) {
         guard mode != model.mode, !isDemo else { return }
         model.hovered = nil
-        model.load(files: files, mode: mode, availability: availability)
+        model.load(files: files, mode: mode, options: settings.conversionOptions, availability: availability)
     }
 
     /// Hides the wheel. When several hide requests overlap, the earliest wins.
@@ -70,7 +69,7 @@ final class WheelController {
         hideGeneration += 1
         let generation = hideGeneration
 
-        Task { @MainActor in
+        Task {
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             guard generation == self.hideGeneration else { return }
             self.model.isPresented = false
@@ -106,7 +105,7 @@ final class WheelController {
 
         // Start from the "hidden" state, then spring in on the next frame.
         model.isPresented = false
-        Task { @MainActor in self.model.isPresented = true }
+        Task { self.model.isPresented = true }
     }
 
     private func item(for hit: WheelLayout.Hit) -> WheelItem? {

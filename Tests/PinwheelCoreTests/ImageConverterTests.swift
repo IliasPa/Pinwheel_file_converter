@@ -7,15 +7,7 @@ import UniformTypeIdentifiers
 
 struct ImageConverterTests {
     private func convert(_ source: URL, to format: OutputFormat, in folder: TempFolder) async throws -> URL {
-        let file = SourceFile(url: source)
-        let plan = ConversionEngine.plan(for: file, action: .convert(format))
-        let naming = OutputNaming()
-        let destination = naming.reserve(for: source, suffix: plan.suffix, fileExtension: plan.fileExtension)
-        let outputs = try await ConversionEngine.run(
-            file: file, action: .convert(format), destination: destination, options: ConversionOptions()
-        ) { _ in }
-        #expect(outputs == [destination])
-        return destination
+        try await runConversion(source, .convert(format))
     }
 
     @Test(arguments: [OutputFormat.jpeg, .heic, .tiff, .gif, .png])
@@ -81,13 +73,9 @@ struct ImageConverterTests {
         let folder = try TempFolder()
         let source = folder.file("broken.png")
         try Data("not an image".utf8).write(to: source)
-        let destination = folder.file("broken (converted).jpg")
         await #expect(throws: ConversionError.self) {
-            try await ConversionEngine.run(
-                file: SourceFile(url: source), action: .convert(.jpeg),
-                destination: destination, options: ConversionOptions()
-            ) { _ in }
+            try await runConversion(source, .convert(.jpeg))
         }
-        #expect(!FileManager.default.fileExists(atPath: destination.path))
+        #expect(!FileManager.default.fileExists(atPath: folder.file("broken (converted).jpg").path))
     }
 }

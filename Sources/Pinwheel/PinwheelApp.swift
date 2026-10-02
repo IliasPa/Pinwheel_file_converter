@@ -1,7 +1,7 @@
 import AppKit
+import PinwheelUI
 
 @main
-@MainActor
 enum PinwheelApp {
     static func main() {
         let app = NSApplication.shared

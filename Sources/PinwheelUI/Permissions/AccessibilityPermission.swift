@@ -1,21 +1,22 @@
 import AppKit
 import ApplicationServices
+import Observation
 
 /// Tracks whether macOS lets Pinwheel watch the mouse and modifier keys in
 /// other apps (System Settings › Privacy & Security › Accessibility).
 ///
 /// It keeps checking for as long as the app runs, so every place that shows
 /// the status (Settings, the menu) updates as soon as you flip the switch.
-@MainActor
-final class AccessibilityPermission: ObservableObject {
-    @Published private(set) var isTrusted: Bool = AXIsProcessTrusted()
-    @Published private(set) var resetMessage: String?
+@Observable
+final class AccessibilityPermission {
+    private(set) var isTrusted: Bool = AXIsProcessTrusted()
+    private(set) var resetMessage: String?
 
     /// Called whenever the permission is turned on or off.
-    var onChange: ((Bool) -> Void)?
+    @ObservationIgnored var onChange: ((Bool) -> Void)?
 
-    private var timer: Timer?
-    private var observer: NSObjectProtocol?
+    @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var observer: NSObjectProtocol?
 
     /// Starts watching. Checks every second while the permission is missing
     /// (every 3 seconds once it's granted, to notice if it's taken away), and

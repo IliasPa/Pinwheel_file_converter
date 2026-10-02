@@ -1,7 +1,6 @@
 import AppKit
 
 /// Owns the menu-bar icon and rebuilds its menu each time it opens.
-@MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     struct Actions {
         var showSettings: @MainActor () -> Void
