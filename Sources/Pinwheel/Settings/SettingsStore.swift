@@ -7,6 +7,10 @@ final class SettingsStore: ObservableObject {
     private enum Key {
         static let glassLevel = "glassLevel"
         static let hapticFeedback = "hapticFeedback"
+        static let hoverSound = "hoverSound"
+        static let hoverSoundName = "hoverSoundName"
+        static let hoverSoundVolume = "hoverSoundVolume"
+        static let moveOriginalToTrash = "moveOriginalToTrash"
         static let showProgressWindow = "showProgressWindow"
         static let revealInFinder = "revealInFinder"
         static let jpegQuality = "jpegQuality"
@@ -23,6 +27,12 @@ final class SettingsStore: ObservableObject {
 
     @Published var glassLevel: GlassLevel { didSet { defaults.set(glassLevel.rawValue, forKey: Key.glassLevel) } }
     @Published var hapticFeedback: Bool { didSet { defaults.set(hapticFeedback, forKey: Key.hapticFeedback) } }
+    @Published var hoverSound: Bool { didSet { defaults.set(hoverSound, forKey: Key.hoverSound) } }
+    @Published var hoverSoundName: String { didSet { defaults.set(hoverSoundName, forKey: Key.hoverSoundName) } }
+    /// 0...1
+    @Published var hoverSoundVolume: Double { didSet { defaults.set(hoverSoundVolume, forKey: Key.hoverSoundVolume) } }
+    /// After a successful conversion, put the original file in the Trash.
+    @Published var moveOriginalToTrash: Bool { didSet { defaults.set(moveOriginalToTrash, forKey: Key.moveOriginalToTrash) } }
     @Published var showProgressWindow: Bool { didSet { defaults.set(showProgressWindow, forKey: Key.showProgressWindow) } }
     @Published var revealInFinder: Bool { didSet { defaults.set(revealInFinder, forKey: Key.revealInFinder) } }
     @Published var jpegQuality: Double { didSet { defaults.set(jpegQuality, forKey: Key.jpegQuality) } }
@@ -40,6 +50,10 @@ final class SettingsStore: ObservableObject {
         defaults.register(defaults: [
             Key.glassLevel: GlassLevel.defaultLevel.rawValue,
             Key.hapticFeedback: true,
+            Key.hoverSound: true,
+            Key.hoverSoundName: "Tink",
+            Key.hoverSoundVolume: 0.5,
+            Key.moveOriginalToTrash: false,
             Key.showProgressWindow: true,
             Key.revealInFinder: true,
             Key.jpegQuality: factory.jpegQuality,
@@ -52,6 +66,10 @@ final class SettingsStore: ObservableObject {
         ])
         glassLevel = GlassLevel(rawValue: defaults.integer(forKey: Key.glassLevel)) ?? GlassLevel.defaultLevel
         hapticFeedback = defaults.bool(forKey: Key.hapticFeedback)
+        hoverSound = defaults.bool(forKey: Key.hoverSound)
+        hoverSoundName = defaults.string(forKey: Key.hoverSoundName) ?? "Tink"
+        hoverSoundVolume = defaults.double(forKey: Key.hoverSoundVolume)
+        moveOriginalToTrash = defaults.bool(forKey: Key.moveOriginalToTrash)
         showProgressWindow = defaults.bool(forKey: Key.showProgressWindow)
         revealInFinder = defaults.bool(forKey: Key.revealInFinder)
         jpegQuality = defaults.double(forKey: Key.jpegQuality)
@@ -83,6 +101,10 @@ final class SettingsStore: ObservableObject {
         let factory = Self.factory
         glassLevel = GlassLevel.defaultLevel
         hapticFeedback = true
+        hoverSound = true
+        hoverSoundName = "Tink"
+        hoverSoundVolume = 0.5
+        moveOriginalToTrash = false
         showProgressWindow = true
         revealInFinder = true
         jpegQuality = factory.jpegQuality

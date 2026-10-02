@@ -25,6 +25,8 @@ final class Job: ObservableObject, Identifiable {
     @Published fileprivate(set) var progress: Double = 0
     @Published fileprivate(set) var outputs: [URL] = []
     @Published fileprivate(set) var outputSize: Int64?
+    /// True once the original was moved to the Trash (when that's switched on).
+    @Published fileprivate(set) var originalTrashed = false
     fileprivate var task: Task<Void, Never>?
 
     init(batch: UUID, file: SourceFile, action: WheelAction, destination: URL) {
@@ -71,6 +73,8 @@ final class JobQueue: ObservableObject {
 
     var maxConcurrent = 2
     var optionsProvider: () -> ConversionOptions = { ConversionOptions() }
+    /// Whether to move each original to the Trash after a successful job.
+    var shouldTrashOriginals: () -> Bool = { false }
     /// Called when every job from one drop is done (finished, failed or cancelled).
     var onBatchFinished: (([Job]) -> Void)?
     /// Called whenever jobs are added, start, end, or are cleared.
@@ -140,6 +144,9 @@ final class JobQueue: ObservableObject {
                 job.outputSize = outputs.compactMap(Job.size(of:)).reduce(0, +)
                 job.progress = 1
                 job.state = .finished
+                if self?.shouldTrashOriginals() == true {
+                    self?.trashOriginal(of: job)
+                }
             } catch {
                 job.state = Task.isCancelled || error is CancellationError
                     ? .cancelled
@@ -147,6 +154,18 @@ final class JobQueue: ObservableObject {
             }
             OutputNaming.shared.release(destination)
             self?.jobDidEnd(job)
+        }
+    }
+
+    /// Moves the original to the Trash (you can put it back from there), but
+    /// only once the new file exists and no other job still needs the original.
+    private func trashOriginal(of job: Job) {
+        let source = job.file.url
+        let stillNeeded = jobs.contains { $0 !== job && !$0.isDone && $0.file.url == source }
+        let outputsExist = !job.outputs.isEmpty && job.outputs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }
+        guard !stillNeeded, outputsExist else { return }
+        if (try? FileManager.default.trashItem(at: source, resultingItemURL: nil)) != nil {
+            job.originalTrashed = true
         }
     }
 

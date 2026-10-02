@@ -110,29 +110,14 @@ struct FrostedBackdrop: NSViewRepresentable {
 }
 
 extension View {
-    /// Clear Liquid Glass in `shape` (Crystal level). Does nothing when
-    /// `enabled` is false or on macOS before 26.
+    /// A piece of clear Liquid Glass behind this view, cut to `shape`
+    /// (used by the Crystal level). No effect on macOS before 26.
     @ViewBuilder
-    func crystalGlass(enabled: Bool, in shape: some Shape) -> some View {
-        if #available(macOS 26, *), enabled {
+    func clearGlass(in shape: some Shape) -> some View {
+        if #available(macOS 26, *) {
             self.glassEffect(.clear, in: shape)
         } else {
             self
-        }
-    }
-}
-
-/// Groups glass shapes so they render together and flow into each other
-/// when they move (Crystal level). A plain container otherwise.
-struct GlassGroup<Content: View>: View {
-    var enabled: Bool
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        if #available(macOS 26, *), enabled {
-            GlassEffectContainer(spacing: 0) { content }
-        } else {
-            content
         }
     }
 }

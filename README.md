@@ -10,6 +10,8 @@ converts them. Everything happens on your Mac: nothing is uploaded.
   Resize 50%, Strip Info, Get Audio).
 - Let go of Shift, or drop in the middle or outside the wheel: nothing happens.
 
+What changed in each version is listed in [CHANGES.md](CHANGES.md).
+
 The new file is saved **next to the original**. Pinwheel never overwrites
 anything: you get `photo (converted).png`, then `photo (converted 2).png`, and
 so on. The tools use their own names, like `photo (compressed).jpg` or
@@ -67,31 +69,50 @@ quit a few other menu-bar apps if you can't see it.
 ## Give Pinwheel the Accessibility permission
 
 Pinwheel has to notice the Shift key and the mouse while you drag in Finder.
-macOS only allows that with the **Accessibility** permission. The first time
-Pinwheel starts, a welcome window walks you through it:
+macOS only allows that with the **Accessibility** permission. Everything about
+it lives at the top of **Settings**, in the **Permission** section. If the
+permission is missing when Pinwheel starts, Settings opens by itself (and the
+menu shows "⚠︎ Accessibility permission needed…", which opens it too).
 
-1. Click **Open System Settings** in the welcome window.
+1. Click **Open System Settings** in the Permission section.
 2. In **Privacy & Security › Accessibility**, find **Pinwheel** and turn its
    switch **on**. macOS may ask for your password or Touch ID.
 3. If Pinwheel isn't in the list, click **+**, choose Pinwheel (in
    Applications, or in `~/Library/Developer/Pinwheel/`), and click **Open**.
-4. Go back to the welcome window. It turns green when everything is ready.
+4. Go back to Settings. The section turns green by itself within a second.
 
-You can open this window again at any time: menu-bar icon › **Permissions Help…**
+**The switch is on, but the wheel doesn't appear?** That's an old entry from
+an earlier build. Click **Reset Permission…** in the Permission section: it
+removes the old entry and asks again. Then switch Pinwheel on once more.
 
 ---
 
-## Keep the permission after every rebuild (do this once)
+## Keep the permission after every rebuild
 
-Without a paid developer account, each build is signed "to run locally". macOS
-treats every new build as a **different app**, so it forgets the Accessibility
-permission. The switch may still look **on**, but the wheel stops appearing.
+Without a paid developer account, each build is normally signed "to run
+locally". macOS treats every such build as a **different app**, so it forgets
+the Accessibility permission. The fix is a free **self-signed certificate**
+called `Pinwheel Local Signing`: the build script uses it automatically, and
+macOS then recognizes every new build as the same app.
 
-The fix is a free **self-signed certificate**. Pinwheel's build script uses it
-automatically when it exists, and macOS then recognizes every new build as
-the same app.
+**On this Mac the certificate already exists** (it was created in your login
+keychain in v0.4, valid until 2036). One step is left, and only you can do it,
+because macOS asks *you* before codesign may use a new certificate:
 
-### Create the certificate (about 5 minutes)
+1. Open **Terminal**, go to the project folder, and run `make install`.
+2. A dialog asks whether **codesign** may use the key "Pinwheel Local
+   Signing". Enter your **Mac login password** and click **Always Allow**.
+3. The build should say `Signing with your certificate "Pinwheel Local Signing"`.
+4. Give the permission **one last time**: open Settings › Permission and click
+   **Reset Permission…** (or remove the old Pinwheel entries with **−** in
+   System Settings), then switch Pinwheel on.
+
+From now on, rebuilds keep the permission. If a build ever prints
+`macOS didn't let codesign use "Pinwheel Local Signing" yet`, it still
+works (signed the old way); just run `make install` in Terminal and click
+**Always Allow** again.
+
+### Making the certificate yourself (another Mac, or after deleting it)
 
 1. Open **Keychain Access**. It's hidden on recent macOS, so press **⌘ Space**,
    type `Keychain Access`, and press Return. If that doesn't find it: in
@@ -103,22 +124,11 @@ the same app.
    - **Identity Type:** Self Signed Root
    - **Certificate Type:** Code Signing
 4. Click **Create**. If a warning says the certificate is self-signed, click
-   **Continue**. Then click **Done**.
-5. Close Keychain Access.
+   **Continue**. Then click **Done**, and follow the four steps above.
 
-### Use it
-
-1. In Terminal, run `make install`. The build should say
-   `Signing with your certificate "Pinwheel Local Signing"`.
-2. macOS may ask whether **codesign** can use the key in your keychain. Enter
-   your Mac login password and click **Always Allow**.
-3. Give the permission **one last time**. In **System Settings › Privacy &
-   Security › Accessibility**, select every old **Pinwheel** entry and click
-   **−**, then add Pinwheel again (the welcome window's button does this for
-   you) and switch it on.
-
-From now on, rebuilds keep the permission. (If you ever delete or recreate
-the certificate, repeat step 3.)
+You can see the certificate in Keychain Access under **login › My
+Certificates**. It's normal that it says "not trusted": that only matters for
+apps you give to other people.
 
 ---
 
@@ -178,12 +188,18 @@ Menu-bar icon › **Settings…** (or ⌘, while the menu is open):
   Glass · 5 Crystal. The preview updates as you move the slider, and
   **Show on Desktop** shows the real wheel over your desktop for 3 seconds.
   Liquid Glass needs macOS 26+; older systems always use Frosted.
-- **Trackpad tick:** a gentle haptic tick when you move onto a wedge.
-- **After converting:** show the progress window; show new files in Finder.
+- **Permission:** whether Accessibility is on, what to do if it isn't, and
+  **Reset Permission…** for stale entries. It updates by itself.
+- **Wheel feedback:** a click sound when the pointer moves onto a format
+  (choose Tink, Pop, Bottle, Morse, Purr or Frog, set the volume, press Test),
+  and a trackpad vibration (Force Touch trackpads, felt only while your
+  finger is on it).
+- **After converting:** show the progress window; show new files in Finder;
+  **move the original to the Trash** (off by default; it happens only after
+  the new file is saved, and you can put it back from the Trash).
 - **Quality:** JPEG, HEIC and Compress quality; PDF page resolution; GIF size
   and frame rate.
-- **System:** launch at login, Accessibility status, where ffmpeg is (or a
-  custom location).
+- **System:** launch at login, where ffmpeg is (or a custom location).
 - **Reset to Defaults.**
 
 ---
@@ -191,10 +207,15 @@ Menu-bar icon › **Settings…** (or ⌘, while the menu is open):
 ## Troubleshooting
 
 **The wheel doesn't appear.**
-Check the menu-bar icon: if it shows "⚠︎ Accessibility permission needed",
-follow that. If the switch in System Settings is already on, the permission
-belongs to an older build: remove Pinwheel with **−** and add it again. The
-certificate section above stops this from happening.
+Open Settings and look at the Permission section at the top. If it's orange,
+follow its steps. If the switch in System Settings is already on but the
+section stays orange, the entry belongs to an older build: click **Reset
+Permission…** and switch Pinwheel on again. The certificate section above
+stops this from happening.
+
+**No click sound.**
+Check Settings › Wheel feedback (Click sound on, volume up) and your Mac's
+sound volume. The sound plays only on formats you can use, not on gray ones.
 
 **The wheel appears but a format is gray.**
 Hover it: the middle of the wheel says why (usually "Needs ffmpeg").
@@ -244,6 +265,9 @@ Accessibility** and from **Login Items**. Its settings are stored in
   (video, audio, FLAC), PDFKit with a Quartz filter (PDFs). ffmpeg is used
   only for MP3, GIFs from video, and files macOS can't open. If macOS fails on
   a file, ffmpeg gets a second try.
+- In the macOS 27 SDK, SwiftUI's `@State` is a macro whose plugin only comes
+  with Xcode, so this project uses `@StateObject` (an ordinary property
+  wrapper) for view state instead.
 - Build warnings about `search path '/Library/Developer/CommandLineTools/Developer/…' not found`
   come from Swift Package Manager itself when Xcode isn't installed. They're
   harmless, and the scripts hide exactly that line.

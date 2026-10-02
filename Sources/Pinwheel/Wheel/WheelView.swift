@@ -35,17 +35,24 @@ struct WheelView: View {
                     .strokeBorder(Color.primary.opacity(level == .frosted ? 0.12 : 0.06), lineWidth: 0.5)
             }
 
-            GlassGroup(enabled: isCrystal) {
-                ZStack {
-                    wedges
-                        .id(model.mode)  // cross-fade when switching between formats and tools
-                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
-                    HubView(model: model, crystal: isCrystal)
+            Group {
+                if isCrystal {
+                    CrystalChoices(model: model)
+                } else {
+                    ZStack {
+                        wedges
+                            .id(model.mode)  // cross-fade when switching between formats and tools
+                            .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                        HubView(model: model, crystal: false)
+                    }
                 }
             }
             .scaleEffect(model.isPresented ? 1 : (model.confirmed ? 1.08 : 0.7))
-            .rotationEffect(.degrees(model.isPresented || model.confirmed ? 0 : -14))
-            .opacity(model.isPresented ? 1 : 0)
+            // Crystal's glass pieces only grow in; the window itself does the
+            // fading. Keeping fades and spins off the glass is the safest way
+            // to draw it.
+            .rotationEffect(.degrees(isCrystal || model.isPresented || model.confirmed ? 0 : -14))
+            .opacity(isCrystal || model.isPresented ? 1 : 0)
             .animation(.spring(response: 0.32, dampingFraction: 0.72), value: model.isPresented)
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: model.mode)
         }
@@ -58,10 +65,7 @@ struct WheelView: View {
         let layout = Self.layout(count: model.items.count)
         return ZStack {
             ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
-                WedgeCell(
-                    item: item, index: index, layout: layout,
-                    isHovered: model.hovered == .wedge(index), crystal: isCrystal
-                )
+                WedgeCell(item: item, index: index, layout: layout, isHovered: model.hovered == .wedge(index))
             }
         }
     }
@@ -90,8 +94,6 @@ private struct WedgeCell: View {
     let index: Int
     let layout: WheelLayout
     let isHovered: Bool
-    /// Crystal level: the wedge itself is a piece of clear glass.
-    let crystal: Bool
 
     private var isHighlighted: Bool { isHovered && item.isEnabled }
 
@@ -102,18 +104,12 @@ private struct WedgeCell: View {
         let labelRadius = (layout.innerRadius + layout.outerRadius) / 2
         let shape = WedgeShape(layout: layout, index: index)
         ZStack {
-            if crystal {
-                Color.clear
-                    .crystalGlass(enabled: true, in: shape)
-                    .overlay(shape.fill(Brand.gradient).opacity(isHighlighted ? 0.85 : 0))
-            } else {
-                shape
-                    .fill(fill)
-                    .overlay {
-                        shape.stroke(Color.primary.opacity(isHighlighted ? 0 : 0.10), lineWidth: 0.5)
-                    }
-                    .shadow(color: Brand.indigo.opacity(isHighlighted ? 0.45 : 0), radius: 10, y: 3)
-            }
+            shape
+                .fill(fill)
+                .overlay {
+                    shape.stroke(Color.primary.opacity(isHighlighted ? 0 : 0.10), lineWidth: 0.5)
+                }
+                .shadow(color: Brand.indigo.opacity(isHighlighted ? 0.45 : 0), radius: 10, y: 3)
 
             VStack(spacing: 3) {
                 Image(systemName: item.symbolName)
@@ -140,6 +136,67 @@ private struct WedgeCell: View {
     }
 }
 
+/// Crystal level: every choice is its own round piece of clear glass, set
+/// out in a ring. The wedge areas around them still decide what's hovered.
+private struct CrystalChoices: View {
+    @ObservedObject var model: WheelModel
+
+    var body: some View {
+        let layout = WheelView.layout(count: model.items.count)
+        let ringRadius = (layout.innerRadius + layout.outerRadius) / 2
+        let count = CGFloat(max(model.items.count, 1))
+        let diameter = min(74, 2 * .pi * ringRadius / count - 10)
+        ZStack {
+            ZStack {
+                ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
+                    CrystalBubble(
+                        item: item,
+                        isHovered: model.hovered == .wedge(index),
+                        diameter: diameter,
+                        direction: layout.direction(of: index),
+                        ringRadius: ringRadius,
+                        canPop: layout.count > 1
+                    )
+                }
+            }
+            .id(model.mode)
+            HubView(model: model, crystal: true)
+        }
+    }
+}
+
+private struct CrystalBubble: View {
+    let item: WheelItem
+    let isHovered: Bool
+    let diameter: CGFloat
+    let direction: CGVector
+    let ringRadius: CGFloat
+    let canPop: Bool
+
+    private var isHighlighted: Bool { isHovered && item.isEnabled }
+
+    var body: some View {
+        let distance = ringRadius + (isHighlighted && canPop ? WheelView.popOut : 0)
+        VStack(spacing: 2) {
+            Image(systemName: item.symbolName)
+                .font(.system(size: isHighlighted ? 18 : 15, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+            Text(item.title)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(isHighlighted ? Color.white : Color.primary)
+        .opacity(item.isEnabled ? 1 : 0.4)
+        .frame(width: diameter, height: diameter)
+        .background(Circle().fill(Brand.gradient).opacity(isHighlighted ? 0.9 : 0))
+        .clearGlass(in: Circle())
+        .scaleEffect(isHighlighted ? 1.12 : 1)
+        .offset(x: direction.dx * distance, y: -direction.dy * distance)
+        .animation(.spring(response: 0.26, dampingFraction: 0.68), value: isHighlighted)
+    }
+}
+
 /// The circle in the middle: what's being dragged, or what the hovered wedge does.
 private struct HubView: View {
     @ObservedObject var model: WheelModel
@@ -159,7 +216,7 @@ private struct HubView: View {
     var body: some View {
         ZStack {
             if crystal {
-                Color.clear.crystalGlass(enabled: true, in: Circle())
+                Color.clear.clearGlass(in: Circle())
             } else {
                 Circle()
                     .fill(Color.primary.opacity(content == .cancel ? 0.12 : 0.05))

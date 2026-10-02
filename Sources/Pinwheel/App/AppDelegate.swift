@@ -12,7 +12,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var wheel = WheelController(settings: settings)
     private lazy var progress = ProgressController(queue: jobs, settings: settings)
     private var menuBar: MenuBarController?
-    private var onboarding: OnboardingWindowController?
     private var settingsWindow: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -21,7 +20,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar = MenuBarController(
             actions: .init(
                 showSettings: { [weak self] in self?.showSettings() },
-                showPermissions: { [weak self] in self?.showOnboarding() },
                 showProgress: { [weak self] in self?.progress.show() },
                 showFFmpegHelp: { [weak self] in self?.showFFmpegHelp() },
                 quit: { NSApp.terminate(nil) }
@@ -54,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.jobs.enqueue(files: files, action: action)
         }
         jobs.optionsProvider = { settings.conversionOptions }
+        jobs.shouldTrashOriginals = { settings.moveOriginalToTrash }
         jobs.onChange = { [weak self] in
             self?.progress.jobsChanged()
         }
@@ -62,9 +61,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Re-register the event monitors once macOS grants the permission.
-        permission.onGranted = { [weak self] in self?.dragMonitor.start() }
+        permission.onChange = { [weak self] trusted in
+            if trusted { self?.dragMonitor.start() }
+        }
+        permission.startWatching()
+        // First launch (or the permission went missing): Settings explains it.
         if !permission.isTrusted {
-            showOnboarding()
+            showSettings()
         }
     }
 
@@ -95,21 +98,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onShowDemo: { [weak self] in
                     self?.wheel.showDemo(avoiding: self?.settingsWindow?.window?.frame)
                 },
-                onShowPermissions: { [weak self] in self?.showOnboarding() },
                 onShowFFmpegHelp: { [weak self] in self?.showFFmpegHelp() }
             )
             settingsWindow = SettingsWindowController(view: view)
         }
         settingsWindow?.present()
-    }
-
-    private func showOnboarding() {
-        if onboarding == nil {
-            let controller = OnboardingWindowController(permission: permission)
-            controller.onClosed = { [weak self] in self?.onboarding = nil }
-            onboarding = controller
-        }
-        onboarding?.present()
     }
 
     private func showFFmpegHelp() {

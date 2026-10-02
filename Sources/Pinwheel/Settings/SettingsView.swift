@@ -7,12 +7,17 @@ struct SettingsView: View {
     @ObservedObject var launch: LaunchAtLogin
     @ObservedObject var permission: AccessibilityPermission
     var onShowDemo: () -> Void
-    var onShowPermissions: () -> Void
     var onShowFFmpegHelp: () -> Void
+
+    // Not @State: in the macOS 27 SDK @State is a macro whose plugin only ships
+    // with Xcode, so with the Command Line Tools use @StateObject instead.
+    @StateObject private var local = LocalState()
 
     var body: some View {
         Form {
+            permissionSection
             appearance
+            feedback
             afterConverting
             quality
             system
@@ -29,9 +34,68 @@ struct SettingsView: View {
             launch.refresh()
             permission.refresh()
         }
+        .alert("Reset the permission?", isPresented: $local.confirmReset) {
+            Button("Reset", role: .destructive) { permission.resetAndAskAgain() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Pinwheel's entry is removed from the Accessibility list and macOS asks again. Then switch Pinwheel on once more.")
+        }
     }
 
     // MARK: - Sections
+
+    /// Status, explanation and steps for the Accessibility permission, all in
+    /// one place. It updates by itself the moment the switch is flipped.
+    private var permissionSection: some View {
+        Section("Permission") {
+            HStack(spacing: 12) {
+                Image(systemName: permission.isTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.title2)
+                    .foregroundStyle(permission.isTrusted ? .green : .orange)
+                    .contentTransition(.symbolEffect(.replace))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(permission.isTrusted ? "Accessibility is on" : "Accessibility permission needed")
+                        .font(.headline)
+                    Text(permission.isTrusted
+                         ? "Hold ⇧ Shift while dragging files and the wheel appears."
+                         : "Without it, the wheel can't appear.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if !permission.isTrusted {
+                    Button("Open System Settings") { permission.openSystemSettings() }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .animation(.spring(duration: 0.4), value: permission.isTrusted)
+
+            if !permission.isTrusted {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("To know when to show the wheel, Pinwheel notices the Shift key and the mouse while you drag in Finder. It never records what you type, and nothing leaves your Mac.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    step(1, "Click **Open System Settings**.")
+                    step(2, "Find **Pinwheel** in the list and turn its switch **on**. macOS may ask for your password or Touch ID.")
+                    step(3, "Not in the list? Click **+**, open **Applications**, choose **Pinwheel**, and click **Open**.")
+                    step(4, "Come back here. This section turns green by itself.")
+                }
+                .padding(.vertical, 4)
+            }
+
+            HStack {
+                Text("Switch is on, but the wheel doesn't appear?")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Reset Permission…") { local.confirmReset = true }
+            }
+            if let message = permission.resetMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
 
     private var appearance: some View {
         Section("Appearance") {
@@ -63,14 +127,48 @@ struct SettingsView: View {
                 }
             }
             .padding(.vertical, 4)
-            Toggle("Gentle tick on the trackpad when moving over a wedge", isOn: $settings.hapticFeedback)
+        }
+    }
+
+    private var feedback: some View {
+        Section {
+            Toggle("Click sound", isOn: $settings.hoverSound)
+            Picker("Sound", selection: $settings.hoverSoundName) {
+                ForEach(HoverFeedback.soundNames, id: \.self) { Text($0).tag($0) }
+            }
+            .disabled(!settings.hoverSound)
+            .onChange(of: settings.hoverSoundName) { playSample() }
+            LabeledContent("Volume") {
+                HStack {
+                    Slider(value: $settings.hoverSoundVolume, in: 0.05...1) { editing in
+                        if !editing { playSample() }
+                    }
+                    .frame(width: 200)
+                    Button("Test", action: playSample)
+                }
+            }
+            .disabled(!settings.hoverSound)
+            Toggle("Trackpad vibration", isOn: $settings.hapticFeedback)
+        } header: {
+            Text("Wheel feedback")
+        } footer: {
+            Text("Plays when the pointer moves onto a format. Vibration needs a Force Touch trackpad and is felt only while your finger is on it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     private var afterConverting: some View {
-        Section("After converting") {
+        Section {
             Toggle("Show the progress window", isOn: $settings.showProgressWindow)
             Toggle("Show the new files in Finder", isOn: $settings.revealInFinder)
+            Toggle("Move the original to the Trash", isOn: $settings.moveOriginalToTrash)
+        } header: {
+            Text("After converting")
+        } footer: {
+            Text("The original goes to the Trash only after the new file is saved. You can put it back from the Trash.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -117,15 +215,6 @@ struct SettingsView: View {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
 
-            LabeledContent("Accessibility") {
-                HStack {
-                    Label(permission.isTrusted ? "Allowed" : "Not allowed",
-                          systemImage: permission.isTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(permission.isTrusted ? .green : .orange)
-                    Button("Help…", action: onShowPermissions)
-                }
-            }
-
             LabeledContent("ffmpeg") {
                 HStack {
                     if let url = settings.ffmpegURL {
@@ -153,6 +242,21 @@ struct SettingsView: View {
         )
     }
 
+    private func playSample() {
+        local.soundPreview.playSound(named: settings.hoverSoundName, volume: settings.hoverSoundVolume)
+    }
+
+    private func step(_ number: Int, _ text: LocalizedStringKey) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("\(number)")
+                .font(.caption.weight(.bold))
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(Color.accentColor.opacity(0.18)))
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private func percentSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         LabeledContent(title) {
             HStack {
@@ -164,6 +268,13 @@ struct SettingsView: View {
             }
         }
     }
+}
+
+/// The Settings window's own bits of state.
+@MainActor
+private final class LocalState: ObservableObject {
+    @Published var confirmReset = false
+    let soundPreview = HoverFeedback()
 }
 
 /// A live wheel over a colorful picture, so the glass can be seen changing.

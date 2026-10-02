@@ -18,6 +18,7 @@ final class WheelController {
     }
 
     private let settings: SettingsStore
+    private let feedback = HoverFeedback()
     private lazy var panel: WheelPanel = makePanel()
     private var files: [SourceFile] = []
     private var hideGeneration = 0
@@ -116,9 +117,9 @@ final class WheelController {
     private func hoverChanged(to hit: WheelLayout.Hit?) {
         guard model.hovered != hit else { return }
         model.hovered = hit
-        // A gentle tick on Force Touch trackpads when landing on a usable wedge.
-        if settings.hapticFeedback, let hit, item(for: hit)?.isEnabled == true {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        // A click (and a trackpad tap) when landing on a usable wedge.
+        if let hit, item(for: hit)?.isEnabled == true {
+            feedback.play(settings: settings)
         }
     }
 

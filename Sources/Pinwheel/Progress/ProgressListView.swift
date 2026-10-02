@@ -154,6 +154,10 @@ private struct JobRow: View {
     }
 
     private var finishedText: String {
+        job.originalTrashed ? "\(resultText) · original in Trash" : resultText
+    }
+
+    private var resultText: String {
         let name = job.outputs.first?.lastPathComponent ?? "Done"
         guard let after = job.outputSize else { return name }
         let formatter = ByteCountFormatter()

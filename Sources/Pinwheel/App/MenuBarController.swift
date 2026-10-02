@@ -5,7 +5,6 @@ import AppKit
 final class MenuBarController: NSObject, NSMenuDelegate {
     struct Actions {
         var showSettings: @MainActor () -> Void
-        var showPermissions: @MainActor () -> Void
         var showProgress: @MainActor () -> Void
         var showFFmpegHelp: @MainActor () -> Void
         var quit: @MainActor () -> Void
@@ -44,7 +43,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         var warned = false
         if !isTrusted() {
-            menu.addItem(item("⚠︎ Accessibility permission needed…", #selector(showPermissions)))
+            menu.addItem(item("⚠︎ Accessibility permission needed…", #selector(showSettings)))
             warned = true
         }
         if !hasFFmpeg() {
@@ -64,7 +63,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(item("Settings…", #selector(showSettings), key: ","))
-        menu.addItem(item("Permissions Help…", #selector(showPermissions)))
         launch.refresh()
         let login = item("Launch at Login", #selector(toggleLaunchAtLogin))
         login.state = launch.isEnabled ? .on : (launch.needsApproval ? .mixed : .off)
@@ -127,7 +125,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func showSettings() { actions.showSettings() }
-    @objc private func showPermissions() { actions.showPermissions() }
     @objc private func showProgress() { actions.showProgress() }
     @objc private func showFFmpegHelp() { actions.showFFmpegHelp() }
     @objc private func toggleLaunchAtLogin() {
