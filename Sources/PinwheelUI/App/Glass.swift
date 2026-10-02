@@ -44,20 +44,26 @@ enum GlassLevel: Int, CaseIterable, Identifiable {
     }
 
     /// A see-through layer *behind* the glass, which the glass then shows:
-    /// indigo for Tinted, a light shade for Clear (Apple recommends a shade
-    /// under clear glass so text stays readable on bright backgrounds).
+    /// indigo for Tinted, a shade for Clear and a lighter one for Crystal
+    /// (Apple recommends a shade under clear glass so text stays readable on
+    /// bright backgrounds).
     /// A layer is used rather than tinting the glass itself, because tinted
     /// glass doesn't draw everywhere.
     var backing: Color {
         switch self {
         case .tinted: Brand.indigo.opacity(0.35)
-        case .clear: Color.black.opacity(0.2)
+        case .clear: Color.black.opacity(0.25)
+        case .crystal: Color.black.opacity(0.1)
         default: Color.clear
         }
     }
 
     /// Crystal leaves out the thin dividers between wedges.
     var showsDividers: Bool { self != .crystal }
+
+    /// The clearest glass lets bright backgrounds (a white document) shine
+    /// straight through, so labels get a soft halo to stay readable.
+    var labelHalo: Bool { self == .clear || self == .crystal }
 }
 
 /// A background at the chosen glass level, cut to a rounded shape
@@ -97,6 +103,15 @@ struct FrostedBackdrop: NSViewRepresentable {
 }
 
 extension View {
+    /// A soft glow in the window's background color behind text: dark in
+    /// Dark Mode, light in Light Mode, so labels read on any background.
+    func labelHalo(_ enabled: Bool) -> some View {
+        let glow = enabled ? Color(nsColor: .windowBackgroundColor) : .clear
+        return self
+            .shadow(color: glow.opacity(0.9), radius: 1.5)
+            .shadow(color: glow.opacity(0.7), radius: 5)
+    }
+
     /// Puts this view on a surface at the chosen glass level, so the view is
     /// the glass's *content* (Liquid Glass then keeps it legible). Frosted
     /// draws the classic blur behind it instead.

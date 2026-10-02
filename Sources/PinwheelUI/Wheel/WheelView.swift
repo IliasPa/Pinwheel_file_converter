@@ -34,7 +34,7 @@ struct WheelView: View {
     /// and thin dividers are its content. Only the chosen wedge is colored.
     private var glassWheel: some View {
         let level = settings.glassLevel
-        return WheelContent(model: model, style: .glass(dividers: level.showsDividers))
+        return WheelContent(model: model, style: .glass(dividers: level.showsDividers, halo: level.labelHalo))
             .frame(width: Self.diameter, height: Self.diameter)
             .glassSurface(level, cornerRadius: Self.diameter / 2, blending: blending)
             // Glass only grows in; the window itself does the fading.
@@ -65,16 +65,21 @@ struct WheelView: View {
 private struct WheelContent: View {
     enum Style: Equatable {
         case frosted
-        case glass(dividers: Bool)
+        case glass(dividers: Bool, halo: Bool)
     }
 
     var model: WheelModel
     var style: Style
 
+    private var halo: Bool {
+        if case .glass(_, let halo) = style { return halo }
+        return false
+    }
+
     var body: some View {
         let layout = WheelView.layout(count: model.items.count)
         ZStack {
-            if case .glass(true) = style, layout.count > 1 {
+            if case .glass(true, _) = style, layout.count > 1 {
                 Dividers(layout: layout)
                     .stroke(Color.primary.opacity(0.16), style: StrokeStyle(lineWidth: 1, lineCap: .round))
             }
@@ -82,13 +87,13 @@ private struct WheelContent: View {
                 ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
                     WedgeCell(
                         item: item, index: index, layout: layout,
-                        isHovered: model.hovered == .wedge(index), frosted: style == .frosted
+                        isHovered: model.hovered == .wedge(index), frosted: style == .frosted, halo: halo
                     )
                 }
             }
             .id(model.mode)  // cross-fade when switching between formats and tools
             .transition(.opacity.combined(with: .scale(scale: 0.94)))
-            HubView(model: model, frosted: style == .frosted)
+            HubView(model: model, frosted: style == .frosted, halo: halo)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: model.mode)
     }
@@ -138,6 +143,7 @@ private struct WedgeCell: View {
     let layout: WheelLayout
     let isHovered: Bool
     let frosted: Bool
+    let halo: Bool
 
     private var isHighlighted: Bool { isHovered && item.isEnabled }
 
@@ -174,6 +180,7 @@ private struct WedgeCell: View {
             }
             .frame(width: 66)
             .foregroundStyle(isHighlighted ? Color.white : Color.primary)
+            .labelHalo(halo && !isHighlighted)
             .opacity(item.isEnabled ? 1 : 0.35)
             .offset(x: direction.dx * labelRadius, y: -direction.dy * labelRadius)
         }
@@ -192,6 +199,7 @@ private struct WedgeCell: View {
 private struct HubView: View {
     var model: WheelModel
     let frosted: Bool
+    let halo: Bool
 
     private enum Content: Hashable {
         case idle, nothing, cancel, item(String)
@@ -216,6 +224,7 @@ private struct HubView: View {
             }
             label
                 .frame(width: 84)
+                .labelHalo(halo)
                 .id(content)
                 .transition(.opacity)
         }

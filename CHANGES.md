@@ -3,6 +3,19 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v0.5.1 — 2026-10-02
+
+**Fixed**
+- **Liquid Glass now really shows on the desktop.** The wheel and the progress
+  window were drawn in borderless windows, where macOS 26 can't show what's
+  behind the glass, so it turned into a flat gray disc (only the Settings
+  preview looked right). They're now titled windows with the title bar
+  hidden, the kind of window where glass does show the desktop. Found by
+  testing six ways of drawing glass side by side.
+- **Labels stay readable on Clear Glass and Crystal**, even over a white
+  document: a soft halo behind the text (dark in Dark Mode, light in Light
+  Mode), a 25% shade under Clear Glass and a 10% shade under Crystal.
+
 ## v0.5 — 2026-10-02
 
 **Redesigned**

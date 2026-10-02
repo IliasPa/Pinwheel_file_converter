@@ -109,21 +109,20 @@ final class ProgressController {
     }
 }
 
-/// Borderless floating panel (its glass or frosted background is drawn by
-/// the SwiftUI view). It can take clicks (for the buttons) without pulling
-/// Pinwheel or the panel to the front.
+/// Floating panel (its glass or frosted background is drawn by the SwiftUI
+/// view). It can take clicks (for the buttons) without pulling Pinwheel or
+/// the panel to the front.
 final class ProgressPanel: NSPanel {
     init(size: NSSize) {
         super.init(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: GlassWindow.styleMask,
             backing: .buffered,
             defer: false
         )
+        GlassWindow.prepare(self, size: size)
         isFloatingPanel = true
         level = .floating
-        isOpaque = false
-        backgroundColor = .clear
         hasShadow = true
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
