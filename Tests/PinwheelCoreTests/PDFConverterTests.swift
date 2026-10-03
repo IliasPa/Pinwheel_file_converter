@@ -28,6 +28,35 @@ struct PDFConverterTests {
         #expect(Fixtures.readImage(output.appendingPathComponent("report page 05.jpg"))?.type == "public.jpeg")
     }
 
+    @Test func pagesDrawnSideBySideLandInTheRightFiles() async throws {
+        let folder = try TempFolder()
+        let source = folder.file("sizes.pdf")
+        // Page n is 100 + 10n points wide, so each image shows which page it is.
+        let ctx = try #require(CGContext(source as CFURL, mediaBox: nil, nil))
+        for page in 0..<20 {
+            var box = CGRect(x: 0, y: 0, width: 100 + 10 * page, height: 50)
+            ctx.beginPage(mediaBox: &box)
+            ctx.setFillColor(CGColor(srgbRed: 0.2, green: 0.5, blue: 0.9, alpha: 1))
+            ctx.fill(box)
+            ctx.endPage()
+        }
+        ctx.closePDF()
+
+        var options = ConversionOptions()
+        options.pdfDPI = 72
+        let progress = Locked<[Double]>([])
+        let output = try await runConversion(source, .convert(.png), options: options) { value in
+            progress.value += [value]
+        }
+        let names = try FileManager.default.contentsOfDirectory(atPath: output.path).sorted()
+        #expect(names.count == 20)
+        for (index, name) in names.enumerated() {
+            #expect(name == "sizes page \(String(format: "%02d", index + 1)).png")
+            #expect(Fixtures.readImage(output.appendingPathComponent(name))?.width == 100 + 10 * index)
+        }
+        #expect(progress.value.max() == 1)
+    }
+
     @Test func rotatedPagesComeOutUpright() async throws {
         let folder = try TempFolder()
         let plain = folder.file("plain.pdf")

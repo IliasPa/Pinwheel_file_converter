@@ -11,15 +11,15 @@ enum PDFConverter {
 
     /// One image per page. A one-page PDF becomes a single image; a longer
     /// one becomes a folder of images (`destination` is then the folder).
+    /// Pages are drawn several at a time, one per processor core.
     static func renderPages(
         _ source: URL,
         to format: OutputFormat,
         destination: URL,
         options: ConversionOptions,
-        progress: @Sendable (Double) -> Void
-    ) throws {
-        let document = try open(source)
-        let count = document.pageCount
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
+        let count = try open(source).pageCount  // also stops at password-protected PDFs
         guard count > 0 else { throw ConversionError.failed("\(source.lastPathComponent) has no pages.") }
 
         if count > 1 {
@@ -27,18 +27,41 @@ enum PDFConverter {
         }
         let base = source.deletingPathExtension().lastPathComponent
         let digits = String(count).count
-        for index in 0..<count {
-            try Task.checkCancellation()
-            guard let page = document.page(at: index)?.pageRef else { continue }
-            let image = try render(page, dpi: options.pdfDPI)
+        let pageURL: @Sendable (Int) -> URL = { index in
+            guard count > 1 else { return destination }
             let number = String(index + 1)
             let padded = String(repeating: "0", count: max(0, digits - number.count)) + number
-            let url = count == 1
-                ? destination
-                : destination.appendingPathComponent("\(base) page \(padded).\(format.fileExtension)")
-            try ImageConverter.write(image, to: url, format: format, options: options)
-            progress(Double(index + 1) / Double(count))
+            return destination.appendingPathComponent("\(base) page \(padded).\(format.fileExtension)")
         }
+
+        let pages = PageQueue(count: count, progress: progress)
+        try await withTaskCancellationHandler {
+            let lanes = min(count, ProcessInfo.processInfo.activeProcessorCount, 8)
+            DispatchQueue.concurrentPerform(iterations: lanes) { _ in
+                // Each thread opens the PDF itself, so no two share a document.
+                guard let document = CGPDFDocument(source as CFURL) else {
+                    pages.fail(ConversionError.unreadable(source.lastPathComponent))
+                    return
+                }
+                if !document.isUnlocked { _ = document.unlockWithPassword("") }
+                while let index = pages.next() {
+                    do {
+                        if let page = document.page(at: index + 1) {  // CGPDFDocument counts from 1
+                            let image = try render(page, dpi: options.pdfDPI)
+                            try ImageConverter.write(image, to: pageURL(index), format: format, options: options)
+                        }
+                        pages.finished()
+                    } catch {
+                        pages.fail(error)
+                        return
+                    }
+                }
+            }
+            try pages.check()
+        } onCancel: {
+            pages.stop()
+        }
+        try Task.checkCancellation()
     }
 
     /// Re-saves the PDF with its pictures as JPEGs at screen resolution (like
@@ -122,5 +145,54 @@ enum PDFConverter {
         ctx.drawPDFPage(page)
         guard let image = ctx.makeImage() else { throw ConversionError.failed("Couldn't draw the page.") }
         return image
+    }
+}
+
+/// Hands out page numbers to the drawing threads and keeps count, so the
+/// progress bar moves page by page and the first error stops everyone.
+private final class PageQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private let count: Int
+    private let progress: @Sendable (Double) -> Void
+    private var nextIndex = 0
+    private var done = 0
+    private var stopped = false
+    private var error: Error?
+
+    init(count: Int, progress: @escaping @Sendable (Double) -> Void) {
+        self.count = count
+        self.progress = progress
+    }
+
+    /// The next page to draw, or nil when all are taken or the job stopped.
+    func next() -> Int? {
+        lock.withLock {
+            guard !stopped, nextIndex < count else { return nil }
+            defer { nextIndex += 1 }
+            return nextIndex
+        }
+    }
+
+    func finished() {
+        let value = lock.withLock {
+            done += 1
+            return Double(done) / Double(count)
+        }
+        progress(value)
+    }
+
+    func fail(_ error: Error) {
+        lock.withLock {
+            if self.error == nil { self.error = error }
+            stopped = true
+        }
+    }
+
+    func stop() {
+        lock.withLock { stopped = true }
+    }
+
+    func check() throws {
+        if let error = lock.withLock({ error }) { throw error }
     }
 }

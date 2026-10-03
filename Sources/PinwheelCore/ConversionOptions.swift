@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where new files go.
-public enum SaveLocation: Sendable, Equatable {
+public enum SaveLocation: Sendable, Equatable, Codable {
     case nextToOriginal
     case downloads
     case folder(URL)
@@ -121,7 +121,7 @@ public enum VideoMaxSize: String, CaseIterable, Codable, Sendable {
 }
 
 /// User-adjustable settings, copied into each job when it starts.
-public struct ConversionOptions: Sendable, Equatable {
+public struct ConversionOptions: Sendable, Equatable, Codable {
     /// 0...1 quality for JPEG output.
     public var jpegQuality: Double = 0.85
     /// 0...1 quality for HEIC output.
@@ -159,7 +159,7 @@ public struct ConversionOptions: Sendable, Equatable {
 }
 
 /// One conversion: usually one file, or several images becoming one PDF.
-public struct ConversionRequest: Sendable, Equatable {
+public struct ConversionRequest: Sendable, Equatable, Codable {
     public var files: [SourceFile]
     public var action: WheelAction
 
@@ -179,7 +179,7 @@ public struct ConversionRequest: Sendable, Equatable {
 }
 
 /// What a finished conversion produced.
-public struct ConversionResult: Sendable, Equatable {
+public struct ConversionResult: Sendable, Equatable, Codable {
     /// The files (or folder) written. Empty when there was nothing to do.
     public var outputs: [URL]
     /// Something worth telling: where it was saved, what was skipped and why.

@@ -14,25 +14,39 @@ echo "==> Assembling Pinwheel.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Pinwheel" "$APP/Contents/MacOS/Pinwheel"
+# The converter: the app starts one per job (see ConversionRunner.swift).
+cp "$BIN_DIR/PinwheelWorker" "$APP/Contents/MacOS/PinwheelWorker"
 cp Support/Info.plist "$APP/Contents/Info.plist"
 cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+
+if [ "$CONFIG" = "release" ]; then
+    # Leave out the debugging names: about half the size. The full versions
+    # stay in the build folder ($BIN_DIR) for reading crash reports.
+    strip -S -x "$APP/Contents/MacOS/Pinwheel" "$APP/Contents/MacOS/PinwheelWorker"
+fi
+
+# Signs the worker first, then the app around it.
+sign_with() {
+    codesign --force --sign "$1" --identifier "$BUNDLE_ID.worker" "$APP/Contents/MacOS/PinwheelWorker" &&
+        codesign --force --sign "$1" --identifier "$BUNDLE_ID" "$APP"
+}
 
 if security find-identity -p codesigning 2>/dev/null | grep -q "\"$SIGN_IDENTITY_NAME\""; then
     echo "==> Signing with your certificate \"$SIGN_IDENTITY_NAME\""
     # The first time, macOS asks whether codesign may use the certificate:
     # type your Mac password and click "Always Allow". That question can only
     # appear when the build runs in Terminal; elsewhere it fails, so fall back.
-    if ! codesign --force --sign "$SIGN_IDENTITY_NAME" --identifier "$BUNDLE_ID" "$APP" 2>/dev/null; then
+    if ! sign_with "$SIGN_IDENTITY_NAME" 2>/dev/null; then
         echo "==> macOS didn't let codesign use \"$SIGN_IDENTITY_NAME\" yet."
         echo "    Run 'make install' in Terminal once and click \"Always Allow\"."
         echo "    Signing to run locally (ad-hoc) for now."
-        codesign --force --sign - --identifier "$BUNDLE_ID" "$APP"
+        sign_with -
     fi
 else
     echo "==> Signing to run locally (ad-hoc). See README to keep permissions across rebuilds."
-    codesign --force --sign - --identifier "$BUNDLE_ID" "$APP"
+    sign_with -
 fi
-codesign --verify --strict "$APP"
+codesign --verify --strict --deep "$APP"
 
 echo "==> Done: $APP"

@@ -209,8 +209,10 @@ Menu-bar icon › **Settings…** (or ⌘, while the menu is open):
   2 Tinted Glass · 3 Liquid Glass · 4 Clear Glass (with a light shade) ·
   5 Crystal (fully clear). The whole wheel is one piece of glass, with the
   icons and thin dividers inside it; only the chosen wedge is colored. The
-  preview updates as you move the slider, and **Show on Desktop** shows the
-  real wheel over your desktop for 3 seconds.
+  preview shows the hover effect once when Settings opens or the glass
+  changes, and for as long as the pointer is over it (a moving preview
+  keeps the processor busy, so it rests otherwise). **Show on Desktop**
+  shows the real wheel over your desktop for 3 seconds.
 - **Wheel feedback:** a click sound when the pointer moves onto a format
   (Tink, Pop, Bottle, Morse, Purr or Frog; volume; Test), and a trackpad
   vibration (Force Touch trackpads, felt only while your finger is on it).
@@ -223,8 +225,11 @@ Menu-bar icon › **Settings…** (or ⌘, while the menu is open):
 - **Video and audio:** video Compress quality (Smallest file / Balanced /
   Best quality) and size limit (keep, 4K, 1080p, 720p); audio Compress bit
   rate; GIF width, frame rate and length.
-- **System:** launch at login; how many files to convert at the same time;
-  where ffmpeg is (or a custom location); whether pngquant is installed.
+- **System:** launch at login; how many files to convert at the same time
+  (**Automatic** uses most of your Mac's processor cores for images, PDFs
+  and audio, and runs 2 videos at once, because the Mac's video engines are
+  the limit there); where ffmpeg is (or a custom location); whether pngquant
+  is installed.
 - **Reset to Defaults.**
 
 ---
@@ -266,6 +271,12 @@ Run `make clean` and then `make test` again.
 **Launch at Login doesn't stick.**
 Install into /Applications with `make install`, then turn it on again.
 
+**A job says "Pinwheel's converter stopped unexpectedly".**
+Each conversion runs in its own small helper program (see "For the
+curious" below). That message means the helper crashed on this file, most
+likely because the file is damaged. Pinwheel itself keeps running, and
+anything half-written was deleted.
+
 **I want to start completely fresh.**
 `make uninstall`, `make clean`, remove Pinwheel from the Accessibility list,
 then `make install`.
@@ -288,16 +299,29 @@ Accessibility** and from **Login Items**. Its settings are stored in
 ## For the curious: how it's built
 
 - **Swift Package Manager** instead of Xcode: `Package.swift` describes the
-  app, and `scripts/build-app.sh` turns the compiled program into
-  `Pinwheel.app` (Info.plist, icon, signing). Swift 6 language mode, so the
-  compiler checks for threading mistakes.
+  app, and `scripts/build-app.sh` turns the compiled programs into
+  `Pinwheel.app` (Info.plist, icon, signing). Release builds leave out the
+  debugging names, which halves the programs' size; the full versions stay
+  in the build folder. Swift 6 language mode, so the compiler checks for
+  threading mistakes.
 - `Sources/PinwheelCore`: the conversion engine. Each job is planned once
   (`OutputPlanner`: format, name, folder), then run by the right converter,
   then checked (Compress must really shrink the file). No user interface.
+- `Sources/PinwheelWorker`: a small helper inside the app
+  (`Pinwheel.app/Contents/MacOS/PinwheelWorker`). The app plans each job and
+  picks its file name, then starts one helper per job and sends it the job;
+  the helper converts, reports progress, and quits. So the memory the image
+  and video encoders use goes back to macOS as soon as a job ends (the app
+  stays around 30 MB), and a file that crashes a converter can't take the
+  app down. Cancelling a job stops its helper, which deletes anything
+  half-written. (`ConversionRunner.swift` is the app's side.)
 - `Sources/PinwheelUI`: the menu-bar app (AppKit + SwiftUI, `@Observable`
   models, main thread by default): drag detection, the wheel window, the job
   queue, the progress window, Settings, notifications.
 - `Sources/Pinwheel`: just the few lines that start the app.
+- Jobs run side by side: by default up to two fewer than your Mac's
+  processor cores (at most 8), with at most 2 videos. A PDF's pages are also
+  drawn several at a time.
 - `Tests/PinwheelCoreTests`: tests that make real images, videos, songs and
   PDFs, convert them, and check the results. `Tests/PinwheelUITests`: the job
   queue, settings, the wheel's labels, and that every glass level draws.

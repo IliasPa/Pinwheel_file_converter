@@ -73,10 +73,15 @@ final class WheelController {
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             guard generation == self.hideGeneration else { return }
             self.model.isPresented = false
-            await NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
+            let fade = 0.18
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = fade
                 self.panel.animator().alphaValue = 0
-            }
+            }, completionHandler: nil)
+            // Wait for the fade with a timer, not its "finished" signal: if
+            // that signal never came, the wheel stayed on screen invisible,
+            // and later hide requests waited for it.
+            try? await Task.sleep(for: .seconds(fade + 0.02))
             guard generation == self.hideGeneration else { return }
             self.panel.orderOut(nil)
             self.model.hovered = nil

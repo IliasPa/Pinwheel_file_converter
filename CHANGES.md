@@ -3,6 +3,55 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v0.6 — 2026-10-03
+
+Faster and lighter. Every number below was measured on an M5 MacBook,
+before and after.
+
+**Fixed**
+- **Settings no longer keeps the Mac busy.** Its glass preview moved the
+  highlight every 1.6 seconds forever, even after you closed Settings
+  (about 14% of one processor core until you quit Pinwheel). Now the
+  closed Settings window is freed (0%), and while it's open the preview
+  shows the hover effect once (when Settings opens or the glass changes)
+  and whenever the pointer is over it, then rests (0%).
+- **No more invisible wheel left on screen.** Hiding the wheel waited for
+  macOS's "fade finished" signal; if that never came, the see-through wheel
+  window stayed up and later hide requests were ignored. It now goes away
+  on a timer. (30 rounds of random show/hide: nothing left behind.)
+
+**Faster**
+- **More files at the same time, automatically.** "Convert at the same
+  time" now defaults to **Automatic**: up to two fewer than your Mac's
+  processor cores (at most 8) for images, PDFs and audio, and 2 videos at
+  once (the Mac's video engines are the limit there). 24 photos to JPEG:
+  1.2 s → 0.48 s. You can still pick a fixed number (1–8).
+- **PDF pages are drawn side by side**, one per processor core. A 40-page
+  PDF to PNG: 3.1 s → 0.57 s; to JPEG: 0.6 s → 0.25 s.
+
+**Lighter**
+- **Each conversion runs in its own small helper program**
+  (`PinwheelWorker`, inside the app) that quits when the job is done. The
+  image and video encoders' memory goes back to macOS right away: after
+  converting 6 photos, Pinwheel stays around 31 MB instead of 131 MB. A
+  file that crashes a converter now only stops that job, not Pinwheel.
+  Cancelling a job stops its helper, which deletes anything half-written.
+- **Smaller app:** release builds leave out debugging names. The main
+  program went from 2.0 MB to 1.1 MB; the whole app is 2.7 MB with the new
+  helper (was 3.1 MB).
+- **No more checking the permission every 3 seconds** once it's granted.
+  macOS announces changes, and the menu and Settings check when they open.
+
+**Under the hood**
+- The engine is split into `prepare` (plan and reserve the file name, in
+  the app) and `perform` (convert, in the helper), so jobs in different
+  helpers can never pick the same name.
+- Reading a helper's output now waits for the very end of it, in order, so
+  its last message can't get lost.
+- New tests: jobs through the helper, helper errors, a crashing helper,
+  cancelling mid-job, PDF pages landing in the right files, video slots in
+  the queue, Automatic limits, and freeing the Settings window (95 tests).
+
 ## v0.5.1 — 2026-10-02
 
 **Fixed**

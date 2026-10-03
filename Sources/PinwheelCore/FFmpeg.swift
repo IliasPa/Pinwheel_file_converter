@@ -94,40 +94,60 @@ enum ProcessRunner {
         let stderr: String
     }
 
+    /// `input` is sent to the tool's standard input.
     static func run(
         _ executable: URL,
         _ arguments: [String],
+        input: Data? = nil,
         onStdoutLine: (@Sendable (String) -> Void)? = nil
     ) async throws -> Result {
         try Task.checkCancellation()
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
+        let inPipe = input == nil ? nil : Pipe()
+        if let inPipe {
+            process.standardInput = inPipe
+        } else {
+            process.standardInput = FileHandle.nullDevice
+        }
         let outPipe = Pipe()
         let errPipe = Pipe()
         process.standardOutput = outPipe
         process.standardError = errPipe
 
         let collector = OutputCollector(onStdoutLine: onStdoutLine)
-        outPipe.fileHandleForReading.readabilityHandler = { collector.appendOut($0.availableData) }
-        errPipe.fileHandleForReading.readabilityHandler = { collector.appendErr($0.availableData) }
+        // Finished means: the tool quit *and* both outputs were read to the
+        // end, in order (so its last line is never lost or out of place).
+        let finished = DispatchGroup()
+        let exitStatus = Locked<Int32>(0)
 
         let handle = ProcessHandle(process)
         let status: Int32 = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                process.terminationHandler = { finished in
-                    outPipe.fileHandleForReading.readabilityHandler = nil
-                    errPipe.fileHandleForReading.readabilityHandler = nil
-                    collector.appendOut(outPipe.fileHandleForReading.readDataToEndOfFile())
-                    collector.appendErr(errPipe.fileHandleForReading.readDataToEndOfFile())
-                    continuation.resume(returning: finished.terminationStatus)
+                finished.enter()
+                process.terminationHandler = { ended in
+                    exitStatus.value = ended.terminationStatus
+                    finished.leave()
                 }
                 do {
                     try process.run()
                 } catch {
                     process.terminationHandler = nil
                     continuation.resume(throwing: ConversionError.failed("Couldn't start \(executable.lastPathComponent): \(error.localizedDescription)"))
+                    return
+                }
+                read(outPipe, into: finished) { collector.appendOut($0) }
+                read(errPipe, into: finished) { collector.appendErr($0) }
+                finished.notify(queue: .global()) {
+                    continuation.resume(returning: exitStatus.value)
+                }
+                if let input, let writer = inPipe?.fileHandleForWriting {
+                    // If the tool quits without reading, fail the write
+                    // instead of macOS stopping Pinwheel (SIGPIPE).
+                    _ = fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1)
+                    try? writer.write(contentsOf: input)
+                    try? writer.close()
                 }
             }
         } onCancel: {
@@ -135,6 +155,47 @@ enum ProcessRunner {
         }
         try Task.checkCancellation()
         return Result(status: status, stdout: collector.stdout, stderr: collector.stderr)
+    }
+
+    /// Passes on everything the pipe delivers, chunk by chunk in order, and
+    /// leaves `group` at the end of the output.
+    private static func read(_ pipe: Pipe, into group: DispatchGroup, _ append: @escaping @Sendable (Data) -> Void) {
+        group.enter()
+        let ended = Locked(false)
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                // Leave exactly once, even if a last call was already on its way.
+                if !ended.exchange(true) { group.leave() }
+            } else {
+                append(data)
+            }
+        }
+    }
+}
+
+/// A value shared between threads, behind a lock.
+final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+
+    init(_ value: Value) {
+        stored = value
+    }
+
+    var value: Value {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+
+    /// Sets a new value and returns the old one, in one step.
+    func exchange(_ newValue: Value) -> Value {
+        lock.withLock {
+            let old = stored
+            stored = newValue
+            return old
+        }
     }
 }
 

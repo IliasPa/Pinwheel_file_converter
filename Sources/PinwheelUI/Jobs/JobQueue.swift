@@ -59,14 +59,43 @@ final class Job: Identifiable {
         if case .failed = state { return true }
         return false
     }
+
+    /// Video jobs share the Mac's video engines, so fewer run at once.
+    var isVideo: Bool {
+        request.files.contains { $0.kind == .video }
+    }
 }
 
-/// Runs jobs in the background, a few at a time.
+/// How many jobs may run at the same time.
+struct ConcurrencyLimit: Equatable {
+    /// All jobs together.
+    var total: Int
+    /// Jobs with a video in them.
+    var video: Int
+
+    /// Images, PDFs and audio are done by the processor, so they get most of
+    /// its cores (two are left for everything else). Videos are limited by
+    /// the Mac's video engines, where more than two at once doesn't help.
+    static var automatic: ConcurrencyLimit {
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        return ConcurrencyLimit(total: min(max(cores - 2, 2), 8), video: 2)
+    }
+
+    /// The same number for every kind of job.
+    static func fixed(_ count: Int) -> ConcurrencyLimit {
+        ConcurrencyLimit(total: max(count, 1), video: max(count, 1))
+    }
+}
+
+/// Runs jobs in the background, several at a time.
 @Observable
 final class JobQueue {
     private(set) var jobs: [Job] = []
 
-    @ObservationIgnored var maxConcurrent: () -> Int = { 2 }
+    @ObservationIgnored var concurrency: () -> ConcurrencyLimit = { .automatic }
+    /// Where jobs run: the app uses a worker process per job; tests run
+    /// them in this process.
+    @ObservationIgnored var runner = ConversionRunner()
     @ObservationIgnored var optionsProvider: () -> ConversionOptions = { ConversionOptions() }
     /// Whether to move the originals to the Trash after a successful job.
     @ObservationIgnored var shouldTrashOriginals: () -> Bool = { false }
@@ -116,10 +145,20 @@ final class JobQueue {
 
     // MARK: - Private
 
+    /// Starts waiting jobs, in order, while there's room. A video waits for
+    /// a video slot, but the images behind it can start meanwhile.
     private func pump() {
-        while jobs.filter({ $0.state == .running }).count < max(1, maxConcurrent()),
-              let next = jobs.first(where: { $0.state == .waiting }) {
-            start(next)
+        let limit = concurrency()
+        var running = jobs.filter { $0.state == .running }.count
+        var runningVideos = jobs.filter { $0.state == .running && $0.isVideo }.count
+        for job in jobs where job.state == .waiting {
+            guard running < limit.total else { return }
+            if job.isVideo {
+                guard runningVideos < limit.video else { continue }
+                runningVideos += 1
+            }
+            running += 1
+            start(job)
         }
     }
 
@@ -128,11 +167,12 @@ final class JobQueue {
         onChange?()
         let options = optionsProvider()
         let request = job.request
+        let runner = runner
         let throttle = ProgressThrottle()
 
         job.task = Task { [weak self] in
             do {
-                let result = try await ConversionEngine.run(request, options: options) { value in
+                let result = try await runner.run(request, options: options) { value in
                     guard throttle.shouldReport(value) else { return }
                     Task { @MainActor in job.progress = max(job.progress, value) }
                 }

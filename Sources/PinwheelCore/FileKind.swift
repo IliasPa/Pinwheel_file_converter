@@ -3,7 +3,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// The broad kind of a file, which decides which wheel it gets.
-public enum FileKind: String, CaseIterable, Sendable {
+public enum FileKind: String, CaseIterable, Codable, Sendable {
     case image
     case video
     case audio
@@ -58,7 +58,7 @@ public enum FileKind: String, CaseIterable, Sendable {
 }
 
 /// What Pinwheel knows about one dragged file.
-public struct SourceFile: Sendable, Hashable {
+public struct SourceFile: Sendable, Hashable, Codable {
     public let url: URL
     public let kind: FileKind?
     /// The file's current format when it is one Pinwheel can also write.

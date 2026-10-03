@@ -10,6 +10,11 @@ final class SettingsViewState {
     var confirmReset = false
     let preview = WheelModel.sample()
     @ObservationIgnored let soundPreview = HoverFeedback()
+    /// False while the window is hidden behind others or minimized.
+    var isWindowVisible = true
+    var isPointerOverPreview = false
+    /// Goes up each time the pointer moves onto the preview.
+    var previewVisits = 0
 }
 
 struct SettingsView: View {
@@ -124,7 +129,7 @@ struct SettingsView: View {
                 Text(settings.glassLevel.detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                GlassPreview(settings: settings, model: state.preview)
+                GlassPreview(settings: settings, state: state)
                 HStack {
                     Button("Show on Desktop", action: onShowDemo)
                     Text("Shows the real wheel over your desktop for 3 seconds.")
@@ -250,7 +255,7 @@ struct SettingsView: View {
     }
 
     private var system: some View {
-        Section("System") {
+        Section {
             Toggle("Open Pinwheel when you log in", isOn: Binding(
                 get: { launch.isEnabled || launch.needsApproval },
                 set: { launch.setEnabled($0) }
@@ -267,11 +272,16 @@ struct SettingsView: View {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
             Picker("Convert at the same time", selection: $settings.maxConcurrentJobs) {
-                ForEach(1...4, id: \.self) { Text($0 == 1 ? "1 file" : "\($0) files").tag($0) }
+                Text("Automatic").tag(0)
+                ForEach([1, 2, 3, 4, 6, 8], id: \.self) { Text($0 == 1 ? "1 file" : "\($0) files").tag($0) }
             }
             toolStatus("ffmpeg", url: settings.ffmpegURL, missingAction: onShowFFmpegHelp)
             TextField("Custom ffmpeg location", text: $settings.ffmpegPath, prompt: Text("Automatic"))
             toolStatus("pngquant", url: settings.pngquantURL, missingAction: nil)
+        } header: {
+            Text("System")
+        } footer: {
+            footnote("Automatic converts up to \(ConcurrencyLimit.automatic.total) files at the same time on this Mac, and 2 videos (the Mac's video engines are the limit there).")
         }
     }
 
@@ -352,23 +362,45 @@ struct SettingsView: View {
 /// A live wheel over a colorful picture, so the glass can be seen changing.
 private struct GlassPreview: View {
     var settings: SettingsStore
-    var model: WheelModel
+    var state: SettingsViewState
+
+    /// What restarts the moving highlight.
+    private struct Trigger: Equatable {
+        var level: GlassLevel
+        var visible: Bool
+        var visits: Int
+    }
 
     var body: some View {
         ZStack {
             PreviewBackdrop()
-            WheelView(model: model, settings: settings, blending: .withinWindow)
+            WheelView(model: state.preview, settings: settings, blending: .withinWindow)
         }
         .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))
-        .task {
-            // Move the highlight around so the hover effect shows too.
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1.6))
-                guard case .wedge(let index)? = model.hovered, !model.items.isEmpty else { continue }
-                model.hovered = .wedge((index + 1) % model.items.count)
-            }
+        .onHover { hovering in
+            state.isPointerOverPreview = hovering
+            if hovering { state.previewVisits += 1 }
+        }
+        .task(id: Trigger(level: settings.glassLevel, visible: state.isWindowVisible, visits: state.previewVisits)) {
+            await moveHighlight()
+        }
+    }
+
+    /// Moves the highlight around so the hover effect shows too: one lap
+    /// when Settings opens or the glass changes, and for as long as the
+    /// pointer is over the preview. Otherwise it rests, because a moving
+    /// preview keeps the processor busy.
+    private func moveHighlight() async {
+        guard state.isWindowVisible else { return }
+        let model = state.preview
+        var steps = model.items.count
+        while steps > 0 || state.isPointerOverPreview {
+            try? await Task.sleep(for: .seconds(1.4))
+            guard !Task.isCancelled, case .wedge(let index)? = model.hovered, !model.items.isEmpty else { return }
+            model.hovered = .wedge((index + 1) % model.items.count)
+            steps -= 1
         }
     }
 }
@@ -402,9 +434,15 @@ private struct PreviewBackdrop: View {
     }
 }
 
-/// Hosts the settings in a normal window.
-final class SettingsWindowController: NSWindowController {
-    init(view: SettingsView) {
+/// Hosts the settings in a normal window. Closing it calls `onClose`, so
+/// the window (and everything drawn in it) can be let go until next time.
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    private let state: SettingsViewState
+    private let onClose: () -> Void
+
+    init(view: SettingsView, onClose: @escaping () -> Void) {
+        state = view.state
+        self.onClose = onClose
         let hosting = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hosting)
         window.title = "Pinwheel Settings"
@@ -413,6 +451,15 @@ final class SettingsWindowController: NSWindowController {
         window.setContentSize(NSSize(width: 580, height: 780))
         window.center()
         super.init(window: window)
+        window.delegate = self
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        state.isWindowVisible = window?.occlusionState.contains(.visible) ?? false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose()
     }
 
     @available(*, unavailable)

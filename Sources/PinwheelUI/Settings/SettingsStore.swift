@@ -66,6 +66,7 @@ final class SettingsStore {
     var gifMaxSeconds: Int { didSet { save(gifMaxSeconds, .gifMaxSeconds) } }
 
     // System
+    /// Files converted at the same time; 0 means automatic.
     var maxConcurrentJobs: Int { didSet { save(maxConcurrentJobs, .maxConcurrentJobs) } }
     /// Empty means "find ffmpeg automatically".
     var ffmpegPath: String { didSet { save(ffmpegPath, .ffmpegPath) } }
@@ -98,7 +99,7 @@ final class SettingsStore {
             .gifWidth: factory.gifWidth,
             .gifFPS: factory.gifFPS,
             .gifMaxSeconds: factory.gifMaxSeconds ?? 0,
-            .maxConcurrentJobs: 2,
+            .maxConcurrentJobs: 0,
             .ffmpegPath: "",
         ]
     }
@@ -138,6 +139,10 @@ final class SettingsStore {
     /// The ffmpeg to use: the custom path if it works, else the usual places.
     var ffmpegURL: URL? { FFmpeg.locate(customPath: ffmpegPath) }
     var pngquantURL: URL? { ExternalTool.pngquant.locate() }
+
+    var concurrencyLimit: ConcurrencyLimit {
+        maxConcurrentJobs > 0 ? .fixed(maxConcurrentJobs) : .automatic
+    }
 
     /// A snapshot of the settings for one job.
     var conversionOptions: ConversionOptions {

@@ -5,8 +5,10 @@ import Observation
 /// Tracks whether macOS lets Pinwheel watch the mouse and modifier keys in
 /// other apps (System Settings › Privacy & Security › Accessibility).
 ///
-/// It keeps checking for as long as the app runs, so every place that shows
-/// the status (Settings, the menu) updates as soon as you flip the switch.
+/// While the permission is missing it checks every second, so Settings and
+/// the menu turn green as soon as you flip the switch. Once it's granted it
+/// stops checking on a timer: macOS announces changes, and the menu and
+/// Settings check again whenever they open.
 @Observable
 final class AccessibilityPermission {
     private(set) var isTrusted: Bool = AXIsProcessTrusted()
@@ -18,9 +20,8 @@ final class AccessibilityPermission {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var observer: NSObjectProtocol?
 
-    /// Starts watching. Checks every second while the permission is missing
-    /// (every 3 seconds once it's granted, to notice if it's taken away), and
-    /// right away when macOS announces an Accessibility change.
+    /// Starts watching: every second while the permission is missing, and
+    /// right away whenever macOS announces an Accessibility change.
     func startWatching() {
         guard observer == nil else { return }
         observer = DistributedNotificationCenter.default().addObserver(
@@ -76,7 +77,9 @@ final class AccessibilityPermission {
 
     private func scheduleTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: isTrusted ? 3 : 1, repeats: true) { _ in
+        timer = nil
+        guard !isTrusted else { return }  // no need to wake up every few seconds
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             MainActor.assumeIsolated { self.refresh() }
         }
     }

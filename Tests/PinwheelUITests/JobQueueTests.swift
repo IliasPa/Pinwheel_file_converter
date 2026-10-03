@@ -123,6 +123,48 @@ struct JobQueueTests {
     }
 }
 
+struct ConcurrencyTests {
+    @Test func videosWaitForAVideoSlotWhileImagesGoAhead() async throws {
+        let scratch = try Scratch()
+        // The videos don't exist, so those jobs fail quickly; only the order matters here.
+        let videos = ["a.mov", "b.mov"].map { SourceFile(url: scratch.url.appendingPathComponent($0)) }
+        let images = try ["c.png", "d.png", "e.png"].map { SourceFile(url: try scratch.image($0)) }
+        let queue = JobQueue()
+        queue.concurrency = { ConcurrencyLimit(total: 3, video: 1) }
+        queue.enqueue(files: videos, action: .convert(.mp4))
+        queue.enqueue(files: images, action: .convert(.jpeg))
+
+        let running = queue.jobs.filter { $0.state == .running }
+        #expect(running.map(\.title) == ["a.mov", "c.png", "d.png"])
+        for _ in 0..<400 where !queue.isIdle {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(queue.isIdle)
+    }
+
+    @Test func automaticUsesTheCoresButOnlyTwoVideos() {
+        let automatic = ConcurrencyLimit.automatic
+        #expect((2...8).contains(automatic.total))
+        #expect(automatic.video == 2)
+        #expect(ConcurrencyLimit.fixed(3) == ConcurrencyLimit(total: 3, video: 3))
+        #expect(ConcurrencyLimit.fixed(0).total == 1)
+    }
+
+    @Test func jobsRunInTheWorkerProcess() async throws {
+        let worker = Bundle(for: Scratch.self).bundleURL.deletingLastPathComponent().appendingPathComponent("PinwheelWorker")
+        try #require(FileManager.default.isExecutableFile(atPath: worker.path), "PinwheelWorker wasn't built next to the tests")
+        let scratch = try Scratch()
+        let queue = JobQueue()
+        queue.runner = ConversionRunner(worker: worker)
+        queue.enqueue(files: [SourceFile(url: try scratch.image("photo.png"))], action: .convert(.jpeg))
+        for _ in 0..<400 where !queue.isIdle {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(queue.jobs.first?.state == .finished)
+        #expect(queue.jobs.first?.outputs.map(\.lastPathComponent) == ["photo (converted).jpg"])
+    }
+}
+
 struct WheelModelTests {
     @Test func resizeWedgeShowsTheChosenSize() {
         var options = ConversionOptions()

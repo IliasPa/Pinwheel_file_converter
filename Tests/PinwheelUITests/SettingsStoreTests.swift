@@ -20,4 +20,30 @@ struct SettingsStoreTests {
         #expect(options.gifMaxSeconds == factory.gifMaxSeconds)
         #expect(options.saveLocation == .nextToOriginal)
     }
+
+    @Test func filesAtTheSameTimeIsAutomaticUnlessChosen() {
+        let store = freshStore()
+        #expect(store.concurrencyLimit == .automatic)
+        store.maxConcurrentJobs = 4
+        #expect(store.concurrencyLimit == .fixed(4))
+    }
+}
+
+struct SettingsWindowTests {
+    @Test func closingSettingsTellsTheAppSoItCanLetGo() {
+        let name = "PinwheelTests-\(UUID().uuidString)"
+        let view = SettingsView(
+            settings: SettingsStore(defaults: UserDefaults(suiteName: name)!),
+            launch: LaunchAtLogin(),
+            permission: AccessibilityPermission(),
+            state: SettingsViewState(),
+            onShowDemo: {},
+            onShowFFmpegHelp: {}
+        )
+        var closed = false
+        let controller = SettingsWindowController(view: view) { closed = true }
+        controller.window?.close()
+        #expect(closed)
+        UserDefaults.standard.removePersistentDomain(forName: name)
+    }
 }

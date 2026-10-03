@@ -5,6 +5,17 @@ public enum Availability: Equatable, Sendable {
     case unavailable(String)
 }
 
+/// A job with everything about its output decided: the plan, and the exact
+/// name to write, already reserved. It can be done in this process or sent
+/// to a worker process.
+public struct PlannedJob: Sendable, Equatable, Codable {
+    public var request: ConversionRequest
+    public var options: ConversionOptions
+    var plan: OutputPlan
+    /// The file (or, for a multi-page PDF, the folder) to write.
+    public var destination: URL
+}
+
 /// Plans each job, sends it to the right converter, and checks the result.
 public enum ConversionEngine {
     /// Whether ffmpeg is needed for this action on this file.
@@ -34,9 +45,10 @@ public enum ConversionEngine {
         return .available
     }
 
-    /// Runs one job off the main thread. On failure or cancellation, anything
-    /// half-written is deleted. A result with no outputs means there was
-    /// nothing useful to do, and its note says why.
+    /// Runs one job in this process, off the main thread. (The app runs jobs
+    /// in a worker process instead; see `ConversionRunner`.) On failure or
+    /// cancellation, anything half-written is deleted. A result with no
+    /// outputs means there was nothing useful to do, and its note says why.
     @concurrent
     public static func run(
         _ request: ConversionRequest,
@@ -44,15 +56,36 @@ public enum ConversionEngine {
         naming: OutputNaming = .shared,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> ConversionResult {
-        guard let file = request.files.first, request.files.allSatisfy({ $0.kind != nil }) else {
+        let job = try prepare(request, options: options, naming: naming)
+        defer { naming.release(job.destination) }
+        return try await perform(job, progress: progress)
+    }
+
+    /// Decides what the job makes and where, and reserves that name so no
+    /// other job picks it. Call `naming.release(job.destination)` when done.
+    public static func prepare(
+        _ request: ConversionRequest,
+        options: ConversionOptions,
+        naming: OutputNaming = .shared
+    ) throws -> PlannedJob {
+        guard !request.files.isEmpty, request.files.allSatisfy({ $0.kind != nil }) else {
             throw ConversionError.unsupported(request.files.first?.url.lastPathComponent ?? "This file")
         }
         let plan = OutputPlanner.plan(request, options: options)
         let destination = naming.reserve(
             in: plan.folder, baseName: plan.baseName, suffix: plan.suffix, fileExtension: plan.fileExtension
         )
-        defer { naming.release(destination) }
+        return PlannedJob(request: request, options: options, plan: plan, destination: destination)
+    }
 
+    /// Does a prepared job: sends it to the right converter and checks the result.
+    @concurrent
+    public static func perform(
+        _ job: PlannedJob,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> ConversionResult {
+        let (request, options, plan, destination) = (job.request, job.options, job.plan, job.destination)
+        let file = request.files[0]
         do {
             try Task.checkCancellation()
             var notes = [plan.folderNote]
@@ -63,7 +96,7 @@ public enum ConversionEngine {
                 progress(0.1)
                 try ImageConverter.convert(file.url, to: format, destination: destination, options: options)
             case (.pdf, .convert(let format)):
-                try PDFConverter.renderPages(file.url, to: format, destination: destination, options: options, progress: progress)
+                try await PDFConverter.renderPages(file.url, to: format, destination: destination, options: options, progress: progress)
             case (.video, .convert(let format)), (.audio, .convert(let format)):
                 notes.append(try await MediaConverter.convert(file, to: format, destination: destination, options: options, progress: progress))
             case (_, .tool(let tool)):

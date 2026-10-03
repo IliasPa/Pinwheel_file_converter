@@ -177,7 +177,7 @@ enum MediaFixtures {
     }
 
     /// Random pixels: compresses badly, so shrinking it is easy to measure.
-    private static func noiseImage(width: Int, height: Int) -> CGImage {
+    static func noiseImage(width: Int, height: Int) -> CGImage {
         var generator = SystemRandomNumberGenerator()
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         for i in stride(from: 0, to: bytes.count, by: 4) {

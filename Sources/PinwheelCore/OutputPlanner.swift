@@ -2,7 +2,7 @@ import Foundation
 
 /// Everything decided about a job's output before any work starts. The
 /// converters follow it instead of working things out again.
-struct OutputPlan: Sendable, Equatable {
+struct OutputPlan: Sendable, Equatable, Codable {
     var folder: URL
     var baseName: String
     /// Goes in brackets: "photo (converted).png".

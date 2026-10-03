@@ -58,7 +58,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.jobs.enqueue(files: files, action: action)
         }
         jobs.optionsProvider = { settings.conversionOptions }
-        jobs.maxConcurrent = { settings.maxConcurrentJobs }
+        jobs.concurrency = { settings.concurrencyLimit }
+        jobs.runner = .bundled
         jobs.shouldTrashOriginals = { settings.moveOriginalToTrash }
         jobs.actionLabel = { action in action.title(in: .tools, options: settings.conversionOptions) }
         jobs.onChange = { [weak self] in
@@ -112,7 +113,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 onShowFFmpegHelp: { [weak self] in self?.showFFmpegHelp() }
             )
-            settingsWindow = SettingsWindowController(view: view)
+            settingsWindow = SettingsWindowController(view: view) { [weak self] in
+                // Let the window finish closing, then free it: a closed
+                // Settings window used to keep its preview animating unseen.
+                Task {
+                    guard self?.settingsWindow?.window?.isVisible != true else { return }  // reopened meanwhile
+                    self?.settingsWindow = nil
+                }
+            }
         }
         settingsWindow?.present()
     }
