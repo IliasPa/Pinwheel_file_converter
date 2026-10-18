@@ -87,6 +87,7 @@ struct JobQueueTests {
         queue.moveToTrash = { url in
             trashed.append(url)
             try FileManager.default.removeItem(at: url)  // stand-in for the real Trash
+            return url
         }
         queue.shouldTrashOriginals = { true }
         queue.enqueue(files: [SourceFile(url: source)], action: .convert(.heic))

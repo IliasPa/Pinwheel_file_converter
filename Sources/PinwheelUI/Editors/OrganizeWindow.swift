@@ -2,6 +2,7 @@ import AppKit
 import Observation
 import PDFKit
 import SwiftUI
+import UniformTypeIdentifiers
 import PinwheelCore
 
 /// The pages of one or more PDFs as thumbnails: drag to reorder, turn,
@@ -22,6 +23,19 @@ final class OrganizeModel {
 
     var onSave: (([SourceFile], PageArrangement) -> Void)?
     var onClose: (() -> Void)?
+
+    /// Where a dragged page would land: before or after `page`, or at the
+    /// end (`page` nil). Shown as a bar between pages.
+    struct DropTarget: Equatable {
+        var page: String?
+        var after = false
+    }
+
+    private(set) var dropTarget: DropTarget?
+    /// The page being dragged (with the selection, when it's selected).
+    @ObservationIgnored var dragging: String?
+    /// How wide a page's place in the grid is (to tell its left half from its right).
+    @ObservationIgnored var cellWidth: CGFloat = 170
 
     init(files: [SourceFile]) {
         self.files = files
@@ -141,11 +155,46 @@ final class OrganizeModel {
         selection = []
     }
 
+    /// The pages a drag moves: the dragged one, or the whole selection when
+    /// it's part of it.
+    private func moving(_ ids: [String]) -> Set<String> {
+        var moving = Set(ids)
+        if let first = ids.first, selection.contains(first) { moving.formUnion(selection) }
+        return moving
+    }
+
+    /// Shows where the dragged pages would go, if they can go there.
+    func hover(_ target: DropTarget?) {
+        guard let target, let dragging else {
+            dropTarget = nil
+            return
+        }
+        if let page = target.page, moving([dragging]).contains(page) {
+            dropTarget = nil  // onto itself: nothing would change
+        } else if dropTarget != target {
+            dropTarget = target
+        }
+    }
+
+    /// Drops the dragged pages where the bar is.
+    func dropDragged() {
+        defer {
+            dropTarget = nil
+            dragging = nil
+        }
+        guard let target = dropTarget, let dragging else { return }
+        var before = target.page
+        if target.after, let page = target.page, let index = pages.firstIndex(where: { $0.id == page }) {
+            let movingPages = moving([dragging])
+            before = pages[(index + 1)...].first { !movingPages.contains($0.id) }?.id
+        }
+        move([dragging], before: before)
+    }
+
     /// Moves the dragged pages (all selected ones, if the dragged page is
     /// selected) to just before `target` (nil: the end).
     func move(_ ids: [String], before target: String?) {
-        var moving = Set(ids)
-        if let first = ids.first, selection.contains(first) { moving.formUnion(selection) }
+        let moving = moving(ids)
         guard target.map({ !moving.contains($0) }) ?? true else { return }
         change { pages in
             let moved = pages.filter { moving.contains($0.id) }
@@ -181,13 +230,7 @@ struct OrganizeView: View {
                     }
                 }
                 .padding(22)
-                Color.clear
-                    .frame(height: 60)
-                    .contentShape(Rectangle())
-                    .dropDestination(for: String.self) { ids, _ in
-                        model.move(ids, before: nil)
-                        return true
-                    }
+                EndDropZone(model: model)
             }
             .background(StudioCanvas.background)
             .onTapGesture { model.selection = [] }
@@ -253,6 +296,53 @@ struct OrganizeView: View {
     }
 }
 
+/// The space after the last page: dropping there puts pages at the end.
+private struct EndDropZone: View {
+    var model: OrganizeModel
+
+    var body: some View {
+        let targeted = model.dropTarget == OrganizeModel.DropTarget(page: nil)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(targeted ? Color.accentColor : .clear, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(targeted ? Color.accentColor.opacity(0.15) : .clear))
+            .overlay {
+                if targeted { Text("Put at the end").font(.caption.weight(.semibold)).foregroundStyle(.white) }
+            }
+            .frame(height: 60)
+            .padding(.horizontal, 22)
+            .contentShape(Rectangle())
+            .onDrop(of: [.plainText], delegate: PageDrop(model: model, page: nil))
+    }
+}
+
+/// Follows a page dragged over a page (or the end), so the bar shows the
+/// side it would land on, and drops it there.
+private struct PageDrop: DropDelegate {
+    let model: OrganizeModel
+    let page: String?
+
+    func validateDrop(info: DropInfo) -> Bool { model.dragging != nil }
+    func dropEntered(info: DropInfo) { update(info) }
+    func dropExited(info: DropInfo) {
+        if model.dropTarget?.page == page { model.hover(nil) }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        update(info)
+        return DropProposal(operation: model.dropTarget == nil ? .forbidden : .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard model.dropTarget != nil else { return false }
+        model.dropDragged()
+        return true
+    }
+
+    private func update(_ info: DropInfo) {
+        model.hover(OrganizeModel.DropTarget(page: page, after: page != nil && info.location.x > model.cellWidth / 2))
+    }
+}
+
 private struct PageCell: View {
     var model: OrganizeModel
     let page: PageArrangement.Page
@@ -282,6 +372,22 @@ private struct PageCell: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
+        // The whole column, so the bar below lands in the middle of the gap.
+        .frame(maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { model.cellWidth = $0 }
+        .overlay(alignment: model.dropTarget?.after == true ? .trailing : .leading) {
+            if model.dropTarget?.page == page.id {
+                // The bar sits in the gap where the pages would go (18 points wide).
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: 4)
+                    .padding(.vertical, 2)
+                    .shadow(color: Color.accentColor.opacity(0.7), radius: 5)
+                    .offset(x: model.dropTarget?.after == true ? 11 : -11)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: model.dropTarget)
         .contentShape(Rectangle())
         .onTapGesture { model.click(page) }
         .contextMenu {
@@ -292,11 +398,11 @@ private struct PageCell: View {
                 model.deleteSelected()
             }
         }
-        .draggable(page.id)
-        .dropDestination(for: String.self) { ids, _ in
-            model.move(ids, before: page.id)
-            return true
+        .onDrag {
+            model.dragging = page.id
+            return NSItemProvider(object: page.id as NSString)
         }
+        .onDrop(of: [.plainText], delegate: PageDrop(model: model, page: page.id))
     }
 }
 

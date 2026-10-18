@@ -42,7 +42,13 @@ enum OutputPlanner {
             }
         case .tool(let tool):
             plan.suffix = tool.nameSuffix(options: options)
+            if tool == .sizeLimit, let bytes = request.sizeLimit {
+                plan.suffix = "under \(SizeLimit.title(bytes: bytes))"
+            }
             (plan.format, plan.fileExtension) = toolOutput(tool, for: file, request: request, options: options)
+        case .recipe(let recipe):
+            plan.suffix = recipe.fileNameSuffix
+            (plan.format, plan.fileExtension) = recipeOutput(recipe, for: file, options: options)
         case .open:
             break  // opens a window; never a job (ConversionEngine.prepare refuses it)
         }
@@ -82,12 +88,18 @@ enum OutputPlanner {
             return (format, format.fileExtension)
         case (.image, .editInfo):
             return (file.format, ext)  // same picture, new info
+        case (.image, .sizeLimit):
+            // JPEG and HEIC can shrink as they are; others become JPEG (HEIC
+            // when parts are really see-through: HEIC keeps that, JPEG can't).
+            if let format = file.format, [.jpeg, .heic].contains(format) { return (format, ext) }
+            let format: OutputFormat = ImageConverter.hasTransparentPixels(file.url) ? .heic : .jpeg
+            return (format, format.fileExtension)
         case (.image, _):
             if let format = file.format, [.png, .jpeg, .heic, .tiff, .gif].contains(format) { return (format, ext) }
             return (.png, OutputFormat.png.fileExtension)
-        case (.video, .compress):
+        case (.video, .compress), (.video, .sizeLimit):
             return (.mp4, OutputFormat.mp4.fileExtension)
-        case (.video, .extractAudio), (.audio, .compress):
+        case (.video, .extractAudio), (.audio, .compress), (.audio, .sizeLimit):
             return (.m4a, OutputFormat.m4a.fileExtension)
         case (.video, .saveFrame):
             return (.jpeg, OutputFormat.jpeg.fileExtension)
@@ -103,6 +115,31 @@ enum OutputPlanner {
         default:
             return (nil, ext)  // Strip Info, Mute and Edit Info keep the container
         }
+    }
+
+    /// What a custom action ends with, worked out step by step (the steps
+    /// themselves may still decide otherwise; see `RecipeRunner.place`).
+    static func recipeOutput(_ recipe: Recipe, for file: SourceFile, options: ConversionOptions) -> (OutputFormat?, String?) {
+        var current = file
+        var result: (OutputFormat?, String?) = (file.format, file.url.pathExtension.lowercased())
+        for step in recipe.steps {
+            let (action, parameters) = step.job(for: current)
+            switch action {
+            case .convert(let format):
+                result = (format, format.fileExtension)
+            case .tool(let tool):
+                var stepOptions = options
+                if case .resize(let size) = step { stepOptions.resize = size }
+                let request = ConversionRequest(file: current, action: action, parameters: parameters)
+                let (format, ext) = toolOutput(tool, for: current, request: request, options: stepOptions)
+                result = (format ?? result.0, ext)
+            case .open, .recipe:
+                break
+            }
+            guard let ext = result.1 else { return result }  // a folder: nothing comes after it
+            current = SourceFile(url: file.url.deletingLastPathComponent().appendingPathComponent("pinwheel-step.\(ext)"))
+        }
+        return result
     }
 
     /// A file with changed sound or picture keeps its container when macOS

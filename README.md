@@ -7,10 +7,15 @@ converts them. Everything happens on your Mac: nothing is uploaded.
 
 - Hold **⇧ Shift** while dragging: the **format wheel** (PNG, JPEG, MP4, MP3…).
 - Hold **⌥ Option + ⇧ Shift** while dragging: the **tools wheel** (Compress,
-  Resize, Remove BG, Crop…, Edit…, Watermark…, Info…, Organize…, Normalize
-  and more). Tools ending in "…" open a window where you choose the details
-  first, like the crop's shape and size.
+  Size Limit…, Resize, Remove BG, Crop…, Edit…, Watermark…, Rename…, Info…,
+  Organize…, Searchable and more, plus **your own custom actions**). Tools
+  ending in "…" open a window where you choose the details first, like the
+  crop's shape and size.
 - Let go of Shift, or drop in the middle or outside the wheel: nothing happens.
+- Or **right-click files in Finder › Services**, or use the `pinwheel`
+  command (Terminal, Shortcuts): see [Finder and Shortcuts](#finder-and-shortcuts).
+- Something not what you wanted? **Undo** is at the top of the menu-bar
+  menu: new files go to the Trash and originals come back.
 
 What changed in each version is listed in [CHANGES.md](CHANGES.md).
 
@@ -27,11 +32,13 @@ so on. The tools use their own names, like `photo (compressed).jpg` or
 - **Apple's Command Line Tools** (free, no Apple Developer account needed). To
   check, open Terminal and type `swift --version`. If macOS offers to install
   the tools, click **Install**.
-- **Homebrew**, **ffmpeg** and **pngquant** (optional). Without ffmpeg,
-  everything works except MP3, GIFs from videos, and MKV/WebM/AVI/OGG-type
-  files. Without pngquant, Compress can hardly shrink PNGs. To install:
+- **Homebrew**, **ffmpeg**, **pngquant** and **Tesseract** (optional).
+  Without ffmpeg, everything works except MP3, GIFs from videos, and
+  MKV/WebM/AVI/OGG-type files. Without pngquant, Compress can hardly shrink
+  PNGs. Without Tesseract, text recognition can't read Greek. To install:
   1. Get Homebrew from <https://brew.sh> (copy the command on that page into Terminal).
-  2. In Terminal, run: `brew install ffmpeg pngquant`
+  2. In Terminal, run: `brew install ffmpeg pngquant tesseract`
+  3. For Greek, click **Download Greek** in Settings › Text recognition (9 MB).
 
 You do **not** need Xcode.
 
@@ -51,7 +58,7 @@ Then use one of these commands:
 |---|---|
 | `make run` | Builds Pinwheel and starts it (quits the old copy first). |
 | `make install` | Builds Pinwheel, copies it into **/Applications**, and starts it from there. |
-| `make test` | Runs the automated tests (about 185 of them, including real conversions). |
+| `make test` | Runs the automated tests (about 240 of them, including real conversions). GitHub runs them too, on every push. |
 | `make build` | Only builds. |
 | `make clean` | Deletes all build files, so the next build starts fresh. |
 | `make uninstall` | Quits Pinwheel and removes it from /Applications. |
@@ -157,10 +164,11 @@ allow Pinwheel in **System Settings › General › Login Items & Extensions**.
 
 | You drag… | ⇧ Shift wheel | ⌥⇧ Option + Shift wheel |
 |---|---|---|
-| **Images** (JPEG, PNG, HEIC, TIFF, GIF, WebP, BMP, camera RAW…) | PNG, JPEG, HEIC, TIFF, GIF, PDF; **Collage…** (two or more) | Compress, Resize, Remove BG, Crop…, Edit…, Add BG…, Markup…, Watermark…, Info… (also Strip Info, Get Text: see Settings › Tools wheel) |
-| **Videos** (MOV, MP4, M4V; MKV, WebM, AVI with ffmpeg) | MP4, MOV, GIF\*, M4A, MP3\* | Compress, Strip Info, Get Audio, Mute, Edit… (trim, speed, turn, sound, GIF), Info… |
-| **Audio** (MP3, M4A, WAV, AIFF, FLAC, OGG…) | MP3\*, M4A, WAV, AIFF, FLAC | Compress, Strip Info, Normalize, Edit… (trim, speed, fades, loudness), Info… (MP3/FLAC Strip Info and saving info need ffmpeg) |
-| **PDFs** | PNG, JPEG, HEIC, TIFF (one image per page), Smaller PDF | Compress, Strip Info, Merge, Split Pages, Organize…, Get Text, Password…, Info… |
+| **Images** (JPEG, PNG, HEIC, TIFF, GIF, WebP, BMP, camera RAW…) | PNG, JPEG, HEIC, TIFF, GIF, PDF; **Collage…** (two or more) | Compress, Size Limit…, Resize, Remove BG, Crop…, Edit…, Watermark…, Info…, Rename… (also Add BG…, Markup…, Strip Info, Get Text: see Settings › Tools wheel) |
+| **Videos** (MOV, MP4, M4V; MKV, WebM, AVI with ffmpeg) | MP4, MOV, GIF\*, M4A, MP3\* | Compress, Size Limit…, Strip Info, Get Audio, Mute, Edit… (trim, speed, turn, sound, GIF), Info…, Rename… |
+| **Audio** (MP3, M4A, WAV, AIFF, FLAC, OGG…) | MP3\*, M4A, WAV, AIFF, FLAC | Compress, Size Limit…, Strip Info, Normalize, Edit… (trim, speed, fades, loudness), Info…, Rename… (MP3/FLAC Strip Info and saving info need ffmpeg) |
+| **PDFs** | PNG, JPEG, HEIC, TIFF (one image per page), Smaller PDF | Compress, Size Limit…, Merge, Split Pages, Organize…, Searchable, Password…, Info…, Rename… (also Strip Info, Get Text) |
+| **Anything else** (documents, folders…) | — | Rename… |
 
 \* needs ffmpeg. Without it, these wedges are grayed out and say why.
 
@@ -197,8 +205,12 @@ allow Pinwheel in **System Settings › General › Login Items & Extensions**.
 - **Merge** (two or more PDFs): one PDF with all their pages, in name order,
   `a (merged).pdf`. **Split Pages:** a folder with one PDF per page.
 - **Get Text:** all the text as a `.txt` file. In PDFs, pages that are scans
-  are read with on-device text recognition (about 30 languages, including
-  English, French, German, Spanish and Russian, but not Greek).
+  are read with on-device text recognition: Apple's (about 30 languages,
+  not Greek) or, for **Greek**, Tesseract (see Settings › Text recognition).
+- **Searchable** (PDFs): scanned pages get an invisible layer with their
+  text, like a scanner's "OCR" option, so the PDF can be searched and its
+  text selected and copied: `scan (searchable).pdf`. Pages that already have
+  text are left as they are, and every page looks exactly as before.
 
 ---
 
@@ -231,8 +243,8 @@ window is open, Pinwheel appears in the Dock and in ⌘-Tab.
   nine spots or **tiled** across the picture, with size, opacity, margin and
   a soft shadow. Drop a whole folder's worth of photos on Watermark… to mark
   them all at once; Pinwheel remembers your last watermark.
-- **Undo/Redo** (⌘Z, ⇧⌘Z) for everything; hold **Compare** to see the
-  original; **Save as** keeps the format (or PNG when parts are
+- **Undo/Redo** (⌘Z, ⇧⌘Z) for everything; hold **Compare** (or **Space**,
+  when you're not typing) to see the original; **Save as** keeps the format (or PNG when parts are
   see-through). Drop several pictures to save the same edit for each (the
   crop keeps its shape on pictures of other sizes).
 
@@ -265,9 +277,65 @@ background, width (1,500 to 6,000 pixels) and format. Drag the names to
 change the order. Saved as `first (collage).jpg`.
 
 **Organize…** (one or more PDFs): every page as a thumbnail. Drag pages to
-reorder them (even between PDFs), turn them, remove them, reverse the order;
-⌘-click and ⇧-click select several. **Save as One PDF** makes
-`first (organized).pdf`.
+reorder them (even between PDFs): a colored bar shows where they'll go,
+before or after the page under the pointer (or "Put at the end" below the
+last). Turn them, remove them, reverse the order; ⌘-click and ⇧-click
+select several. **Save as One PDF** makes `first (organized).pdf`.
+
+**Size Limit…** (any kind): how big may it be? 1, 2, 5, 8, 10, 20, 25 or
+50 MB, or exactly what you type, for **each file** or **all together** (to
+fit in one email; the size is shared out by how big each file is). Pinwheel
+works out the highest quality that fits, and checks: pictures go down in
+quality first and get smaller in size only if needed; videos get the bit
+rate (and if needed the picture size) that fits; audio gets the bit rate
+(mono when it's very tight); PDFs get their pictures shrunk step by step.
+`video (under 25 MB).mp4`. Files that already fit are left alone, and if
+something can't get that small (a long video in 1 MB), nothing is saved
+and you're told how much it would need.
+
+**Rename…** (any files, even ones Pinwheel can't convert, and folders):
+rules run from top to bottom, and the list on the right shows every new
+name before anything happens, in orange when it would clash with another
+or with a file already there. The rules:
+- **Replace text** (any case or exact, all/first/last, regular expressions
+  with $1, the extension too if you like).
+- **Remove characters:** the first or last few (e.g. "delete the last 3
+  characters"), from a position, all but the first/last few, everything up
+  to or from some text, or between two marks like ( and ).
+- **Remove kinds of text:** digits, spaces, special characters, text in
+  brackets, emoji, accents, Finder's "copy" and "(1)", Latin or Greek letters.
+- **Add text:** at the start, the end, after or before a number of
+  characters, or before/after some text.
+- **Change case:** lowercase, UPPERCASE, Title Case, Sentence case,
+  camelCase, PascalCase, snake_case, kebab-case (Greek capitals lose their
+  accents, as they should).
+- **Spaces and separators:** spaces to _ - or ., or back; tidy up.
+- **Numbering:** start, step, digits (001), 1 2 3 / a b c / A B C / I II III,
+  before, after or instead of the name.
+- **New name from a pattern:** `{name}`, `{n}`, `{date}` (taken), `{created}`,
+  `{modified}`, `{today}`, `{folder}`, `{width}x{height}`, `{camera}`,
+  `{duration}`, `{original}`, `{ext}`.
+- **Add a date:** taken, created, modified or today, in many formats.
+- **Greek to Latin:** Greeklish by the Greek standard (ELOT 743:
+  Αθήνα → Athina), classical, or any script to Latin.
+- **Pad numbers** with zeros, **swap** around a separator ("Artist - Title"
+  → "Title - Artist"), and the **extension** (lower/upper case, change, remove).
+
+Rules can be switched off, moved, duplicated, and saved as **presets**. The
+order (for numbering) is by name, date taken, created, modified, size, kind,
+or the way you drag the names. Renaming is all or nothing, and can be undone
+from the menu bar.
+
+**Custom actions** (made in Settings › Tools wheel, under each kind of file):
+several steps on one wedge, in the order you choose, e.g. *Crop 4:5 → Fit
+1080 px → Watermark → To JPEG*. Steps: convert, compress, size limit, resize,
+crop to a shape, turn, flip, remove background, auto enhance, filter,
+background and frame, watermark, remove location, strip info, get text,
+searchable (PDFs), get audio, mute, even out loudness, speed, fades and
+volume (video and audio). Each step works on what the step before made (a
+video can become audio halfway, a picture a PDF), and the result is named
+after the action: `photo (Instagram).jpg`. A step with nothing to do (a
+picture already small enough) is passed over and the progress window says so.
 
 **Password…** (PDFs): a copy that asks for the password to open.
 Pinwheel doesn't remember it.
@@ -313,8 +381,15 @@ Menu-bar icon › **Settings…** (or ⌘, while the menu is open):
 - **Images and PDFs:** JPEG, HEIC and Compress quality; Resize size; combine
   several images into one PDF; PDF page resolution.
 - **Tools wheel:** which tools the ⌥⇧ wheel shows for images, videos,
-  audio and PDFs. A wheel holds up to 9, so images start without Strip Info
-  and Get Text (Info… can remove the info too); switch one off to make room.
+  audio and PDFs, and **New Custom Action…** for each. A wheel holds up to
+  9, so images start without Add BG…, Markup… (they're tabs of the same
+  editor), Strip Info and Get Text; PDFs without Strip Info and Get Text.
+  Switch one off to make room. Tools new in an update join your wheel only
+  where there's room, so a wheel you arranged keeps what you chose.
+- **Text recognition:** Apple's (built in) or Tesseract (for Greek); shows
+  whether Tesseract is installed and downloads its Greek file.
+- **Finder and Shortcuts:** how to use Pinwheel from Finder's right-click
+  menu and from Shortcuts, with the command to copy.
 - **Video and audio:** video Compress quality (Smallest file / Balanced /
   Best quality) and size limit (keep, 4K, 1080p, 720p); audio Compress bit
   rate; GIF width, frame rate and length.
@@ -324,6 +399,48 @@ Menu-bar icon › **Settings…** (or ⌘, while the menu is open):
   the limit there); where ffmpeg is (or a custom location); whether pngquant
   is installed.
 - **Reset to Defaults.**
+
+---
+
+## Undo
+
+The menu-bar menu starts with **Undo** and what it would take back, e.g.
+"Undo Compress (3 files)", with when it happened. It puts the new files in
+the Trash, brings originals back out of the Trash (when Pinwheel had moved
+them there), and gives renamed files their old names. Press it again for
+the step before (up to 20, while Pinwheel runs). If something can't be
+undone (a file moved since, or the Trash emptied), it says which.
+
+---
+
+## Finder and Shortcuts
+
+**Finder:** select files, right-click, and at the bottom choose **Services ›
+Convert with Pinwheel**, **Pinwheel Tools** or **Rename with Pinwheel**.
+The wheel opens under the pointer: click a wedge, or click the middle to
+switch between formats and tools; Esc or a click elsewhere closes it. If
+they're missing, switch them on in System Settings › Keyboard › Keyboard
+Shortcuts › Services › Files and Folders.
+
+**The `pinwheel` command** is inside the app:
+`/Applications/Pinwheel.app/Contents/Helpers/pinwheel`. It asks Pinwheel to
+do the job (starting it if needed), so jobs show in the progress window and
+can be undone, then prints the new files' paths:
+
+```sh
+pinwheel convert jpg ~/Desktop/*.heic
+pinwheel size-limit 10MB video.mov
+pinwheel run "Instagram" photo.jpg      # one of your custom actions
+pinwheel show tools *.pdf               # the wheel, to click
+pinwheel help                           # everything it can do
+```
+
+**Shortcuts:** add **Run Shell Script**, set **Pass Input** to **as
+arguments**, and write `"/Applications/Pinwheel.app/Contents/Helpers/pinwheel" compress "$@"`
+(or any other command). Switch on **Use as Quick Action › Finder** in the
+shortcut's details to have it in Finder's right-click **Quick Actions**.
+(Shortcuts' own Pinwheel actions would need Xcode to build; the command
+works without it.)
 
 ---
 
@@ -367,10 +484,16 @@ that, Pinwheel removes a plain background color around the edges. Busy
 scenes and landscapes have neither. Try Crop… first so the subject fills
 more of the picture.
 
-**Get Text finds nothing, or the wrong letters.**
-Text recognition doesn't know every language (no Greek yet), and very small
-or blurry text is hard to read. PDFs with real text don't need recognition
-and work in any language.
+**Get Text or Searchable finds nothing, or the wrong letters.**
+Apple's text recognition doesn't read Greek: install Tesseract
+(`brew install tesseract`) and click **Download Greek** in Settings › Text
+recognition. Very small or blurry text is hard to read either way. PDFs
+with real text don't need recognition and work in any language.
+
+**Pinwheel isn't in Finder's right-click menu.**
+Look under **Services** at the bottom of the menu. If it isn't there, switch
+it on in System Settings › Keyboard › Keyboard Shortcuts › Services › Files
+and Folders. `make install` also tells macOS about them.
 
 **Launch at Login doesn't stick.**
 Install into /Applications with `make install`, then turn it on again.
@@ -421,14 +544,25 @@ Accessibility** and from **Login Items**. Its settings are stored in
   half-written. (`ConversionRunner.swift` is the app's side.)
 - `Sources/PinwheelUI`: the menu-bar app (AppKit + SwiftUI, `@Observable`
   models, main thread by default): drag detection, the wheel window, the job
-  queue, the progress window, Settings, notifications.
+  queue, the progress window, Settings, notifications, Undo, Finder's
+  Services, and `CommandCenter` (requests from the `pinwheel` command).
+- `Sources/PinwheelCLI`: the `pinwheel` command (Foundation only), in
+  `Pinwheel.app/Contents/Helpers`. It and the app talk with distributed
+  notifications, which never leave the Mac.
 - `Sources/Pinwheel`: just the few lines that start the app.
 - Jobs run side by side: by default up to two fewer than your Mac's
   processor cores (at most 8), with at most 2 videos. A PDF's pages are also
   drawn several at a time.
 - `Tests/PinwheelCoreTests`: tests that make real images, videos, songs and
   PDFs, convert them, and check the results. `Tests/PinwheelUITests`: the job
-  queue, settings, the wheel's labels, and that every glass level draws.
+  queue, settings, the wheel's labels, that every glass level draws, the
+  editor windows' logic, Undo, and the `pinwheel` command talking to the app.
+  `.github/workflows/tests.yml` runs them all on GitHub for every push.
+- Size Limit aims and checks: pictures by halving the quality range, videos
+  by bit rate with a cap per second (Apple's encoder treats the average as a
+  wish), then aiming again with how much the last change saved.
+- Custom actions run each step as an ordinary job on what the step before
+  made, in a private folder, inside the worker.
 - The image editor's preview and the saved file are drawn by the same code
   (`StudioRenderer`: Core Image for turning, cropping and adjusting, Core
   Graphics for markup and frames). The edit itself (`ImageEdit`) is a small

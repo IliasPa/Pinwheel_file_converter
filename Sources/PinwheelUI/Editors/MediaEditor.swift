@@ -21,7 +21,9 @@ final class MediaEditorModel {
     // The file shown
     private(set) var duration: Double = 0
     private(set) var isVideo = false
+    /// Frames along the timeline, turned like the picture will be.
     private(set) var filmstrip: [CGImage] = []
+    @ObservationIgnored private var uprightFilmstrip: [CGImage] = []
     private(set) var waveform: [Float] = []
     private(set) var loudness: Double?
     private(set) var isMeasuring = false
@@ -73,6 +75,7 @@ final class MediaEditorModel {
         loadTask?.cancel()
         player.pause()
         (duration, filmstrip, waveform, loudness, loadError, currentTime, isPlaying) = (0, [], [], nil, nil, 0, false)
+        uprightFilmstrip = []
         let url = file.url
         isVideo = file.kind == .video
         let item = AVPlayerItem(url: url)
@@ -88,7 +91,8 @@ final class MediaEditorModel {
                 if isVideo {
                     let strip = try await Self.filmstrip(of: asset, duration: duration)
                     guard current == generation else { return }
-                    filmstrip = strip.images
+                    uprightFilmstrip = strip.images
+                    turnFilmstrip()
                 } else {
                     let peaks = try await MediaAnalysis.waveform(of: url, count: 600)
                     guard current == generation else { return }
@@ -154,7 +158,29 @@ final class MediaEditorModel {
             }
         }
         if after.normalize && !before.normalize { measure() }
+        if after.quarterTurns != before.quarterTurns { turnFilmstrip() }
         applyPreview()
+    }
+
+    private func turnFilmstrip() {
+        let turns = edit.quarterTurns
+        filmstrip = turns == 0 ? uprightFilmstrip : uprightFilmstrip.compactMap { Self.turned($0, quarterTurns: turns) }
+    }
+
+    /// A small picture turned clockwise by quarter turns.
+    static func turned(_ image: CGImage, quarterTurns: Int) -> CGImage? {
+        let turns = ((quarterTurns % 4) + 4) % 4
+        let sideways = turns % 2 == 1
+        let width = sideways ? image.height : image.width, height = sideways ? image.width : image.height
+        guard let ctx = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        // Core Graphics has y up, so clockwise is a negative angle.
+        ctx.translateBy(x: CGFloat(width) / 2, y: CGFloat(height) / 2)
+        ctx.rotate(by: -CGFloat(turns) * .pi / 2)
+        ctx.draw(image, in: CGRect(x: -CGFloat(image.width) / 2, y: -CGFloat(image.height) / 2, width: CGFloat(image.width), height: CGFloat(image.height)))
+        return ctx.makeImage()
     }
 
     func turn(clockwise: Bool) {

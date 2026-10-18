@@ -2,23 +2,25 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import PDFKit
-import Vision
 
 /// "Get Text": the words in a picture or a PDF, saved as a plain .txt file.
-/// Text recognition runs on this Mac (Vision), like Live Text.
+/// Text recognition runs on this Mac: Apple's Vision (like Live Text), or
+/// Tesseract when Greek (or another language Vision lacks) is wanted.
 enum TextExtractor {
     /// Writes the text; returns a note for the progress window, if any.
-    static func write(_ file: SourceFile, to destination: URL, progress: @escaping @Sendable (Double) -> Void) throws -> String? {
+    static func write(
+        _ file: SourceFile, to destination: URL, recognition: TextRecognition,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> String? {
         var note: String?
         let text: String
         switch file.kind {
         case .image:
-            let src = try ImageConverter.open(file.url)
-            // Bigger than this doesn't read better, it's just slower.
-            let image = try ImageConverter.orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src), maxPixelSize: 4096)
-            text = try recognize(image)
+            let image = try await Blocking.run { _ in try picture(file.url) }
+            progress(0.2)
+            text = try await TextRecognizer.recognize(image, settings: recognition).string
         case .pdf:
-            let (pdfText, scanned) = try pdfText(file.url, progress: progress)
+            let (pdfText, scanned) = try await pdfText(file.url, recognition: recognition, progress: progress)
             text = pdfText
             if scanned > 0 {
                 note = scanned == 1 ? "1 scanned page was read with text recognition." : "\(scanned) scanned pages were read with text recognition."
@@ -38,44 +40,69 @@ enum TextExtractor {
         return note
     }
 
-    /// The text in a picture, top to bottom, one line per line found.
-    static func recognize(_ image: CGImage) throws -> String {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
-        request.automaticallyDetectsLanguage = true
-        do {
-            try VisionTurns.take { try VNImageRequestHandler(cgImage: image).perform([request]) }
-        } catch {
-            throw ConversionError.failed("Couldn't read the text: \(error.localizedDescription)")
-        }
-        // Vision's y points up; sort into reading order by rows, then left to right.
-        let lines = (request.results ?? []).sorted { a, b in
-            let rowA = (a.boundingBox.midY * 60).rounded(), rowB = (b.boundingBox.midY * 60).rounded()
-            return rowA != rowB ? rowA > rowB : a.boundingBox.minX < b.boundingBox.minX
-        }
-        return lines.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+    /// The picture upright. Bigger than this doesn't read better, just slower.
+    static func picture(_ url: URL) throws -> CGImage {
+        let src = try ImageConverter.open(url)
+        return try ImageConverter.orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src), maxPixelSize: 4096)
     }
 
     /// Each page's own text; pages without any (scans) are read with text
     /// recognition. Returns the text and how many pages were scans.
-    static func pdfText(_ url: URL, progress: @Sendable (Double) -> Void) throws -> (String, Int) {
+    static func pdfText(
+        _ url: URL, recognition: TextRecognition, progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> (String, Int) {
         let document = try PDFConverter.open(url)
-        let pages = CGPDFDocument(url as CFURL)
-        var parts: [String] = []
-        var scanned = 0
-        for index in 0..<document.pageCount {
-            try Task.checkCancellation()
-            var text = document.page(at: index)?.string ?? ""
-            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               let page = pages?.page(at: index + 1) {
-                text = try recognize(try PDFConverter.render(page, dpi: 200))
-                if !text.isEmpty { scanned += 1 }
-            }
-            parts.append(text.trimmingCharacters(in: .whitespacesAndNewlines))
-            progress(Double(index + 1) / Double(max(document.pageCount, 1)))
+        let count = document.pageCount
+        var parts = (0..<count).map { document.page(at: $0)?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+        let scans = parts.indices.filter { parts[$0].isEmpty }
+        let recognized = try await ScannedPages.read(url, pages: scans, recognition: recognition) { done in
+            progress(Double(count - scans.count + done) / Double(max(count, 1)))
         }
+        for (index, text) in recognized { parts[index] = text.string.trimmingCharacters(in: .whitespacesAndNewlines) }
         // A blank line and a form feed between pages, like `pdftotext`.
-        return (parts.joined(separator: "\n\n\u{0C}"), scanned)
+        return (parts.joined(separator: "\n\n\u{0C}"), recognized.values.filter { !$0.isEmpty }.count)
+    }
+}
+
+/// Reads scanned PDF pages: draws each at 300 DPI and recognizes its text.
+/// Tesseract runs on a few pages at once (one per core it can have);
+/// Vision takes them one by one (it uses the whole Mac for each).
+enum ScannedPages {
+    static let dpi = 300.0
+
+    static func read(
+        _ url: URL, pages: [Int], recognition: TextRecognition,
+        progress: @escaping @Sendable (Int) -> Void
+    ) async throws -> [Int: RecognizedText] {
+        guard !pages.isEmpty else { return [:] }
+        let lanes = recognition.engine == .tesseract ? min(max(ProcessInfo.processInfo.activeProcessorCount / 2, 1), 4) : 1
+        let done = Locked(0)
+        return try await withThrowingTaskGroup(of: (Int, RecognizedText).self) { group in
+            var results: [Int: RecognizedText] = [:]
+            var queue = pages[...]
+            func startNext() {
+                guard let index = queue.popFirst() else { return }
+                group.addTask {
+                    let image = try await Blocking.run { _ in try render(url, page: index) }
+                    let text = try await TextRecognizer.recognize(image, settings: recognition)
+                    progress(done.withValue { $0 += 1; return $0 })
+                    return (index, text)
+                }
+            }
+            for _ in 0..<lanes { startNext() }
+            while let (index, text) = try await group.next() {
+                results[index] = text
+                startNext()
+            }
+            return results
+        }
+    }
+
+    /// One page as a picture, upright as it's shown (its own rotation included).
+    static func render(_ url: URL, page index: Int) throws -> CGImage {
+        guard let document = CGPDFDocument(url as CFURL) else { throw ConversionError.unreadable(url.lastPathComponent) }
+        if !document.isUnlocked { _ = document.unlockWithPassword("") }
+        guard let page = document.page(at: index + 1) else { throw ConversionError.unreadable(url.lastPathComponent) }
+        return try PDFConverter.render(page, dpi: dpi)
     }
 }

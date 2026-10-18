@@ -7,6 +7,10 @@ import PinwheelCore
 final class EditorCoordinator {
     /// Starts jobs (the app hands its JobQueue in here).
     var enqueue: (_ files: [SourceFile], _ action: WheelAction, _ parameters: JobParameters?) -> Void = { _, _, _ in }
+    /// Starts jobs that each have their own choices, as one batch.
+    var enqueueRequests: (_ requests: [ConversionRequest]) -> Void = { _ in }
+    /// Files were renamed (for the menu bar's Undo).
+    var onRenamed: (_ moves: [Renamer.Move]) -> Void = { _ in }
 
     private let settings: SettingsStore
     private var windows: [NSWindowController] = []
@@ -55,6 +59,21 @@ final class EditorCoordinator {
                 self?.enqueue([file], .tool(.saveFrame), .frame(seconds: seconds, quarterTurns: turns))
             }
             controller = MediaEditorWindowController(model: model)
+        case .rename:
+            guard !files.isEmpty else { return }
+            let model = RenameModel(urls: files.map(\.url), presets: settings.renamePresets)
+            model.onRenamed = { [weak self] moves in self?.onRenamed(moves) }
+            model.onPresetsChanged = { [weak self] presets in self?.settings.renamePresets = presets }
+            controller = RenameWindowController(model: model)
+        case .sizeLimit:
+            let known = files.filter { $0.kind != nil }
+            guard !known.isEmpty else { return }
+            let model = SizeLimitModel(files: known, megabytes: settings.lastSizeLimit)
+            model.onSave = { [weak self] requests, megabytes in
+                self?.settings.lastSizeLimit = megabytes
+                self?.enqueueRequests(requests)
+            }
+            controller = SizeLimitWindowController(model: model)
         case .password:
             let pdfs = files.filter { $0.kind == .pdf }
             guard !pdfs.isEmpty else { return }

@@ -15,6 +15,26 @@ enum SaveLocationChoice: String, CaseIterable {
     }
 }
 
+/// Which engine reads text in pictures and scanned pages.
+enum TextRecognitionChoice: String, CaseIterable {
+    case automatic, apple, tesseract
+
+    var title: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .apple: "Apple (built in)"
+        case .tesseract: "Tesseract"
+        }
+    }
+}
+
+/// Saved rename rules, offered again in the Rename window.
+struct RenamePreset: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var name: String
+    var rules: [RenameRule]
+}
+
 /// Every setting, saved in the app's preferences as soon as it changes.
 @Observable
 final class SettingsStore {
@@ -25,7 +45,8 @@ final class SettingsStore {
         case jpegQuality, heicQuality, compressQuality, resize, combineImagesIntoOnePDF, pdfDPI
         case videoQuality, videoMaxSize, audioBitRate, gifWidth, gifFPS, gifMaxSeconds
         case maxConcurrentJobs, ffmpegPath
-        case hiddenTools
+        case hiddenTools, knownTools
+        case textRecognition
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -75,6 +96,15 @@ final class SettingsStore {
     // Tools wheel
     /// Tools left off the Option+Shift wheel ("image:tool.stripMetadata").
     var hiddenTools: Set<String> { didSet { save(Array(hiddenTools).sorted(), .hiddenTools) } }
+    /// Custom actions, each on its kind's tools wheel.
+    var recipes: [Recipe] { didSet { saveJSON(recipes, Self.recipesKey) } }
+    /// Rename rules saved under a name.
+    var renamePresets: [RenamePreset] { didSet { saveJSON(renamePresets, Self.renamePresetsKey) } }
+
+    // Text recognition
+    var textRecognition: TextRecognitionChoice { didSet { save(textRecognition.rawValue, .textRecognition) } }
+    /// Bumped when a language file is added, so views showing what's installed refresh.
+    var languagesChanged = 0
 
     private static let factory = ConversionOptions()
 
@@ -107,6 +137,7 @@ final class SettingsStore {
             .maxConcurrentJobs: 0,
             .ffmpegPath: "",
             .hiddenTools: Array(FormatCatalog.defaultHidden).sorted(),
+            .textRecognition: TextRecognitionChoice.automatic.rawValue,
         ]
     }
 
@@ -141,11 +172,91 @@ final class SettingsStore {
         maxConcurrentJobs = defaults.integer(forKey: Key.maxConcurrentJobs.rawValue)
         ffmpegPath = string(.ffmpegPath)
         hiddenTools = Set(defaults.stringArray(forKey: Key.hiddenTools.rawValue) ?? [])
+        recipes = Self.loadJSON(defaults, Self.recipesKey) ?? []
+        renamePresets = Self.loadJSON(defaults, Self.renamePresetsKey) ?? []
+        textRecognition = TextRecognitionChoice(rawValue: string(.textRecognition)) ?? .automatic
+        placeNewTools()
     }
+
+    /// Tools added by an update join the wheel where there's room. Where
+    /// the wheel was arranged by hand and is full, they wait in Settings
+    /// (switched off) instead of pushing out a tool that was chosen.
+    private func placeNewTools() {
+        let everyTool = FileKind.allCases.flatMap { kind in
+            FormatCatalog.actions(for: kind, mode: .tools).map { FormatCatalog.hiddenKey(kind, $0) }
+        }
+        let stored = defaults.stringArray(forKey: Key.knownTools.rawValue)
+        var known = Set(stored ?? [])
+        if stored == nil {
+            // First start of 0.9: a kind still hiding exactly what 0.8 hid by
+            // default gets 0.9's choice; the tools before 0.9 are known.
+            for kind in FileKind.allCases {
+                let mine = hiddenTools.filter { $0.hasPrefix("\(kind.rawValue):") }
+                let oldDefault = Self.defaultsBefore09.filter { $0.hasPrefix("\(kind.rawValue):") }
+                if mine == oldDefault {
+                    hiddenTools.subtract(mine)
+                    hiddenTools.formUnion(FormatCatalog.defaultHidden.filter { $0.hasPrefix("\(kind.rawValue):") })
+                }
+            }
+            known = Self.toolsBefore09
+        }
+        let fresh = everyTool.filter { !known.contains($0) }
+        for kind in FileKind.allCases {
+            let tools = FormatCatalog.actions(for: kind, mode: .tools).map { FormatCatalog.hiddenKey(kind, $0) }
+            var shown = tools.filter { !hiddenTools.contains($0) }
+            // The newest go first, so the wheel keeps what it had.
+            for key in tools.reversed() where shown.count > FormatCatalog.maxWedges && fresh.contains(key) && shown.contains(key) {
+                hiddenTools.insert(key)
+                shown.removeAll { $0 == key }
+            }
+        }
+        defaults.set(everyTool.sorted(), forKey: Key.knownTools.rawValue)
+    }
+
+    /// What 0.8 hid by default, and every tool it had.
+    private static let defaultsBefore09: Set<String> = ["image:tool.stripMetadata", "image:tool.extractText"]
+    private static let toolsBefore09: Set<String> = [
+        "image:tool.compress", "image:tool.resize", "image:tool.removeBackground", "image:open.crop", "image:open.adjust",
+        "image:open.background", "image:open.markup", "image:open.watermark", "image:open.info", "image:tool.stripMetadata",
+        "image:tool.extractText", "video:tool.compress", "video:tool.stripMetadata", "video:tool.extractAudio", "video:tool.mute",
+        "video:open.trim", "video:open.info", "audio:tool.compress", "audio:tool.stripMetadata", "audio:tool.normalize",
+        "audio:open.trim", "audio:open.info", "pdf:tool.compress", "pdf:tool.stripMetadata", "pdf:tool.merge", "pdf:tool.split",
+        "pdf:open.organize", "pdf:tool.extractText", "pdf:open.password", "pdf:open.info",
+    ]
 
     /// The ffmpeg to use: the custom path if it works, else the usual places.
     var ffmpegURL: URL? { FFmpeg.locate(customPath: ffmpegPath) }
     var pngquantURL: URL? { ExternalTool.pngquant.locate() }
+    var tesseractURL: URL? { ExternalTool.tesseract.locate() }
+
+    /// Tesseract's languages: in its own folder, plus any Pinwheel downloaded.
+    var tesseractLanguages: Set<String> {
+        _ = languagesChanged
+        guard let program = tesseractURL else { return [] }
+        return TesseractData.languages(in: TesseractData.builtInFolder(for: program))
+            .union(TesseractData.languages(in: TesseractData.ownFolder))
+    }
+
+    /// How text is read, worked out from the choice and what's installed.
+    /// Automatic means Tesseract once it can read Greek, else Apple's.
+    var resolvedTextRecognition: TextRecognition {
+        var recognition = TextRecognition()
+        guard let program = tesseractURL, textRecognition != .apple else { return recognition }
+        let own = TesseractData.languages(in: TesseractData.ownFolder)
+        let builtIn = TesseractData.languages(in: TesseractData.builtInFolder(for: program))
+        let available = own.union(builtIn)
+        if textRecognition == .automatic && !available.contains("ell") { return recognition }
+        recognition.engine = .tesseract
+        recognition.tesseractURL = program
+        // Pinwheel's folder links Tesseract's own files, so it has them all.
+        if !own.isEmpty {
+            try? TesseractData.linkBuiltIn(TesseractData.builtInFolder(for: program), into: TesseractData.ownFolder)
+            recognition.dataFolder = TesseractData.ownFolder
+        }
+        let wanted = ["ell", "eng"].filter(available.contains)
+        recognition.languages = wanted.isEmpty ? Array(available.sorted().prefix(1)) : wanted
+        return recognition
+    }
 
     var concurrencyLimit: ConcurrencyLimit {
         maxConcurrentJobs > 0 ? .fixed(maxConcurrentJobs) : .automatic
@@ -173,6 +284,7 @@ final class SettingsStore {
         }
         options.ffmpegURL = ffmpegURL
         options.pngquantURL = pngquantURL
+        options.textRecognition = resolvedTextRecognition
         return options
     }
 
@@ -207,6 +319,7 @@ final class SettingsStore {
         maxConcurrentJobs = fresh.maxConcurrentJobs
         ffmpegPath = fresh.ffmpegPath
         hiddenTools = fresh.hiddenTools
+        textRecognition = fresh.textRecognition
     }
 
     /// The last watermark saved from the image editor, offered again next time.
@@ -220,6 +333,54 @@ final class SettingsStore {
     }
 
     private static let lastWatermarkKey = "lastWatermark"
+
+    /// The size last chosen in Size Limit…, in megabytes.
+    var lastSizeLimit: Double {
+        get {
+            let value = defaults.double(forKey: Self.lastSizeLimitKey)
+            return value > 0 ? value : 10
+        }
+        set { defaults.set(newValue, forKey: Self.lastSizeLimitKey) }
+    }
+
+    private static let lastSizeLimitKey = "lastSizeLimit"
+    private static let recipesKey = "recipes"
+    private static let renamePresetsKey = "renamePresets"
+
+    // MARK: - Custom actions
+
+    /// Adds or updates a custom action. A new one goes on its wheel when
+    /// there's room; otherwise it waits, switched off, in Settings.
+    func saveRecipe(_ recipe: Recipe) {
+        if let index = recipes.firstIndex(where: { $0.id == recipe.id }) {
+            recipes[index] = recipe
+            return
+        }
+        if shownCount(for: recipe.kind) >= FormatCatalog.maxWedges {
+            hiddenTools.insert(FormatCatalog.hiddenKey(recipe.kind, .recipe(recipe)))
+        }
+        recipes.append(recipe)
+    }
+
+    func deleteRecipe(_ recipe: Recipe) {
+        recipes.removeAll { $0.id == recipe.id }
+        hiddenTools.remove(FormatCatalog.hiddenKey(recipe.kind, .recipe(recipe)))
+    }
+
+    /// Tools and custom actions on a kind's wheel.
+    func shownCount(for kind: FileKind) -> Int {
+        let tools = FormatCatalog.actions(for: kind, mode: .tools)
+        let custom = recipes.filter { $0.kind == kind }.map(WheelAction.recipe)
+        return (tools + custom).filter { isOnWheel($0, for: kind) }.count
+    }
+
+    private func saveJSON<T: Encodable>(_ value: T, _ key: String) {
+        defaults.set(try? JSONEncoder().encode(value), forKey: key)
+    }
+
+    private static func loadJSON<T: Decodable>(_ defaults: UserDefaults, _ key: String) -> T? {
+        defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+    }
 
     /// Whether a tool is on the wheel for this kind of file.
     func isOnWheel(_ action: WheelAction, for kind: FileKind) -> Bool {

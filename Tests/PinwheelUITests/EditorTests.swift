@@ -242,7 +242,7 @@ struct EditorJobTests {
 
         let queue = JobQueue()
         var trashed: [URL] = []
-        queue.moveToTrash = { trashed.append($0) }
+        queue.moveToTrash = { trashed.append($0); return $0 }
         queue.shouldTrashOriginals = { true }
         queue.enqueue(files: [SourceFile(url: source)], action: .tool(.extractText))
         try await waitUntilIdle(queue)
@@ -282,11 +282,11 @@ struct ToolsWheelSettingsTests {
         #expect(!model.items.map(\.title).contains("Strip Info"))
         #expect(model.items.map(\.title).contains("Crop…"))
 
-        store.setOnWheel(.open(.markup), for: .image, false)
+        store.setOnWheel(.open(.rename), for: .image, false)
         store.setOnWheel(.tool(.stripMetadata), for: .image, true)
         model.load(files: [SourceFile.sample], mode: .tools, options: ConversionOptions(), hidden: store.hiddenTools) { _, _ in .available }
         #expect(model.items.map(\.title).contains("Strip Info"))
-        #expect(!model.items.map(\.title).contains("Markup…"))
+        #expect(!model.items.map(\.title).contains("Rename…"))
 
         store.resetToDefaults()
         #expect(store.hiddenTools == FormatCatalog.defaultHidden)

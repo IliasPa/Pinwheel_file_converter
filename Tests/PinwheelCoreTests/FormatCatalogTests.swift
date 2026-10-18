@@ -41,10 +41,10 @@ struct FormatCatalogTests {
         #expect(FormatCatalog.actions(for: files("a.png", "b.pdf"), mode: .convert)
                 == [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff)])
         #expect(FormatCatalog.actions(for: files("a.png", "b.mov"), mode: .tools)
-                == [.tool(.compress), .open(.info), .tool(.stripMetadata)])
+                == [.tool(.compress), .open(.sizeLimit), .open(.info), .open(.rename), .tool(.stripMetadata)])
         // Strip Info is off the image wheel by default (Info… can do it too).
         #expect(FormatCatalog.actions(for: files("a.png", "b.mov"), mode: .tools, hidden: FormatCatalog.defaultHidden)
-                == [.tool(.compress), .open(.info)])
+                == [.tool(.compress), .open(.sizeLimit), .open(.info), .open(.rename)])
     }
 
     @Test func imageToolsFitOnOneWheel() {
@@ -52,23 +52,25 @@ struct FormatCatalogTests {
         #expect(all.count > FormatCatalog.maxWedges)
         let shown = FormatCatalog.actions(for: files("a.png"), mode: .tools, hidden: FormatCatalog.defaultHidden)
         #expect(shown == [
-            .tool(.compress), .tool(.resize), .tool(.removeBackground), .open(.crop),
-            .open(.adjust), .open(.background), .open(.markup), .open(.watermark), .open(.info),
+            .tool(.compress), .open(.sizeLimit), .tool(.resize), .tool(.removeBackground), .open(.crop),
+            .open(.adjust), .open(.watermark), .open(.info), .open(.rename),
         ])
         // Never more than fit, whatever is hidden.
         #expect(FormatCatalog.actions(for: files("a.png"), mode: .tools).count == FormatCatalog.maxWedges)
         // Hiding one makes room for the next.
         let swapped = FormatCatalog.actions(
             for: files("a.png"), mode: .tools,
-            hidden: [FormatCatalog.hiddenKey(.image, .open(.markup)), FormatCatalog.hiddenKey(.image, .tool(.extractText))]
+            hidden: Set([WheelAction.open(.background), .open(.markup), .open(.rename), .tool(.extractText)].map { FormatCatalog.hiddenKey(.image, $0) })
         )
         #expect(!swapped.contains(.open(.markup)) && swapped.last == .tool(.stripMetadata))
         #expect(swapped.count == FormatCatalog.maxWedges)
     }
 
     @Test func otherKindsGetTheirTools() {
-        #expect(FormatCatalog.actions(for: files("a.mov"), mode: .tools)
-                == [.tool(.compress), .tool(.stripMetadata), .tool(.extractAudio), .tool(.mute), .open(.trim), .open(.info)])
+        #expect(FormatCatalog.actions(for: files("a.mov"), mode: .tools) == [
+            .tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.extractAudio), .tool(.mute),
+            .open(.trim), .open(.info), .open(.rename),
+        ])
         #expect(FormatCatalog.actions(for: files("a.pdf", "b.pdf"), mode: .tools).contains(.tool(.merge)))
         #expect(FormatCatalog.actions(for: files("a.wav"), mode: .tools).contains(.open(.trim)))
         #expect(FormatCatalog.actions(for: files("a.wav"), mode: .tools).contains(.tool(.normalize)))

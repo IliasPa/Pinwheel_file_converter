@@ -22,6 +22,8 @@ install: build    ## Build and copy into /Applications, then start it from there
 	@sleep 0.5
 	@rm -rf "$(INSTALLED)"
 	@ditto "$(APP)" "$(INSTALLED)"
+	@# Tell macOS about Finder's right-click entries ("Services") right away.
+	@/System/Library/CoreServices/pbs -update || true
 	@echo "==> Installed to $(INSTALLED)"
 	@open "$(INSTALLED)"
 

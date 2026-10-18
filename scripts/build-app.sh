@@ -12,10 +12,12 @@ BIN_DIR="$(swift build -c "$CONFIG" --scratch-path "$SCRATCH" --show-bin-path)"
 
 echo "==> Assembling Pinwheel.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers"
 cp "$BIN_DIR/Pinwheel" "$APP/Contents/MacOS/Pinwheel"
 # The converter: the app starts one per job (see ConversionRunner.swift).
 cp "$BIN_DIR/PinwheelWorker" "$APP/Contents/MacOS/PinwheelWorker"
+# The `pinwheel` command for Terminal and Shortcuts.
+cp "$BIN_DIR/PinwheelCLI" "$APP/Contents/Helpers/pinwheel"
 cp Support/Info.plist "$APP/Contents/Info.plist"
 cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
@@ -23,12 +25,13 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 if [ "$CONFIG" = "release" ]; then
     # Leave out the debugging names: about half the size. The full versions
     # stay in the build folder ($BIN_DIR) for reading crash reports.
-    strip -S -x "$APP/Contents/MacOS/Pinwheel" "$APP/Contents/MacOS/PinwheelWorker"
+    strip -S -x "$APP/Contents/MacOS/Pinwheel" "$APP/Contents/MacOS/PinwheelWorker" "$APP/Contents/Helpers/pinwheel"
 fi
 
-# Signs the worker first, then the app around it.
+# Signs the worker and the command first, then the app around them.
 sign_with() {
     codesign --force --sign "$1" --identifier "$BUNDLE_ID.worker" "$APP/Contents/MacOS/PinwheelWorker" &&
+        codesign --force --sign "$1" --identifier "$BUNDLE_ID.cli" "$APP/Contents/Helpers/pinwheel" &&
         codesign --force --sign "$1" --identifier "$BUNDLE_ID" "$APP"
 }
 

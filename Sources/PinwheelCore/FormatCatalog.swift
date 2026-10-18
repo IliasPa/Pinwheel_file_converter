@@ -19,27 +19,36 @@ public enum FormatCatalog {
             [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .tool(.compress)]
         case (.image, .tools):
             [
-                .tool(.compress), .tool(.resize), .tool(.removeBackground), .open(.crop),
-                .open(.adjust), .open(.background), .open(.markup), .open(.watermark), .open(.info),
+                .tool(.compress), .open(.sizeLimit), .tool(.resize), .tool(.removeBackground), .open(.crop),
+                .open(.adjust), .open(.background), .open(.markup), .open(.watermark), .open(.info), .open(.rename),
                 .tool(.stripMetadata), .tool(.extractText),
             ]
         case (.video, .tools):
-            [.tool(.compress), .tool(.stripMetadata), .tool(.extractAudio), .tool(.mute), .open(.trim), .open(.info)]
+            [
+                .tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.extractAudio), .tool(.mute),
+                .open(.trim), .open(.info), .open(.rename),
+            ]
         case (.audio, .tools):
-            [.tool(.compress), .tool(.stripMetadata), .tool(.normalize), .open(.trim), .open(.info)]
+            [.tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.normalize), .open(.trim), .open(.info), .open(.rename)]
         case (.pdf, .tools):
             [
-                .tool(.compress), .tool(.stripMetadata), .tool(.merge), .tool(.split), .open(.organize),
-                .tool(.extractText), .open(.password), .open(.info),
+                .tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.merge), .tool(.split), .open(.organize),
+                .tool(.makeSearchable), .tool(.extractText), .open(.password), .open(.info), .open(.rename),
             ]
         }
     }
 
-    /// Tools left off the wheel until switched on in Settings. Images have
-    /// eleven; these two have a stand-in (Info… can remove the info too).
+    /// Tools left off the wheel until switched on in Settings. Each has a
+    /// stand-in: Info… can remove the info too, Searchable makes a PDF's
+    /// text copyable, and every tab of the image editor is one click away
+    /// once it's open (from Crop… or Edit…).
     public static let defaultHidden: Set<String> = [
         hiddenKey(.image, .tool(.stripMetadata)),
         hiddenKey(.image, .tool(.extractText)),
+        hiddenKey(.image, .open(.background)),
+        hiddenKey(.image, .open(.markup)),
+        hiddenKey(.pdf, .tool(.stripMetadata)),
+        hiddenKey(.pdf, .tool(.extractText)),
     ]
 
     /// How a hidden tool is remembered: "image:tool.stripMetadata".
@@ -47,14 +56,17 @@ public enum FormatCatalog {
         "\(kind.rawValue):\(action.id)"
     }
 
-    /// Wedges valid for *every* file, minus hidden tools, at most `maxWedges`.
-    /// Files Pinwheel can't handle (folders, text files…) leave nothing in
-    /// common, so the wheel shows no wedges. Converting a file to the format
-    /// it already has is left out.
-    public static func actions(for files: [SourceFile], mode: WheelMode, hidden: Set<String> = []) -> [WheelAction] {
+    /// Wedges valid for *every* file, minus hidden tools, at most `maxWedges`;
+    /// custom actions (`recipes`) come after the tools. Files Pinwheel can't
+    /// convert (folders, text files…) can still be renamed, so that's all
+    /// their tools wheel has. Converting a file to the format it already has
+    /// is left out.
+    public static func actions(
+        for files: [SourceFile], mode: WheelMode, hidden: Set<String> = [], recipes: [Recipe] = []
+    ) -> [WheelAction] {
         guard !files.isEmpty else { return [] }
         let kinds = files.map(\.kind)
-        guard !kinds.contains(nil) else { return [] }
+        guard !kinds.contains(nil) else { return mode == .tools ? [.open(.rename)] : [] }
 
         func visible(_ kind: FileKind) -> [WheelAction] {
             actions(for: kind, mode: mode).filter { !hidden.contains(hiddenKey(kind, $0)) }
@@ -72,6 +84,11 @@ public enum FormatCatalog {
             // Several pictures can also become one.
             if files.count > 1 && kinds.allSatisfy({ $0 == .image }) {
                 result.append(.open(.collage))
+            }
+        } else {
+            for recipe in recipes where kinds.allSatisfy({ $0 == recipe.kind }) {
+                let action = WheelAction.recipe(recipe)
+                if !hidden.contains(hiddenKey(recipe.kind, action)) { result.append(action) }
             }
         }
         return Array(result.prefix(maxWedges))

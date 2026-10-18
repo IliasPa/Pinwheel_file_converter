@@ -7,6 +7,8 @@ public enum ExternalTool: String, Sendable {
     case ffmpeg
     /// Smaller PNGs that stay PNG.
     case pngquant
+    /// Text recognition for languages Apple's Vision can't read (Greek).
+    case tesseract
 
     public var installCommand: String { "brew install \(rawValue)" }
 
@@ -188,6 +190,11 @@ final class Locked<Value>: @unchecked Sendable {
     var value: Value {
         get { lock.withLock { stored } }
         set { lock.withLock { stored = newValue } }
+    }
+
+    /// Changes the value in one step and returns what `body` returns.
+    func withValue<Result>(_ body: (inout Value) -> Result) -> Result {
+        lock.withLock { body(&stored) }
     }
 
     /// Sets a new value and returns the old one, in one step.

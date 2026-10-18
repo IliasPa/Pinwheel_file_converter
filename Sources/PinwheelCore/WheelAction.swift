@@ -84,7 +84,7 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
 }
 
 /// Jobs offered on the Option+Shift wheel, plus the jobs the editor
-/// windows make (the last five, which never sit on a wedge themselves).
+/// windows make (from `edit` on, which never sit on a wedge themselves).
 public enum ToolAction: String, CaseIterable, Codable, Sendable {
     case compress
     case resize
@@ -96,6 +96,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
     case merge
     case split
     case normalize
+    case makeSearchable
     // Made by an editor window, with what was chosen there.
     case edit
     case editInfo
@@ -104,6 +105,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
     case protect
     case collage
     case organize
+    case sizeLimit
 
     /// The general name; Resize shows its chosen size on the wheel instead.
     public var title: String {
@@ -118,6 +120,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .merge: "Merge"
         case .split: "Split Pages"
         case .normalize: "Normalize"
+        case .makeSearchable: "Searchable"
         case .edit: "Edit"
         case .editInfo: "Edit Info"
         case .editMedia: "Edit"
@@ -125,6 +128,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .protect: "Add Password"
         case .collage: "Collage"
         case .organize: "Organize Pages"
+        case .sizeLimit: "Size Limit"
         }
     }
 
@@ -140,6 +144,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .merge: "arrow.triangle.merge"
         case .split: "scissors"
         case .normalize: "speaker.wave.2.circle"
+        case .makeSearchable: "doc.text.magnifyingglass"
         case .edit: "slider.horizontal.3"
         case .editInfo: "info.circle"
         case .editMedia: "timeline.selection"
@@ -147,6 +152,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .protect: "lock.doc"
         case .collage: "square.grid.2x2"
         case .organize: "rectangle.grid.2x2"
+        case .sizeLimit: "gauge.with.dots.needle.bottom.50percent"
         }
     }
 
@@ -169,6 +175,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .merge: "Joins the PDFs into one, in name order"
         case .split: "One PDF per page, in a folder"
         case .normalize: "Evens out the loudness (−16 LUFS, like streaming apps)"
+        case .makeSearchable: "Scanned pages get their text, to search and copy"
         case .edit: "Your edits"
         case .editInfo: "Your changes to the file's info"
         case .editMedia: "Your edits"
@@ -176,6 +183,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .protect: "Asks for a password to open"
         case .collage: "Several photos in one picture"
         case .organize: "The pages in your order"
+        case .sizeLimit: "Smaller than the size you chose"
         }
     }
 
@@ -192,11 +200,13 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .merge: "merged"
         case .split: "pages"
         case .normalize: "normalized"
+        case .makeSearchable: "searchable"
         case .edit, .editInfo, .editMedia: "edited"
         case .saveFrame: "frame"
         case .protect: "protected"
         case .collage: "collage"
         case .organize: "organized"
+        case .sizeLimit: "smaller"
         }
     }
 }
@@ -210,6 +220,10 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
     /// The video and audio editor (trim, speed, turn, fades, loudness, GIF).
     case trim
     case password, collage, organize
+    /// Under a chosen file size ("10 MB for email").
+    case sizeLimit
+    /// Many files renamed at once, by rules.
+    case rename
 
     public var title: String {
         switch self {
@@ -223,6 +237,8 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .password: "Password…"
         case .collage: "Collage…"
         case .organize: "Organize…"
+        case .sizeLimit: "Size Limit…"
+        case .rename: "Rename…"
         }
     }
 
@@ -238,6 +254,8 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .password: "lock.doc"
         case .collage: "square.grid.2x2"
         case .organize: "rectangle.grid.2x2"
+        case .sizeLimit: ToolAction.sizeLimit.symbolName
+        case .rename: "character.cursor.ibeam"
         }
     }
 
@@ -259,6 +277,8 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .password: "Only people with the password can open it"
         case .collage: "Several photos in one: a grid, rows or a contact sheet"
         case .organize: "Reorder, turn or remove pages, from one PDF or several"
+        case .sizeLimit: "Under a size you choose, like 10 MB for email"
+        case .rename: "Many files at once: replace, number, dates, case…"
         }
     }
 
@@ -266,7 +286,7 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
     public var isImageEditor: Bool {
         switch self {
         case .crop, .adjust, .background, .markup, .watermark: true
-        case .info, .trim, .password, .collage, .organize: false
+        case .info, .trim, .password, .collage, .organize, .sizeLimit, .rename: false
         }
     }
 }
@@ -277,12 +297,15 @@ public enum WheelAction: Hashable, Codable, Sendable {
     case tool(ToolAction)
     /// Opens a window first (the window then starts a `.tool` job).
     case open(Editor)
+    /// A custom action from Settings: several steps, one after the other.
+    case recipe(Recipe)
 
     public var id: String {
         switch self {
         case .convert(let format): "convert.\(format.rawValue)"
         case .tool(let tool): "tool.\(tool.rawValue)"
         case .open(let editor): "open.\(editor.rawValue)"
+        case .recipe(let recipe): "recipe.\(recipe.id.uuidString)"
         }
     }
 
@@ -295,6 +318,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .tool(.resize): options.resize.title
         case .tool(let tool): tool.title
         case .open(let editor): editor.title
+        case .recipe(let recipe): recipe.name
         }
     }
 
@@ -304,6 +328,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .tool(.compress) where mode == .convert: "arrow.down.doc"
         case .tool(let tool): tool.symbolName
         case .open(let editor): editor.symbolName
+        case .recipe(let recipe): recipe.symbol
         }
     }
 
@@ -312,6 +337,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .convert(let format): format.detail(from: kind)
         case .tool(let tool): tool.detail(for: kind, options: options)
         case .open(let editor): editor.detail(for: kind)
+        case .recipe(let recipe): recipe.summary
         }
     }
 
@@ -321,6 +347,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .convert(let format): "to \(format.title)"
         case .tool(let tool): tool.title
         case .open(let editor): editor.title
+        case .recipe(let recipe): recipe.name
         }
     }
 }

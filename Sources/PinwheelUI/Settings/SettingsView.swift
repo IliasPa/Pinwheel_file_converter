@@ -15,6 +15,38 @@ final class SettingsViewState {
     var isPointerOverPreview = false
     /// Goes up each time the pointer moves onto the preview.
     var previewVisits = 0
+    /// The custom action being made or changed.
+    var recipeDraft: RecipeDraft?
+    let languageDownload = LanguageDownload()
+}
+
+/// Gets a language file for Tesseract (Greek) from the Tesseract project.
+@Observable
+final class LanguageDownload {
+    enum State: Equatable {
+        case idle, downloading
+        case failed(String)
+    }
+
+    private(set) var state = State.idle
+
+    func download(_ code: String, settings: SettingsStore) {
+        guard state != .downloading else { return }
+        state = .downloading
+        Task {
+            do {
+                let (file, response) = try await URLSession.shared.download(from: TesseractData.downloadURL(for: code))
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                    throw ConversionError.failed("The language file isn't available right now. Try again later.")
+                }
+                try TesseractData.install(file, code: code, linking: settings.tesseractURL.map(TesseractData.builtInFolder))
+                settings.languagesChanged += 1
+                state = .idle
+            } catch {
+                state = .failed(error.localizedDescription)
+            }
+        }
+    }
 }
 
 struct SettingsView: View {
@@ -35,6 +67,8 @@ struct SettingsView: View {
             images
             media
             toolsWheel
+            textRecognition
+            finderAndShortcuts
             system
             Section {
                 HStack {
@@ -48,6 +82,14 @@ struct SettingsView: View {
         .onAppear {
             launch.refresh()
             permission.refresh()
+        }
+        .sheet(item: $state.recipeDraft) { draft in
+            RecipeEditor(draft: draft) { recipe in
+                settings.saveRecipe(recipe)
+                state.recipeDraft = nil
+            } onCancel: {
+                state.recipeDraft = nil
+            }
         }
         .alert("Reset the permission?", isPresented: $state.confirmReset) {
             Button("Reset", role: .destructive) { permission.resetAndAskAgain() }
@@ -255,26 +297,57 @@ struct SettingsView: View {
         }
     }
 
-    /// Which tools the Option+Shift wheel shows for each kind of file.
+    /// Which tools the Option+Shift wheel shows for each kind of file, and
+    /// the custom actions made for it.
     private var toolsWheel: some View {
         Section {
             ForEach(FileKind.allCases, id: \.self) { kind in
+                let options = settings.conversionOptions
                 let actions = FormatCatalog.actions(for: kind, mode: .tools)
-                let shown = actions.filter { settings.isOnWheel($0, for: kind) }.count
+                let custom = settings.recipes.filter { $0.kind == kind }
+                let shown = settings.shownCount(for: kind)
                 DisclosureGroup {
                     ForEach(actions, id: \.self) { action in
                         let isOn = settings.isOnWheel(action, for: kind)
                         Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, $0) })) {
-                            Label(action.title(in: .tools, options: settings.conversionOptions), systemImage: action.symbolName(in: .tools))
+                            Label(action.title(in: .tools, options: options), systemImage: action.symbolName(in: .tools))
                         }
-                        .help(action.detail(for: kind, options: settings.conversionOptions))
+                        .help(action.detail(for: kind, options: options))
                         .disabled(!isOn && shown >= FormatCatalog.maxWedges)
+                    }
+                    ForEach(custom) { recipe in
+                        let action = WheelAction.recipe(recipe)
+                        let isOn = settings.isOnWheel(action, for: kind)
+                        HStack {
+                            Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, $0) })) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Label(recipe.name, systemImage: recipe.symbol)
+                                    Text(recipe.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                            .disabled(!isOn && shown >= FormatCatalog.maxWedges)
+                            Button("Edit…") {
+                                state.recipeDraft = RecipeDraft(recipe, isNew: false, lastWatermark: settings.lastWatermark)
+                            }
+                            Button(role: .destructive) { settings.deleteRecipe(recipe) } label: { Image(systemName: "trash") }
+                                .buttonStyle(.borderless)
+                                .help("Delete this custom action")
+                        }
+                    }
+                    HStack {
+                        Button("New Custom Action…") {
+                            let recipe = Recipe(name: "", kind: kind)
+                            state.recipeDraft = RecipeDraft(recipe, isNew: true, lastWatermark: settings.lastWatermark)
+                        }
+                        Text("Several steps in one wedge, in the order you choose.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 } label: {
                     HStack {
                         Text(kind.pluralTitle)
                         Spacer()
-                        Text("\(min(shown, FormatCatalog.maxWedges)) of \(actions.count) on the wheel")
+                        Text("\(min(shown, FormatCatalog.maxWedges)) of \(actions.count + custom.count) on the wheel")
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
@@ -283,7 +356,111 @@ struct SettingsView: View {
         } header: {
             Text("Tools wheel (⌥ Option + ⇧ Shift)")
         } footer: {
-            footnote("The wheel holds up to \(FormatCatalog.maxWedges) tools, so switch one off to make room for another. Tools with “…” open a window to choose the details first.")
+            footnote("The wheel holds up to \(FormatCatalog.maxWedges) tools, so switch one off to make room for another. Tools with “…” open a window to choose the details first. Custom actions do several steps one after the other, e.g. crop 4:5, fit 1080 px, add a watermark and save as JPEG.")
+        }
+    }
+
+    /// Which engine reads text, and Tesseract's Greek.
+    private var textRecognition: some View {
+        let languages = settings.tesseractLanguages
+        let recognition = settings.resolvedTextRecognition
+        return Section {
+            Picker("Read text with", selection: $settings.textRecognition) {
+                ForEach(TextRecognitionChoice.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            LabeledContent("Tesseract") {
+                if let url = settings.tesseractURL {
+                    Label(url.path, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    HStack {
+                        Label("Not installed (brew install tesseract)", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Button("Copy Command") { copy(ExternalTool.tesseract.installCommand) }
+                    }
+                }
+            }
+            LabeledContent("Greek") {
+                HStack {
+                    if languages.contains("ell") {
+                        Label("Ready", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        switch state.languageDownload.state {
+                        case .downloading:
+                            ProgressView().controlSize(.small)
+                            Text("Downloading…").foregroundStyle(.secondary)
+                        case .idle, .failed:
+                            Button("Download Greek (9 MB)") { state.languageDownload.download("ell", settings: settings) }
+                                .disabled(settings.tesseractURL == nil)
+                        }
+                    }
+                }
+            }
+            if case .failed(let reason) = state.languageDownload.state {
+                Text(reason).font(.caption).foregroundStyle(.red)
+            }
+            LabeledContent("In use") {
+                Text(recognition.engine == .vision
+                     ? "Apple’s text recognition"
+                     : "Tesseract: " + recognition.languages.map { TextRecognition.languageNames[$0] ?? $0 }.joined(separator: " and "))
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Text recognition (Get Text, Searchable)")
+        } footer: {
+            footnote("Apple’s text recognition is built in and reads English and many other languages, but not Greek. Tesseract (free, from Homebrew) reads Greek too, once its Greek file is downloaded. Automatic uses Tesseract when it can read Greek, and Apple’s otherwise. Everything happens on this Mac.")
+        }
+    }
+
+    /// Pinwheel without dragging: Finder's right-click menu and the command.
+    private var finderAndShortcuts: some View {
+        let command = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/pinwheel").path
+        let example = "\"\(command)\" compress \"$@\""
+        return Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("**In Finder**, right-click files, then **Services** (at the bottom of the menu): **Convert with Pinwheel**, **Pinwheel Tools** or **Rename with Pinwheel**. The wheel opens under the pointer: click a wedge, or the middle to switch between formats and tools.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Not there? Turn them on in System Settings › Keyboard › Keyboard Shortcuts › Services › Files and Folders.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 2)
+            LabeledContent("Command") {
+                HStack {
+                    Text(command)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                    Button("Copy") { copy(command) }
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("**In Shortcuts**").fixedSize(horizontal: false, vertical: true)
+                step(1, "Make a new shortcut and add **Run Shell Script**.")
+                step(2, "Set **Pass Input** to **as arguments**, and write the command, e.g. to compress:")
+                HStack {
+                    Text(example)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                    Button("Copy") { copy(example) }
+                }
+                .padding(.leading, 30)
+                step(3, "To have it in Finder's right-click **Quick Actions**, open the shortcut's details and switch on **Use as Quick Action**, then **Finder**.")
+                Text("Other commands: convert jpg, size-limit 10MB, run \"Your Custom Action\", show… Type `pinwheel help` in Terminal (with the full path above) for all of them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+        } header: {
+            Text("Finder and Shortcuts")
+        } footer: {
+            footnote("Jobs started from Finder or Shortcuts show in the progress window and can be undone from the menu bar, like any other.")
         }
     }
 
@@ -329,6 +506,11 @@ struct SettingsView: View {
 
     private func playSample() {
         state.soundPreview.playSound(named: settings.hoverSoundName, volume: settings.hoverSoundVolume)
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func chooseFolder() {
@@ -502,17 +684,5 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-    }
-}
-
-extension FileKind {
-    /// "Images", "Videos"… for headings.
-    var pluralTitle: String {
-        switch self {
-        case .image: "Images"
-        case .video: "Videos"
-        case .audio: "Audio"
-        case .pdf: "PDFs"
-        }
     }
 }

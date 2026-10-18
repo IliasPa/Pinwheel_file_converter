@@ -13,6 +13,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let actions: Actions
     private let recents: RecentsStore
+    private let history: UndoHistory
     private let launch: LaunchAtLogin
     private let isTrusted: @MainActor () -> Bool
     private let hasFFmpeg: @MainActor () -> Bool
@@ -20,12 +21,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     init(
         actions: Actions,
         recents: RecentsStore,
+        history: UndoHistory,
         launch: LaunchAtLogin,
         isTrusted: @escaping @MainActor () -> Bool,
         hasFFmpeg: @escaping @MainActor () -> Bool
     ) {
         self.actions = actions
         self.recents = recents
+        self.history = history
         self.launch = launch
         self.isTrusted = isTrusted
         self.hasFFmpeg = hasFFmpeg
@@ -39,6 +42,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+
+        menu.addItem(undoItem())
+        menu.addItem(.separator())
 
         var warned = false
         if !isTrusted() {
@@ -69,6 +75,34 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(login)
         menu.addItem(.separator())
         menu.addItem(item("Quit Pinwheel", #selector(quit), key: "q"))
+    }
+
+    // MARK: - Undo
+
+    /// "Undo Compress (3 files)", with when it happened; the newest step first.
+    private func undoItem() -> NSMenuItem {
+        guard let last = history.last else {
+            let item = NSMenuItem(title: "Nothing to Undo", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            item.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: nil)
+            return item
+        }
+        let item = self.item("Undo \(last.title)", #selector(undoLast), key: "z")
+        item.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: nil)
+        let dates = RelativeDateTimeFormatter()
+        dates.unitsStyle = .full
+        item.subtitle = dates.localizedString(for: last.date, relativeTo: Date()).capitalizedFirst
+        item.toolTip = "New files go to the Trash, originals come back from it, and renamed files get their old names."
+        return item
+    }
+
+    @objc private func undoLast() {
+        guard let report = history.undoLast(), !report.problems.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = "Undid \(report.title), except:"
+        alert.informativeText = report.problems.joined(separator: "\n")
+        NSApp.activate()
+        alert.runModal()
     }
 
     // MARK: - Recents
@@ -136,4 +170,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         alert.runModal()
     }
     @objc private func quit() { actions.quit() }
+}
+
+private extension String {
+    /// "yesterday" → "Yesterday".
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }

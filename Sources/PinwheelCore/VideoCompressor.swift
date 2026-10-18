@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import VideoToolbox
 
 /// Compress for videos: HEVC at a bit rate picked from the quality setting
 /// and the picture size, never higher than the original's. The size is kept
@@ -10,6 +11,51 @@ enum VideoCompressor {
         destination: URL,
         options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
+        let quality = options.videoQuality
+        try await encode(
+            source, destination: destination, longSide: options.videoMaxSize.longSide,
+            audioBitRate: options.audioBitRate, progress: progress
+        ) { size, fps, sourceBitRate in
+            targetBitRate(width: size.width, height: size.height, fps: fps, quality: quality, sourceBitRate: sourceBitRate)
+        }
+    }
+
+    /// What a video is, for working out how to make it smaller.
+    struct Probe: Sendable {
+        /// Upright size in pixels.
+        var size: CGSize
+        var fps: Double
+        var duration: Double
+        var hasSound: Bool
+    }
+
+    static func probe(_ source: URL) async throws -> Probe {
+        let asset = AVURLAsset(url: source)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw ConversionError.failed("\(source.lastPathComponent) has no picture.")
+        }
+        let (naturalSize, transform, frameRate) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate)
+        let upright = naturalSize.applying(transform)
+        return Probe(
+            size: CGSize(width: abs(upright.width), height: abs(upright.height)),
+            fps: Double(frameRate > 0 ? frameRate : 30),
+            duration: try await asset.load(.duration).seconds,
+            hasSound: !(try await asset.loadTracks(withMediaType: .audio)).isEmpty
+        )
+    }
+
+    /// HEVC at the bit rate `bitRate` picks (from the encoded size, the
+    /// frame rate and the original's bit rate), at most `longSide` pixels.
+    /// `peakBytesPerSecond` caps any one second, for a size that must hold.
+    static func encode(
+        _ source: URL,
+        destination: URL,
+        longSide: Int?,
+        audioBitRate: Int,
+        peakBytesPerSecond: Int? = nil,
+        progress: @escaping @Sendable (Double) -> Void,
+        bitRate pickBitRate: (_ size: (width: Int, height: Int), _ fps: Double, _ sourceBitRate: Double) -> Int
     ) async throws {
         let asset = AVURLAsset(url: source)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
@@ -22,12 +68,9 @@ enum VideoCompressor {
         let duration = try await asset.load(.duration).seconds
         let metadata = try await asset.load(.metadata)
 
-        let size = targetSize(naturalSize, longSide: options.videoMaxSize.longSide)
+        let size = targetSize(naturalSize, longSide: longSide)
         let fps = Double(frameRate > 0 ? frameRate : 30)
-        let bitRate = targetBitRate(
-            width: size.width, height: size.height, fps: fps,
-            quality: options.videoQuality, sourceBitRate: Double(sourceBitRate)
-        )
+        let bitRate = pickBitRate(size, fps, Double(sourceBitRate))
 
         let reader = try AVAssetReader(asset: asset)
         let videoOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
@@ -50,6 +93,10 @@ enum VideoCompressor {
                 AVVideoMaxKeyFrameIntervalDurationKey: 2,
             ],
         ]
+        if let peakBytesPerSecond, var properties = videoSettings[AVVideoCompressionPropertiesKey] as? [String: Any] {
+            properties[kVTCompressionPropertyKey_DataRateLimits as String] = [peakBytesPerSecond, 1]
+            videoSettings[AVVideoCompressionPropertiesKey] = properties
+        }
         if !writer.canApply(outputSettings: videoSettings, forMediaType: .video) {
             videoSettings[AVVideoCodecKey] = AVVideoCodecType.h264  // no HEVC encoder: fall back to H.264
         }
@@ -63,17 +110,17 @@ enum VideoCompressor {
         if let audioTrack {
             let output: AVAssetReaderTrackOutput
             let input: AVAssetWriterInput
-            let (descriptions, audioBitRate) = try await audioTrack.load(.formatDescriptions, .estimatedDataRate)
+            let (descriptions, sourceAudioRate) = try await audioTrack.load(.formatDescriptions, .estimatedDataRate)
             if let description = descriptions.first,
                CMFormatDescriptionGetMediaSubType(description) == kAudioFormatMPEG4AAC,
-               audioBitRate > 0, Double(audioBitRate) <= Double(options.audioBitRate) * 1.1 {
+               sourceAudioRate > 0, Double(sourceAudioRate) <= Double(audioBitRate) * 1.1 {
                 // Already small AAC: copy it as it is (no quality loss, no growth).
                 output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: nil)
                 input = AVAssetWriterInput(mediaType: .audio, outputSettings: nil, sourceFormatHint: description)
             } else {
                 let format = try await AudioFormat.of(audioTrack)
                 output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: format.pcmSettings)
-                input = AVAssetWriterInput(mediaType: .audio, outputSettings: format.aacSettings(bitRate: options.audioBitRate))
+                input = AVAssetWriterInput(mediaType: .audio, outputSettings: format.aacSettings(bitRate: audioBitRate))
             }
             reader.add(output)
             input.expectsMediaDataInRealTime = false

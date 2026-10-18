@@ -62,11 +62,16 @@ public final class OutputNaming: @unchecked Sendable {
 
 /// Sizes of files and folders on disk.
 public enum FileSize {
-    /// Bytes in a file, or in all files inside a folder.
+    /// Bytes in a file, or in all files inside a folder. Always read from the
+    /// disk: a URL remembers what it read before, which is wrong once the
+    /// file was written again (Size Limit's second try).
     public static func of(_ url: URL) -> Int64? {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .fileSizeKey]
-        guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
-        guard values.isDirectory == true else { return values.fileSize.map(Int64.init) }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return nil }
+        guard isDirectory.boolValue else {
+            return (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
+        }
         var total: Int64 = 0
         let items = FileManager.default.enumerator(at: url, includingPropertiesForKeys: Array(keys))
         while let item = items?.nextObject() as? URL {

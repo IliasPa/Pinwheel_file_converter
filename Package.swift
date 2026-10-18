@@ -16,6 +16,8 @@ let package = Package(
         .executableTarget(name: "Pinwheel", dependencies: ["PinwheelUI"], swiftSettings: mainActorByDefault),
         // Does one conversion and quits; the app starts one per job.
         .executableTarget(name: "PinwheelWorker", dependencies: ["PinwheelCore"]),
+        // The `pinwheel` command (Terminal, Shortcuts): asks the app to do a job.
+        .executableTarget(name: "PinwheelCLI"),
         .testTarget(name: "PinwheelCoreTests", dependencies: ["PinwheelCore"]),
         .testTarget(name: "PinwheelUITests", dependencies: ["PinwheelUI", "PinwheelCore"], swiftSettings: mainActorByDefault),
     ]

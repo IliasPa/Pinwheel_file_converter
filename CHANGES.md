@@ -3,6 +3,84 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v0.9 — 2026-10-18
+
+Undo, custom actions, file size limits, batch rename, Greek text, and
+Pinwheel from Finder and Shortcuts.
+
+**Undo** (top of the menu-bar menu)
+- "Undo Compress (3 files)": new files go to the Trash, originals come back
+  out of it, renamed files get their old names. Up to 20 steps back; says
+  what couldn't be undone and why.
+
+**Custom actions** (Settings › Tools wheel › New Custom Action…)
+- Several steps on one wedge, in the order you choose (e.g. Crop 4:5 → Fit
+  1080 px → Watermark → To JPEG), for images, videos, audio or PDFs. 23
+  kinds of step, each with its choices; kinds can change along the way
+  (video → audio, picture → PDF). Steps with nothing to do are passed over.
+
+**Size Limit…** (all kinds)
+- Under 1–50 MB or any size, each file or all together (shared out by
+  size). Pictures: the highest quality that fits, then a smaller picture
+  only if needed. Videos: the bit rate (and if needed the picture size) that
+  fits, checked and aimed again. Audio: the bit rate that fits (mono when
+  tight). PDFs: their pictures, step by step.
+
+**Rename…** (any files and folders)
+- 13 kinds of rule: replace (with regular expressions), remove characters
+  (first/last few, from a position, up to/from some text, between marks),
+  remove kinds of text, add text, change case (8 styles), separators,
+  numbering (1/a/A/I), patterns with tokens ({date}, {camera}…), dates,
+  Greek to Latin (ELOT 743 Greeklish), pad numbers, swap, extension.
+- A live preview with clashes in orange, presets, order by name/date/size
+  or by dragging, all-or-nothing renaming, and Undo.
+
+**Greek text and searchable PDFs**
+- Text recognition with **Tesseract** (Homebrew) for Greek: Settings › Text
+  recognition downloads its Greek file (9 MB) and shows what's in use.
+  Automatic picks Tesseract once it has Greek.
+- **Searchable** (PDFs): scanned pages get an invisible text layer, to
+  search and copy; the pages look exactly as before.
+
+**Finder and Shortcuts**
+- Finder's right-click › Services: **Convert with Pinwheel**, **Pinwheel
+  Tools** (the wheel opens under the pointer, to click; the middle switches
+  formats/tools) and **Rename with Pinwheel**.
+- The **`pinwheel` command** (`Pinwheel.app/Contents/Helpers/pinwheel`):
+  convert, compress, size-limit, run a custom action, show the wheel, open a
+  window… It hands the job to the app (starting it if needed) and prints
+  the new files. Use it in Shortcuts' Run Shell Script, also as a Quick
+  Action. (Shortcuts' own actions would need Xcode.)
+
+**Smaller things**
+- Image editor: **hold Space** to see the original (not while typing).
+- Organize…: a **bar shows where dragged pages land**, before or after the
+  page under the pointer, and "Put at the end" below the last page.
+- Video editor: the timeline's frames now turn with the picture.
+- Resize: Fit 1080 px and Fit 2048 px.
+
+**The wheel**
+- New tools join a wheel only where there's room: a wheel arranged by hand
+  keeps what was chosen (the new tools wait, switched off, in Settings).
+  Untouched wheels get 0.9's choice: images hide Add BG… and Markup… (tabs
+  of the same editor), PDFs hide Strip Info and Get Text.
+- Files Pinwheel can't convert (documents, folders) get Rename… on the
+  tools wheel.
+
+**Fixed**
+- File sizes were read from a cache: the same file written again (Size
+  Limit's second try) still reported its first size.
+
+**Under the hood**
+- Tests run on GitHub for every push (`.github/workflows/tests.yml`),
+  with ffmpeg, pngquant and Tesseract with Greek.
+- New tests: every rename rule, clashes, swapping and rolled-back renames,
+  size limits for pictures/PDFs/audio/video (noisy and phone-shaped),
+  custom actions, Tesseract's table and Greek, searchable PDFs, Undo, the
+  settings upgrade, the command end to end, Rename/Size Limit/Organize
+  logic, Space, the click wheel, Finder's Services, and the video editor
+  playing a real portrait video.
+
 ## v0.8 — 2026-10-18
 
 More editing, for photos, videos, sound and PDFs.

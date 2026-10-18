@@ -10,6 +10,14 @@ final class WheelDropView: NSView {
     var canDrop: (@MainActor (WheelLayout.Hit) -> Bool)?
     var onHover: (@MainActor (WheelLayout.Hit?) -> Void)?
     var onDrop: (@MainActor (WheelLayout.Hit, [URL]) -> Bool)?
+    /// A click on the wheel, when it was opened to be clicked (not dragged to).
+    var onClick: (@MainActor (WheelLayout.Hit) -> Void)?
+    var isClickMode = false {
+        didSet {
+            window?.acceptsMouseMovedEvents = isClickMode
+            if !isClickMode { onHover?(nil) }
+        }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -37,8 +45,43 @@ final class WheelDropView: NSView {
     }
 
     private func hit(_ sender: NSDraggingInfo) -> WheelLayout.Hit {
-        let p = convert(sender.draggingLocation, from: nil)
+        hit(atWindowPoint: sender.draggingLocation)
+    }
+
+    private func hit(atWindowPoint point: NSPoint) -> WheelLayout.Hit {
+        let p = convert(point, from: nil)
         return hitTester?(NSPoint(x: p.x - bounds.midX, y: p.y - bounds.midY)) ?? .outside
+    }
+
+    // MARK: - Clicking
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self
+        ))
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard isClickMode else { return }
+        let hit = hit(atWindowPoint: event.locationInWindow)
+        onHover?(hit == .outside ? nil : hit)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if isClickMode { onHover?(nil) }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Handled on mouse-up, like a button.
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isClickMode else { return }
+        onClick?(hit(atWindowPoint: event.locationInWindow))
     }
 
     private func update(_ sender: NSDraggingInfo) -> NSDragOperation {

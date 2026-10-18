@@ -105,6 +105,25 @@ public enum ImageConverter {
         return properties[kCGImagePropertyHasAlpha] as? Bool ?? false
     }
 
+    /// Whether some of the picture really is see-through. Many pictures have
+    /// a transparency channel with every pixel opaque (screenshots often
+    /// do); those can become JPEG. Looked at on a small copy, so it's quick.
+    static func hasTransparentPixels(_ url: URL) -> Bool {
+        guard hasAlpha(url), let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = try? orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src), maxPixelSize: 256),
+              let ctx = CGContext(
+                  data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else { return false }
+        ctx.clear(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard let pixels = ctx.data?.assumingMemoryBound(to: UInt8.self) else { return true }
+        for index in stride(from: 3, to: image.width * image.height * 4, by: 4) where pixels[index] < 250 {
+            return true
+        }
+        return false
+    }
+
     /// The full-size image with its EXIF rotation already applied.
     public static func orientedImage(_ src: CGImageSource, index: Int, maxPixelSize: Int? = nil) throws -> CGImage {
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]

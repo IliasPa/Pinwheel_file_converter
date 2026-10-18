@@ -10,6 +10,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let permission = AccessibilityPermission()
     private let dragMonitor = DragMonitor()
     private let jobs = JobQueue()
+    private let history = UndoHistory()
+    private let services = ServicesProvider()
+    private let commands = CommandCenter()
     private lazy var wheel = WheelController(settings: settings)
     private lazy var progress = ProgressController(queue: jobs, settings: settings)
     private lazy var notifier = Notifier()
@@ -33,6 +36,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 quit: { NSApp.terminate(nil) }
             ),
             recents: recents,
+            history: history,
             launch: launch,
             isTrusted: {
                 permission.refresh()
@@ -68,6 +72,38 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         editors.enqueue = { [weak self] files, action, parameters in
             self?.jobs.enqueue(files: files, action: action, parameters: parameters)
         }
+        editors.enqueueRequests = { [weak self] requests in
+            self?.jobs.enqueue(requests)
+        }
+        editors.onRenamed = { [weak self] moves in
+            self?.history.recordRename(moves)
+        }
+
+        // Finder's right-click menu ("Services"): the wheel, to click, or Rename.
+        services.showWheel = { [weak self] urls, mode in
+            self?.wheel.showForClick(urls: urls, mode: mode, at: NSEvent.mouseLocation)
+        }
+        services.openEditor = { [weak self] editor, urls in
+            self?.editors.open(editor, files: urls.map(SourceFile.init))
+        }
+        NSApp.servicesProvider = services
+        NSUpdateDynamicServices()
+
+        // The `pinwheel` command (Terminal, Shortcuts).
+        commands.enqueue = { [weak self] files, action, parameters in
+            self?.jobs.enqueue(files: files, action: action, parameters: parameters) ?? UUID()
+        }
+        commands.showWheel = { [weak self] urls, mode in
+            self?.wheel.showForClick(urls: urls, mode: mode, at: NSEvent.mouseLocation)
+        }
+        commands.openEditor = { [weak self] editor, files in
+            self?.editors.open(editor, files: files)
+        }
+        commands.recipes = { settings.recipes }
+        commands.availability = { action, files in
+            ConversionEngine.availability(of: action, for: files, ffmpegAvailable: settings.ffmpegURL != nil)
+        }
+        commands.start()
         jobs.optionsProvider = { settings.conversionOptions }
         jobs.concurrency = { settings.concurrencyLimit }
         jobs.runner = .bundled
@@ -103,6 +139,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         for job in batch where job.state == .finished {
             recents.add(job.outputs, action: job.actionLabel)
         }
+        history.record(batch: batch)
+        commands.batchFinished(batch)
         let outputs = batch.flatMap(\.outputs)
         if settings.revealInFinder && !outputs.isEmpty {
             NSWorkspace.shared.activateFileViewerSelecting(outputs)

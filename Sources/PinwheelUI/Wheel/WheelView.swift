@@ -202,10 +202,11 @@ private struct HubView: View {
     let halo: Bool
 
     private enum Content: Hashable {
-        case idle, nothing, cancel, item(String)
+        case idle, nothing, cancel, switchMode, item(String)
     }
 
     private var content: Content {
+        if model.hovered == .hub && model.isClickMode { return .switchMode }
         if model.items.isEmpty { return .nothing }
         if model.hovered == .hub { return .cancel }
         if let item = model.hoveredItem { return .item(item.id) }
@@ -219,7 +220,7 @@ private struct HubView: View {
                     .fill(Color.primary.opacity(content == .cancel ? 0.12 : 0.05))
                 Circle()
                     .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
-            } else if content == .cancel {
+            } else if content == .cancel || content == .switchMode {
                 Circle().fill(Color.primary.opacity(0.08))
             }
             label
@@ -239,6 +240,12 @@ private struct HubView: View {
             stack(symbol: "nosign", title: "Can't convert", detail: model.summary)
         case .cancel:
             stack(symbol: "xmark", title: "Cancel", detail: nil)
+        case .switchMode:
+            stack(
+                symbol: model.mode == .convert ? "wrench.and.screwdriver" : "arrow.triangle.2.circlepath",
+                title: model.mode == .convert ? "Tools" : "Formats",
+                detail: "Click to switch"
+            )
         case .item:
             if let item = model.hoveredItem {
                 stack(symbol: nil, title: item.title, detail: item.unavailableReason ?? item.detail)
@@ -247,7 +254,9 @@ private struct HubView: View {
             stack(
                 symbol: model.summarySymbol,
                 title: model.summary,
-                detail: model.mode == .tools ? "Tools" : nil
+                detail: model.isClickMode
+                    ? (model.mode == .tools ? "Tools · click here for formats" : "Click here for tools")
+                    : (model.mode == .tools ? "Tools" : nil)
             )
         }
     }

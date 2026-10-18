@@ -1,0 +1,38 @@
+name: Tests
+
+# Runs the whole test suite (make test) on every push and pull request.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: make test
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show the toolchain
+        run: |
+          sw_vers
+          xcode-select -p
+          swift --version
+
+      # The tests also cover what these tools do (MP3, GIFs, small PNGs, Greek text).
+      - name: Install ffmpeg, pngquant and Tesseract
+        run: brew install ffmpeg pngquant tesseract
+
+      - name: Add Tesseract's Greek, where Pinwheel's Settings puts it
+        run: |
+          folder="$HOME/Library/Application Support/Pinwheel/tessdata"
+          mkdir -p "$folder"
+          curl -fsSL -o "$folder/ell.traineddata" https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main/ell.traineddata
+
+      - name: Run the tests
+        run: make test

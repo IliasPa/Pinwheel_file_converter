@@ -176,7 +176,7 @@ public enum Backdrop: Codable, Sendable, Equatable, Hashable {
 }
 
 /// Background, padding, rounded corners and shadow around the picture.
-public struct FrameStyle: Codable, Sendable, Equatable {
+public struct FrameStyle: Codable, Sendable, Equatable, Hashable {
     public var background: Backdrop = .clear
     /// Space around the picture, as a share of its longer side (0...0.5).
     public var padding = 0.0
@@ -326,7 +326,7 @@ private extension Double {
 }
 
 /// A name or logo laid over the picture, e.g. "© Ilias 2026".
-public struct Watermark: Codable, Sendable, Equatable {
+public struct Watermark: Codable, Sendable, Equatable, Hashable {
     public enum Kind: String, CaseIterable, Codable, Sendable {
         case text, logo
     }

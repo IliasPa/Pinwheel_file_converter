@@ -10,7 +10,7 @@ public enum SaveLocation: Sendable, Equatable, Codable {
 /// What "Resize" does to an image.
 public enum ResizeOption: String, CaseIterable, Codable, Sendable {
     case quarter, half, threeQuarters
-    case fit1280, fit1920, fit2560, fit3840
+    case fit1080, fit1280, fit1920, fit2048, fit2560, fit3840
 
     /// Shown on the wedge and in Settings.
     public var title: String {
@@ -18,8 +18,10 @@ public enum ResizeOption: String, CaseIterable, Codable, Sendable {
         case .quarter: "Resize 25%"
         case .half: "Resize 50%"
         case .threeQuarters: "Resize 75%"
+        case .fit1080: "Fit 1080 px"
         case .fit1280: "Fit 1280 px"
         case .fit1920: "Fit 1920 px"
+        case .fit2048: "Fit 2048 px"
         case .fit2560: "Fit 2560 px"
         case .fit3840: "Fit 3840 px"
         }
@@ -46,8 +48,10 @@ public enum ResizeOption: String, CaseIterable, Codable, Sendable {
 
     var fitSize: Int? {
         switch self {
+        case .fit1080: 1080
         case .fit1280: 1280
         case .fit1920: 1920
+        case .fit2048: 2048
         case .fit2560: 2560
         case .fit3840: 3840
         default: nil
@@ -154,6 +158,8 @@ public struct ConversionOptions: Sendable, Equatable, Codable {
     public var ffmpegURL: URL?
     /// Where pngquant is (for compressing PNGs), or nil.
     public var pngquantURL: URL?
+    /// How text is read in pictures and scanned pages (Get Text, Searchable).
+    public var textRecognition = TextRecognition()
 
     public init() {}
 }
@@ -172,6 +178,8 @@ public enum JobParameters: Sendable, Equatable, Codable {
     case password(String)
     case collage(CollageSpec)
     case pages(PageArrangement)
+    /// The most the result may weigh, in bytes.
+    case sizeLimit(bytes: Int64)
 }
 
 /// One conversion: usually one file, or several files becoming one PDF.
@@ -213,8 +221,15 @@ public struct ConversionRequest: Sendable, Equatable, Codable {
         switch action {
         case .tool(.extractText), .tool(.saveFrame), .tool(.collage): false
         case .convert(.gif): mediaEdit == nil  // a GIF of a part is taken from the video
+        case .recipe(let recipe): recipe.replacesOriginal
         default: true
         }
+    }
+
+    /// The size chosen for Size Limit.
+    var sizeLimit: Int64? {
+        if case .sizeLimit(let bytes)? = parameters { return bytes }
+        return nil
     }
 
     var mediaEdit: MediaEdit? {

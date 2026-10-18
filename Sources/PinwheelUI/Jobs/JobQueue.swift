@@ -34,7 +34,9 @@ final class Job: Identifiable {
     /// Worth telling: where it was saved, what was left out, and so on.
     fileprivate(set) var note: String?
     /// True once the originals were moved to the Trash (when that's switched on).
-    fileprivate(set) var originalTrashed = false
+    var originalTrashed: Bool { !trashedOriginals.isEmpty }
+    /// Each original moved to the Trash, and where it is there (for Undo).
+    fileprivate(set) var trashedOriginals: [(original: URL, inTrash: URL)] = []
     @ObservationIgnored fileprivate var task: Task<Void, Never>?
 
     init(batch: UUID, request: ConversionRequest, actionLabel: String) {
@@ -115,9 +117,11 @@ final class JobQueue {
     @ObservationIgnored var optionsProvider: () -> ConversionOptions = { ConversionOptions() }
     /// Whether to move the originals to the Trash after a successful job.
     @ObservationIgnored var shouldTrashOriginals: () -> Bool = { false }
-    /// Moves one file to the Trash (tests swap this out).
-    @ObservationIgnored var moveToTrash: (URL) throws -> Void = { url in
-        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+    /// Moves one file to the Trash and says where it went (tests swap this out).
+    @ObservationIgnored var moveToTrash: (URL) throws -> URL = { url in
+        var result: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &result)
+        return (result as URL?) ?? url
     }
     /// How an action is named in the progress window.
     @ObservationIgnored var actionLabel: (WheelAction) -> String = { $0.title(in: .tools) }
@@ -130,16 +134,27 @@ final class JobQueue {
     var hasFailures: Bool { jobs.contains(where: \.isFailed) }
 
     /// `parameters` is what an editor window chose; every file gets the same.
-    func enqueue(files: [SourceFile], action: WheelAction, parameters: JobParameters? = nil) {
-        let batch = UUID()
+    /// Returns the batch, so whoever asked can follow it.
+    @discardableResult
+    func enqueue(files: [SourceFile], action: WheelAction, parameters: JobParameters? = nil) -> UUID {
         let combined = ConversionRequest(files: files, action: action, parameters: parameters)
         let requests = combined.isMerge || (combined.isCombinedPDF && optionsProvider().combineImagesIntoOnePDF)
             ? [combined]
             : files.map { ConversionRequest(file: $0, action: action, parameters: parameters) }
-        let label = actionLabel(action)
+        return enqueue(requests, label: actionLabel(action))
+    }
+
+    /// Several jobs as one batch, each with its own choices (e.g. a size
+    /// limit shared out between files).
+    @discardableResult
+    func enqueue(_ requests: [ConversionRequest], label: String? = nil) -> UUID {
+        let batch = UUID()
+        guard let first = requests.first else { return batch }
+        let label = label ?? actionLabel(first.action)
         jobs.append(contentsOf: requests.map { Job(batch: batch, request: $0, actionLabel: label) })
         pump()
         onChange?()
+        return batch
     }
 
     func cancel(_ job: Job) {
@@ -219,16 +234,14 @@ final class JobQueue {
     private func trashOriginals(of job: Job) {
         let outputsExist = !job.outputs.isEmpty && job.outputs.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }
         guard outputsExist else { return }
-        var trashed = false
         for source in job.request.files.map(\.url) {
             let stillNeeded = jobs.contains { other in
                 other !== job && !other.isDone && other.request.files.contains { $0.url == source }
             }
-            if !stillNeeded, (try? moveToTrash(source)) != nil {
-                trashed = true
+            if !stillNeeded, let inTrash = try? moveToTrash(source) {
+                job.trashedOriginals.append((source, inTrash))
             }
         }
-        job.originalTrashed = trashed
     }
 
     private func jobDidEnd(_ job: Job) {

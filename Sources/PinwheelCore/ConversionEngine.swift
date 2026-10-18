@@ -23,6 +23,8 @@ public enum ConversionEngine {
         switch (file.kind, action) {
         case (_, .open):
             false  // the window says what it can do; Info works without ffmpeg
+        case (_, .recipe):
+            false  // each step is checked on its own (see `availability`)
         case (.video, .convert(.gif)), (.video, .convert(.mp3)), (.audio, .convert(.mp3)):
             true
         case (.video, .tool(let tool)), (.audio, .tool(let tool)):
@@ -42,6 +44,9 @@ public enum ConversionEngine {
         if action == .open(.collage) && files.count < 2 {
             return .unavailable("Drop two or more pictures")
         }
+        if case .recipe(let recipe) = action {
+            return recipeAvailability(recipe, for: files, ffmpegAvailable: ffmpegAvailable)
+        }
         for file in files {
             guard file.kind != nil else {
                 return .unavailable("Pinwheel can't convert this kind of file")
@@ -54,6 +59,26 @@ public enum ConversionEngine {
             }
             if usesFFmpeg(action, for: file) && !ffmpegAvailable {
                 return .unavailable("Needs ffmpeg (brew install ffmpeg)")
+            }
+        }
+        return .available
+    }
+
+    /// A custom action works when every step does, on what the step before made.
+    static func recipeAvailability(_ recipe: Recipe, for files: [SourceFile], ffmpegAvailable: Bool) -> Availability {
+        if let problem = recipe.problem { return .unavailable(problem) }
+        for file in files {
+            guard file.kind == recipe.kind else { return .unavailable("Made for \(recipe.kind.pluralTitle.lowercased())") }
+            var current = file
+            for step in recipe.steps {
+                let (action, _) = step.job(for: current)
+                if case .unavailable(let reason) = availability(of: action, for: [current], ffmpegAvailable: ffmpegAvailable) {
+                    return .unavailable("\(step.title): \(reason)")
+                }
+                // The next step gets what this one makes (as far as can be told beforehand).
+                let single = Recipe(name: step.title, kind: recipe.kind, steps: [step])
+                guard let ext = OutputPlanner.recipeOutput(single, for: current, options: ConversionOptions()).1 else { break }
+                current = SourceFile(url: file.url.deletingLastPathComponent().appendingPathComponent("pinwheel-step.\(ext)"))
             }
         }
         return .available
@@ -107,6 +132,7 @@ public enum ConversionEngine {
         do {
             try Task.checkCancellation()
             var notes = [plan.folderNote]
+            var outputs = [destination]
             switch (file.kind, request.action) {
             case (.image, .convert) where request.isCombinedPDF:
                 try ImageConverter.combineIntoPDF(request.files.map(\.url), destination: destination, progress: progress)
@@ -121,6 +147,13 @@ public enum ConversionEngine {
                 ))
             case (_, .tool(let tool)):
                 notes.append(try await ToolConverter.run(tool, request: request, plan: plan, destination: destination, options: options, progress: progress))
+            case (_, .recipe(let recipe)):
+                let result = try await RecipeRunner.run(
+                    recipe, file: file, destination: destination, baseName: plan.baseName, suffix: plan.suffix,
+                    options: options, progress: progress
+                )
+                outputs = [result.output]
+                notes.append(result.note)
             case (_, .open(let editor)):
                 throw ConversionError.unsupported("\(editor.title) as a job")
             case (nil, _):
@@ -134,7 +167,7 @@ public enum ConversionEngine {
             }
             progress(1)
             let note = notes.compactMap { $0 }.joined(separator: " ")
-            return ConversionResult(outputs: [destination], note: note.isEmpty ? nil : note)
+            return ConversionResult(outputs: outputs, note: note.isEmpty ? nil : note)
         } catch let skip as NothingToDo {
             try? FileManager.default.removeItem(at: destination)
             return ConversionResult(outputs: [], note: skip.reason)

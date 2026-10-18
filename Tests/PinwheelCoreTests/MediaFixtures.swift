@@ -29,7 +29,7 @@ enum MediaFixtures {
     static func makeVideo(
         at url: URL, seconds: Double = 1, width: Int = 160, height: Int = 120,
         withAudio: Bool = true, withVideo: Bool = true, fileType: AVFileType = .mov,
-        metadata: [AVMetadataItem] = [], noisy: Bool = false
+        metadata: [AVMetadataItem] = [], noisy: Bool = false, transform: CGAffineTransform = .identity
     ) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
         writer.metadata = metadata
@@ -41,6 +41,7 @@ enum MediaFixtures {
                 AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
             ])
             input.expectsMediaDataInRealTime = false
+            input.transform = transform  // e.g. a phone video filmed upright
             adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: width,

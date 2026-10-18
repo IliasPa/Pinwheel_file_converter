@@ -24,6 +24,9 @@ final class WheelModel {
     var mode: WheelMode = .convert
     var items: [WheelItem] = []
     var hovered: WheelLayout.Hit?
+    /// Opened from Finder's menu (or the command line): choose with a click,
+    /// and a click in the middle switches between formats and tools.
+    var isClickMode = false
     var summary = ""
     var summarySymbol = "doc"
 
@@ -38,6 +41,7 @@ final class WheelModel {
         mode: WheelMode,
         options: ConversionOptions,
         hidden: Set<String> = [],
+        recipes: [Recipe] = [],
         availability: (WheelAction, [SourceFile]) -> Availability
     ) {
         self.mode = mode
@@ -45,7 +49,7 @@ final class WheelModel {
         summarySymbol = FormatCatalog.symbolName(for: files)
         let kinds = Set(files.map(\.kind))
         let commonKind = kinds.count == 1 ? kinds.first! : nil
-        items = FormatCatalog.actions(for: files, mode: mode, hidden: hidden).map { action in
+        items = FormatCatalog.actions(for: files, mode: mode, hidden: hidden, recipes: recipes).map { action in
             var reason: String?
             if case .unavailable(let why) = availability(action, files) { reason = why }
             return WheelItem(

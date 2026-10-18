@@ -38,7 +38,14 @@ enum ToolConverter {
             try CollageRenderer.export(request.files.map(\.url), spec: spec, format: format, destination: destination, options: options, progress: progress)
         case (_, .extractText):
             progress(0.05)
-            return try await Blocking.run { _ in try TextExtractor.write(file, to: destination, progress: progress) }
+            return try await TextExtractor.write(file, to: destination, recognition: options.textRecognition, progress: progress)
+        case (.pdf, .makeSearchable):
+            progress(0.02)
+            return try await SearchablePDF.make(file.url, destination: destination, recognition: options.textRecognition, progress: progress)
+        case (_, .sizeLimit):
+            guard let limit = request.sizeLimit else { throw ConversionError.failed("Choose a size first.") }
+            progress(0.02)
+            return try await SizeLimiter.run(file, limit: limit, format: plan.format, destination: destination, options: options, progress: progress)
         case (_, .editInfo):
             guard case .metadata(let edit)? = request.parameters else { throw NothingToDo(reason: "Nothing was changed.") }
             progress(0.1)
@@ -320,8 +327,9 @@ enum MediaTools {
 
 /// Re-encodes a soundtrack as AAC at a chosen bit rate, keeping its tags.
 enum AudioCompressor {
+    /// `channels` and `sampleRate` lower the original's when set.
     static func compress(
-        _ source: URL, destination: URL, bitRate: Int,
+        _ source: URL, destination: URL, bitRate: Int, channels: Int? = nil, sampleRate: Double? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         let asset = AVURLAsset(url: source)
@@ -330,7 +338,11 @@ enum AudioCompressor {
         }
         let duration = try await asset.load(.duration).seconds
         let metadata = try await asset.load(.metadata)
-        let format = try await AudioFormat.of(track)
+        let original = try await AudioFormat.of(track)
+        let format = AudioFormat(
+            channels: min(channels ?? original.channels, original.channels),
+            sampleRate: min(sampleRate ?? original.sampleRate, original.sampleRate)
+        )
 
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: format.pcmSettings)

@@ -19,11 +19,16 @@ final class WheelController {
     private let settings: SettingsStore
     private let feedback = HoverFeedback()
     private lazy var panel: WheelPanel = makePanel()
+    private weak var dropView: WheelDropView?
     private var files: [SourceFile] = []
     private var hideGeneration = 0
     private var pendingHide: Date?
     /// True while "Show on Desktop" is displaying a sample wheel (no drops).
     private var isDemo = false
+    /// Watches for Esc and clicks elsewhere while the wheel waits for a click.
+    private var clickMonitors: [Any] = []
+    /// False in tests, which check what the wheel does without showing it.
+    var showsOnScreen = true
 
     init(settings: SettingsStore) {
         self.settings = settings
@@ -31,9 +36,27 @@ final class WheelController {
 
     func show(urls: [URL], mode: WheelMode, at location: NSPoint) {
         isDemo = false
+        setClickMode(false)
         files = urls.map(SourceFile.init)
-        model.load(files: files, mode: mode, options: settings.conversionOptions, hidden: settings.hiddenTools, availability: availability)
+        load(mode)
         present(at: location)
+    }
+
+    /// The wheel for files chosen in Finder's menu: it stays until a wedge
+    /// is clicked, Esc is pressed or the pointer clicks somewhere else.
+    func showForClick(urls: [URL], mode: WheelMode, at location: NSPoint) {
+        isDemo = false
+        files = urls.map(SourceFile.init)
+        load(mode)
+        present(at: location)
+        setClickMode(true)
+    }
+
+    private func load(_ mode: WheelMode) {
+        model.load(
+            files: files, mode: mode, options: settings.conversionOptions, hidden: settings.hiddenTools,
+            recipes: settings.recipes, availability: availability
+        )
     }
 
     /// Shows a sample wheel for a few seconds so the glass setting can be
@@ -58,7 +81,7 @@ final class WheelController {
     func setMode(_ mode: WheelMode) {
         guard mode != model.mode, !isDemo else { return }
         model.hovered = nil
-        model.load(files: files, mode: mode, options: settings.conversionOptions, hidden: settings.hiddenTools, availability: availability)
+        load(mode)
     }
 
     /// Hides the wheel. When several hide requests overlap, the earliest wins.
@@ -72,6 +95,7 @@ final class WheelController {
         Task {
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             guard generation == self.hideGeneration else { return }
+            self.setClickMode(false)
             self.model.isPresented = false
             let fade = 0.18
             NSAnimationContext.runAnimationGroup({ context in
@@ -90,6 +114,39 @@ final class WheelController {
         }
     }
 
+    // MARK: - Choosing with a click
+
+    private func setClickMode(_ on: Bool) {
+        model.isClickMode = on
+        dropView?.isClickMode = on
+        clickMonitors.forEach(NSEvent.removeMonitor)
+        clickMonitors.removeAll()
+        guard on, showsOnScreen else { return }
+        // A click in another app, or Esc, closes it.
+        if let outside = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.hide() }
+        }) { clickMonitors.append(outside) }
+        if let escape = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            MainActor.assumeIsolated { if event.keyCode == 53 { self?.hide() } }
+        }) { clickMonitors.append(escape) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            guard event.keyCode == 53 else { return event }
+            self?.hide()
+            return nil
+        }) { clickMonitors.append(local) }
+    }
+
+    func handleClick(_ hit: WheelLayout.Hit) {
+        switch hit {
+        case .hub:
+            setMode(model.mode == .convert ? .tools : .convert)
+        case .wedge:
+            _ = handleDrop(hit, urls: [])
+        case .outside:
+            hide()
+        }
+    }
+
     // MARK: - Private
 
     private func present(at location: NSPoint) {
@@ -100,6 +157,10 @@ final class WheelController {
 
         let size = Self.panelSize
         let center = clampedCenter(for: location)
+        guard showsOnScreen else {
+            model.isPresented = true
+            return
+        }
         panel.setFrame(NSRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size), display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
@@ -164,6 +225,10 @@ final class WheelController {
         dropView.onDrop = { [weak self] hit, urls in
             self?.handleDrop(hit, urls: urls) ?? false
         }
+        dropView.onClick = { [weak self] hit in
+            self?.handleClick(hit)
+        }
+        self.dropView = dropView
 
         let hosting = PassthroughHostingView(rootView: WheelView(model: model, settings: settings))
         hosting.frame = dropView.bounds

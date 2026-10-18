@@ -132,13 +132,15 @@ private struct CompareButton: View {
             } onPressingChanged: { pressing in
                 model.showOriginal = pressing
             }
-            .help("Hold to see the original")
+            .help("Hold to see the original (or hold Space)")
     }
 }
 
-/// The image editor's window.
+/// The image editor's window. Holding Space shows the original, as the
+/// Compare button does (but not while typing, where Space is a space).
 final class StudioWindowController: EditorWindowController {
     let model: StudioModel
+    private var keyMonitor: Any?
 
     init(model: StudioModel) {
         self.model = model
@@ -148,5 +150,33 @@ final class StudioWindowController: EditorWindowController {
             undoManager: model.undoManager, content: StudioView(model: model)
         )
         model.onClose = { [weak self] in self?.window?.close() }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            guard let self, self.handleSpace(event) else { return event }
+            return nil
+        }
+        onClose = { [weak self] in self?.stopWatchingKeys() }
+    }
+
+    /// True when the key was Space for comparing (and so is used up).
+    func handleSpace(_ event: NSEvent) -> Bool {
+        guard let window, event.windowNumber == window.windowNumber, event.keyCode == 49,
+              event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+              !(window.firstResponder is NSText) else { return false }
+        if event.type == .keyDown {
+            if !event.isARepeat { model.showOriginal = true }
+        } else {
+            model.showOriginal = false
+        }
+        return true
+    }
+
+    /// Letting go of Space in another window must not leave the original showing.
+    @objc func windowDidResignKey(_ notification: Notification) {
+        model.showOriginal = false
+    }
+
+    private func stopWatchingKeys() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
     }
 }
