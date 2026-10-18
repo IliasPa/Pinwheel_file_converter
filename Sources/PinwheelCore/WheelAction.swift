@@ -95,12 +95,15 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
     case mute
     case merge
     case split
+    case normalize
     // Made by an editor window, with what was chosen there.
     case edit
     case editInfo
-    case trim
+    case editMedia
     case saveFrame
     case protect
+    case collage
+    case organize
 
     /// The general name; Resize shows its chosen size on the wheel instead.
     public var title: String {
@@ -114,11 +117,14 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .mute: "Mute"
         case .merge: "Merge"
         case .split: "Split Pages"
+        case .normalize: "Normalize"
         case .edit: "Edit"
         case .editInfo: "Edit Info"
-        case .trim: "Trim"
+        case .editMedia: "Edit"
         case .saveFrame: "Save Frame"
         case .protect: "Add Password"
+        case .collage: "Collage"
+        case .organize: "Organize Pages"
         }
     }
 
@@ -133,11 +139,14 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .mute: "speaker.slash"
         case .merge: "arrow.triangle.merge"
         case .split: "scissors"
+        case .normalize: "speaker.wave.2.circle"
         case .edit: "slider.horizontal.3"
         case .editInfo: "info.circle"
-        case .trim: "timeline.selection"
+        case .editMedia: "timeline.selection"
         case .saveFrame: "camera.viewfinder"
         case .protect: "lock.doc"
+        case .collage: "square.grid.2x2"
+        case .organize: "rectangle.grid.2x2"
         }
     }
 
@@ -159,11 +168,14 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .mute: "Removes the sound, keeps the picture"
         case .merge: "Joins the PDFs into one, in name order"
         case .split: "One PDF per page, in a folder"
+        case .normalize: "Evens out the loudness (−16 LUFS, like streaming apps)"
         case .edit: "Your edits"
         case .editInfo: "Your changes to the file's info"
-        case .trim: "Just the part you chose"
+        case .editMedia: "Your edits"
         case .saveFrame: "One frame as a JPEG"
         case .protect: "Asks for a password to open"
+        case .collage: "Several photos in one picture"
+        case .organize: "The pages in your order"
         }
     }
 
@@ -179,10 +191,12 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .mute: "muted"
         case .merge: "merged"
         case .split: "pages"
-        case .edit, .editInfo: "edited"
-        case .trim: "trimmed"
+        case .normalize: "normalized"
+        case .edit, .editInfo, .editMedia: "edited"
         case .saveFrame: "frame"
         case .protect: "protected"
+        case .collage: "collage"
+        case .organize: "organized"
         }
     }
 }
@@ -190,9 +204,12 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
 /// Wedges that open a window to choose the details first ("Crop…"). The
 /// window then starts a job (see `tool`) with what was chosen.
 public enum Editor: String, CaseIterable, Codable, Sendable {
-    // The four tabs of the image editor.
-    case crop, adjust, background, markup
-    case info, trim, password
+    // The tabs of the image editor.
+    case crop, adjust, background, markup, watermark
+    case info
+    /// The video and audio editor (trim, speed, turn, fades, loudness, GIF).
+    case trim
+    case password, collage, organize
 
     public var title: String {
         switch self {
@@ -200,9 +217,12 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .adjust: "Edit…"
         case .background: "Add BG…"
         case .markup: "Markup…"
+        case .watermark: "Watermark…"
         case .info: "Info…"
-        case .trim: "Trim…"
+        case .trim: "Edit…"
         case .password: "Password…"
+        case .collage: "Collage…"
+        case .organize: "Organize…"
         }
     }
 
@@ -212,9 +232,12 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .adjust: "slider.horizontal.3"
         case .background: "photo.artframe"
         case .markup: "pencil.tip.crop.circle"
+        case .watermark: "signature"
         case .info: "info.circle"
         case .trim: "timeline.selection"
         case .password: "lock.doc"
+        case .collage: "square.grid.2x2"
+        case .organize: "rectangle.grid.2x2"
         }
     }
 
@@ -224,6 +247,7 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .adjust: "Light, color and filters"
         case .background: "Background, padding, corners and shadow"
         case .markup: "Arrows, shapes, text and blur-out"
+        case .watermark: "Your name or logo on every picture"
         case .info:
             switch kind {
             case .image: "See and edit title, camera, date, place…"
@@ -231,16 +255,18 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
             case .pdf: "See and edit title, author and more"
             case nil: "See and edit the details"
             }
-        case .trim: "Keep just the part you choose"
+        case .trim: kind == .audio ? "Trim, speed, fades and loudness" : "Trim, speed, turn, sound and GIF"
         case .password: "Only people with the password can open it"
+        case .collage: "Several photos in one: a grid, rows or a contact sheet"
+        case .organize: "Reorder, turn or remove pages, from one PDF or several"
         }
     }
 
     /// One of the image editor's tabs.
     public var isImageEditor: Bool {
         switch self {
-        case .crop, .adjust, .background, .markup: true
-        case .info, .trim, .password: false
+        case .crop, .adjust, .background, .markup, .watermark: true
+        case .info, .trim, .password, .collage, .organize: false
         }
     }
 }

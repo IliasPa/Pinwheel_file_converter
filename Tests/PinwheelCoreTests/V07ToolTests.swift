@@ -159,9 +159,11 @@ struct MediaEditTests {
         case "m4a": try await MediaFixtures.makeVideo(at: source, seconds: 3, withVideo: false, fileType: .m4a)
         default: try await MediaFixtures.makeVideo(at: source, seconds: 3)
         }
-        let request = ConversionRequest(file: SourceFile(url: source), action: .tool(.trim), parameters: .timeRange(start: 1, end: 2))
+        var part = MediaEdit()
+        (part.start, part.end) = (1, 2)
+        let request = ConversionRequest(file: SourceFile(url: source), action: .tool(.editMedia), parameters: .media(part))
         let output = try #require(try await runRequest(request, findTools: false).outputs.first)
-        #expect(output.lastPathComponent == "long (trimmed).\(ext)")
+        #expect(output.lastPathComponent == "long (edited).\(ext)")
         #expect(abs(try await duration(output) - 1) < 0.15)
     }
 
@@ -171,7 +173,9 @@ struct MediaEditTests {
         let wav = folder.file("tone.wav"), mp3 = folder.file("song.mp3")
         try MediaFixtures.makeWAV(at: wav, seconds: 3)
         try await MediaFixtures.ffmpegTranscode(wav, to: mp3, arguments: ["-c:a", "libmp3lame", "-q:a", "4"])
-        let request = ConversionRequest(file: SourceFile(url: mp3), action: .tool(.trim), parameters: .timeRange(start: 0.5, end: 2))
+        var part = MediaEdit()
+        (part.start, part.end) = (0.5, 2)
+        let request = ConversionRequest(file: SourceFile(url: mp3), action: .tool(.editMedia), parameters: .media(part))
         let output = try #require(try await runRequest(request).outputs.first)
         #expect(output.pathExtension == "mp3")
         #expect(abs(try await duration(output) - 1.5) < 0.15)

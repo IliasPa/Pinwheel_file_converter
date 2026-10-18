@@ -209,6 +209,18 @@ final class SettingsStore {
         hiddenTools = fresh.hiddenTools
     }
 
+    /// The last watermark saved from the image editor, offered again next time.
+    var lastWatermark: Watermark? {
+        get {
+            defaults.data(forKey: Self.lastWatermarkKey).flatMap { try? JSONDecoder().decode(Watermark.self, from: $0) }
+        }
+        set {
+            defaults.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: Self.lastWatermarkKey)
+        }
+    }
+
+    private static let lastWatermarkKey = "lastWatermark"
+
     /// Whether a tool is on the wheel for this kind of file.
     func isOnWheel(_ action: WheelAction, for kind: FileKind) -> Bool {
         !hiddenTools.contains(FormatCatalog.hiddenKey(kind, action))

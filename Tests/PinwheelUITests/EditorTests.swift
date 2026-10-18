@@ -271,13 +271,14 @@ struct ToolsWheelSettingsTests {
         return SettingsStore(defaults: UserDefaults(suiteName: name)!)
     }
 
-    @Test func imagesStartWithEightToolsAndCanSwap() {
+    @Test func imagesStartWithAFullWheelAndCanSwap() {
         let store = freshStore()
         #expect(!store.isOnWheel(.tool(.stripMetadata), for: .image))
         #expect(store.isOnWheel(.tool(.stripMetadata), for: .video))
         let model = WheelModel()
         model.load(files: [SourceFile.sample], mode: .tools, options: ConversionOptions(), hidden: store.hiddenTools) { _, _ in .available }
-        #expect(model.items.count == 8)
+        #expect(model.items.count == FormatCatalog.maxWedges)
+        #expect(model.items.map(\.title).contains("Watermark…"))
         #expect(!model.items.map(\.title).contains("Strip Info"))
         #expect(model.items.map(\.title).contains("Crop…"))
 

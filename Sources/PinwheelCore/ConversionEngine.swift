@@ -39,12 +39,18 @@ public enum ConversionEngine {
         if action == .tool(.merge) && files.count < 2 {
             return .unavailable("Drop two or more PDFs to merge them")
         }
+        if action == .open(.collage) && files.count < 2 {
+            return .unavailable("Drop two or more pictures")
+        }
         for file in files {
             guard file.kind != nil else {
                 return .unavailable("Pinwheel can't convert this kind of file")
             }
             if action == .open(.trim) && file.needsFFmpegToRead {
-                return .unavailable("macOS can't play this file, so it can't be trimmed here")
+                return .unavailable("macOS can't play this file, so it can't be edited here")
+            }
+            if action == .tool(.normalize) && file.needsFFmpegToRead {
+                return .unavailable("macOS can't read this file")
             }
             if usesFFmpeg(action, for: file) && !ffmpegAvailable {
                 return .unavailable("Needs ffmpeg (brew install ffmpeg)")
@@ -110,7 +116,9 @@ public enum ConversionEngine {
             case (.pdf, .convert(let format)):
                 try await PDFConverter.renderPages(file.url, to: format, destination: destination, options: options, progress: progress)
             case (.video, .convert(let format)), (.audio, .convert(let format)):
-                notes.append(try await MediaConverter.convert(file, to: format, destination: destination, options: options, progress: progress))
+                notes.append(try await MediaConverter.convert(
+                    file, to: format, destination: destination, options: options, part: request.mediaEdit, progress: progress
+                ))
             case (_, .tool(let tool)):
                 notes.append(try await ToolConverter.run(tool, request: request, plan: plan, destination: destination, options: options, progress: progress))
             case (_, .open(let editor)):

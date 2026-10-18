@@ -32,7 +32,7 @@ struct FormatCatalogTests {
 
     @Test func mixedImageFormatsKeepEveryWedge() {
         let actions = FormatCatalog.actions(for: files("a.png", "b.jpg"), mode: .convert)
-        #expect(actions == FormatCatalog.actions(for: .image, mode: .convert))
+        #expect(actions == FormatCatalog.actions(for: .image, mode: .convert) + [.open(.collage)])
     }
 
     @Test func mixedKindsShowOnlyWhatAllShare() {
@@ -53,7 +53,7 @@ struct FormatCatalogTests {
         let shown = FormatCatalog.actions(for: files("a.png"), mode: .tools, hidden: FormatCatalog.defaultHidden)
         #expect(shown == [
             .tool(.compress), .tool(.resize), .tool(.removeBackground), .open(.crop),
-            .open(.adjust), .open(.background), .open(.markup), .open(.info),
+            .open(.adjust), .open(.background), .open(.markup), .open(.watermark), .open(.info),
         ])
         // Never more than fit, whatever is hidden.
         #expect(FormatCatalog.actions(for: files("a.png"), mode: .tools).count == FormatCatalog.maxWedges)
@@ -63,6 +63,7 @@ struct FormatCatalogTests {
             hidden: [FormatCatalog.hiddenKey(.image, .open(.markup)), FormatCatalog.hiddenKey(.image, .tool(.extractText))]
         )
         #expect(!swapped.contains(.open(.markup)) && swapped.last == .tool(.stripMetadata))
+        #expect(swapped.count == FormatCatalog.maxWedges)
     }
 
     @Test func otherKindsGetTheirTools() {
@@ -70,6 +71,12 @@ struct FormatCatalogTests {
                 == [.tool(.compress), .tool(.stripMetadata), .tool(.extractAudio), .tool(.mute), .open(.trim), .open(.info)])
         #expect(FormatCatalog.actions(for: files("a.pdf", "b.pdf"), mode: .tools).contains(.tool(.merge)))
         #expect(FormatCatalog.actions(for: files("a.wav"), mode: .tools).contains(.open(.trim)))
+        #expect(FormatCatalog.actions(for: files("a.wav"), mode: .tools).contains(.tool(.normalize)))
+        #expect(FormatCatalog.actions(for: files("a.pdf"), mode: .tools).contains(.open(.organize)))
+        // Several pictures can become a collage; one can't.
+        #expect(FormatCatalog.actions(for: files("a.png", "b.jpg"), mode: .convert).last == .open(.collage))
+        #expect(!FormatCatalog.actions(for: files("a.png"), mode: .convert).contains(.open(.collage)))
+        #expect(!FormatCatalog.actions(for: files("a.png", "b.mov"), mode: .convert).contains(.open(.collage)))
         // Hidden image tools don't hide the same tool for other kinds.
         #expect(FormatCatalog.actions(for: files("a.mov"), mode: .tools, hidden: FormatCatalog.defaultHidden).contains(.tool(.stripMetadata)))
     }

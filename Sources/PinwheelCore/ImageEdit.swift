@@ -325,15 +325,71 @@ private extension Double {
     var reciprocal: Double { 1 / Swift.max(self, 0.000_001) }
 }
 
+/// A name or logo laid over the picture, e.g. "© Ilias 2026".
+public struct Watermark: Codable, Sendable, Equatable {
+    public enum Kind: String, CaseIterable, Codable, Sendable {
+        case text, logo
+    }
+
+    /// Where it goes; `tiled` repeats it across the whole picture.
+    public enum Placement: String, CaseIterable, Codable, Sendable {
+        case topLeft, top, topRight, left, center, right, bottomLeft, bottom, bottomRight, tiled
+
+        /// 0, 0.5 or 1 across and down (for the nine fixed spots).
+        var anchor: (x: Double, y: Double) {
+            switch self {
+            case .topLeft: (0, 0)
+            case .top: (0.5, 0)
+            case .topRight: (1, 0)
+            case .left: (0, 0.5)
+            case .center, .tiled: (0.5, 0.5)
+            case .right: (1, 0.5)
+            case .bottomLeft: (0, 1)
+            case .bottom: (0.5, 1)
+            case .bottomRight: (1, 1)
+            }
+        }
+    }
+
+    public var kind = Kind.text
+    public var text = "© \(Calendar.current.component(.year, from: Date()))"
+    /// A picture file (a logo, ideally a PNG with a see-through background).
+    public var logoPath: String?
+    public var color = MarkupColor.white
+    public var placement = Placement.bottomRight
+    /// Text height (or the logo's longer side), as a share of the picture's longer side.
+    public var size = 0.045
+    /// 0...1
+    public var opacity = 0.7
+    /// Space from the edges, as a share of the picture's longer side.
+    public var margin = 0.03
+    /// A soft shadow so it reads on light and dark parts alike.
+    public var shadow = true
+
+    public init() {}
+
+    /// Nothing to draw (no text, or no logo chosen).
+    public var isBlank: Bool {
+        switch kind {
+        case .text: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .logo: logoPath == nil
+        }
+    }
+}
+
 /// Everything the image editor does to a picture, in the order it's done:
-/// turn and flip, crop, resize, remove the background, adjust, draw the
-/// markup, add the frame. Positions are 0...1, so the same edit fits the
-/// preview, the full-size picture, and other pictures edited together.
+/// turn, flip and straighten, crop, resize, remove the background, adjust,
+/// draw the markup and the watermark, add the frame. Positions are 0...1,
+/// so the same edit fits the preview, the full-size picture, and other
+/// pictures edited together.
 public struct ImageEdit: Codable, Sendable, Equatable {
     /// Clockwise quarter turns (0...3), done after `mirrored`.
     public var quarterTurns = 0
     /// Flipped left to right, before turning.
     public var mirrored = false
+    /// A small turn to level the horizon, in degrees (-45...45, clockwise).
+    /// The picture is enlarged just enough to leave no empty corners.
+    public var straighten = 0.0
     /// The part to keep, in the turned picture (nil: all of it).
     public var crop: RelativeRect?
     /// The crop's shape, kept when the edit is used on pictures of another
@@ -345,6 +401,7 @@ public struct ImageEdit: Codable, Sendable, Equatable {
     public var removeBackground = false
     public var adjustments = Adjustments()
     public var markup: [Annotation] = []
+    public var watermark: Watermark?
     public var frame = FrameStyle()
     /// nil: automatic (keeps the format, or PNG when the result is see-through).
     public var format: OutputFormat?
@@ -356,6 +413,7 @@ public struct ImageEdit: Codable, Sendable, Equatable {
         var neutral = self
         neutral.format = nil
         if neutral.crop == .full { neutral.crop = nil }
+        if neutral.watermark?.isBlank == true { neutral.watermark = nil }
         return neutral == ImageEdit()
     }
 

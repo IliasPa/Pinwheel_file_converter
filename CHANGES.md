@@ -3,6 +3,58 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v0.8 — 2026-10-18
+
+More editing, for photos, videos, sound and PDFs.
+
+**Photos**
+- **Straighten** (image editor › Crop): level a tilted horizon, ±45°. The
+  picture is enlarged just enough to leave no empty corners.
+- **Watermark…**: text or a logo, in one of nine spots or tiled across the
+  picture, with size, opacity, margin and a soft shadow. Works on many
+  photos at once, and remembers your last watermark.
+- **Collage…** (⇧ wheel, two or more pictures): grid, rows (every photo
+  keeps its shape) or contact sheet (names and a title); columns, spacing,
+  margin, corners, background, width and format; drag to reorder.
+- **Remove BG** now does something useful when there's no subject: logos,
+  icons and drawings lose their plain background color (holes in letters
+  too). When there's neither, a **notification** says so.
+
+**Videos and audio**
+- **Edit…** replaces Trim…: a timeline with frames or the waveform, yellow
+  handles for the part, and **speed** (0.25×–4×, pitch kept), **turn**
+  (picture not re-encoded), **mute**, **fades**, **volume** and **loudness**
+  (to −16 LUFS, showing the file's loudness). Save the result, **a GIF of
+  just the part** (at that speed and turn), or one frame. Several files keep
+  their own part and can share the rest.
+- **Normalize** (audio, one drop): evens out the loudness to −16 LUFS
+  without clipping peaks; a file already there is left alone.
+
+**PDFs**
+- **Organize…**: every page of one or more PDFs as thumbnails; drag to
+  reorder (also between PDFs), turn, remove, reverse; save as one PDF.
+
+**Feedback**
+- A notification whenever a file couldn't be saved or there was nothing to
+  do, with the reason (not only for long conversions), and the progress
+  window stays up longer to show it.
+
+**Fixed**
+- Cancelling a running job crashed its helper program instead of letting it
+  clean up (its "stop" handler ran on the wrong thread under Swift 6), which
+  could leave an ffmpeg process running. It now stops cleanly.
+
+**Under the hood**
+- The tools wheel holds 9 wedges (images now have 11 tools; Settings picks).
+- Waiting work (decoding sound, Vision, offline audio) runs on threads of
+  its own; filling Swift's shared thread pool with it froze Apple's frameworks.
+- Get Text, frames, collages and GIFs of a part never send their source to
+  the Trash.
+- New tests: straighten, watermarks, plain backgrounds, collage layouts,
+  page organizing, BS.1770 loudness (a −20 dBFS tone reads −20 LUFS),
+  normalize, fades, speed, turning, GIF of a part, turned frames, the new
+  windows' logic, the notifications, and Remove BG in the helper process.
+
 ## v0.7 — 2026-10-18
 
 Edit, not just convert. Wedges that end in "…" now open a window where you

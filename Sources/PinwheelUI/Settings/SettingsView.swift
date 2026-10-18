@@ -172,12 +172,12 @@ struct SettingsView: View {
         Section {
             Toggle("Show the progress window", isOn: $settings.showProgressWindow)
             Toggle("Show the new files in Finder", isOn: $settings.revealInFinder)
-            Toggle("Notify me when a long conversion finishes", isOn: $settings.notifyWhenDone)
+            Toggle("Notify me when a long conversion finishes, or something isn't saved", isOn: $settings.notifyWhenDone)
             Toggle("Move the original to the Trash", isOn: $settings.moveOriginalToTrash)
         } header: {
             Text("After converting")
         } footer: {
-            footnote("Notifications are for conversions that take 10 seconds or more. The original goes to the Trash only after the new file is saved; you can put it back from the Trash.")
+            footnote("You're notified when a conversion took 10 seconds or more, and whenever a file couldn't be saved or there was nothing to do (with the reason). The original goes to the Trash only after the new file is saved; you can put it back from the Trash.")
         }
     }
 

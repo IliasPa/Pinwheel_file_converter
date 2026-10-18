@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import PinwheelCore
 
-/// Opens the window behind a "…" wedge (Crop…, Info…, Trim…) and turns
+/// Opens the window behind a "…" wedge (Crop…, Info…, Collage…) and turns
 /// what's chosen there into jobs, which then run like any other.
 final class EditorCoordinator {
     /// Starts jobs (the app hands its JobQueue in here).
@@ -19,11 +19,26 @@ final class EditorCoordinator {
     func open(_ editor: Editor, files: [SourceFile]) {
         let controller: NSWindowController
         switch editor {
-        case .crop, .adjust, .background, .markup:
+        case .collage:
+            let images = files.filter { $0.kind == .image }
+            guard images.count > 1 else { return }
+            let model = CollageModel(files: images)
+            model.onSave = { [weak self] ordered, spec in self?.enqueue(ordered, .tool(.collage), .collage(spec)) }
+            controller = CollageWindowController(model: model)
+        case .organize:
+            let pdfs = files.filter { $0.kind == .pdf }
+            guard !pdfs.isEmpty else { return }
+            let model = OrganizeModel(files: pdfs)
+            model.onSave = { [weak self] files, arrangement in self?.enqueue(files, .tool(.organize), .pages(arrangement)) }
+            controller = OrganizeWindowController(model: model)
+        case .crop, .adjust, .background, .markup, .watermark:
             let images = files.filter { $0.kind == .image }
             guard !images.isEmpty else { return }
-            let model = StudioModel(files: images, tab: StudioModel.Tab(editor))
-            model.onSave = { [weak self] edit in self?.enqueue(images, .tool(.edit), .image(edit)) }
+            let model = StudioModel(files: images, tab: StudioModel.Tab(editor), watermark: settings.lastWatermark)
+            model.onSave = { [weak self] edit in
+                if let mark = edit.watermark, !mark.isBlank { self?.settings.lastWatermark = mark }
+                self?.enqueue(images, .tool(.edit), .image(edit))
+            }
             controller = StudioWindowController(model: model)
         case .info:
             let model = InfoModel(files: files, settings: settings)
@@ -31,13 +46,15 @@ final class EditorCoordinator {
             model.onRemoveAll = { [weak self] files in self?.enqueue(files, .tool(.stripMetadata), nil) }
             controller = InfoWindowController(model: model)
         case .trim:
-            let media = files.filter { $0.kind == .video || $0.kind == .audio }
+            let media = files.filter { ($0.kind == .video || $0.kind == .audio) && !$0.needsFFmpegToRead }
             guard !media.isEmpty else { return }
-            controller = TrimWindowController(
-                files: media,
-                onTrim: { [weak self] file, start, end in self?.enqueue([file], .tool(.trim), .timeRange(start: start, end: end)) },
-                onFrame: { [weak self] file, seconds in self?.enqueue([file], .tool(.saveFrame), .frame(seconds: seconds)) }
-            )
+            let model = MediaEditorModel(files: media, ffmpegAvailable: settings.ffmpegURL != nil)
+            model.onSave = { [weak self] file, edit in self?.enqueue([file], .tool(.editMedia), .media(edit)) }
+            model.onGIF = { [weak self] file, edit in self?.enqueue([file], .convert(.gif), .media(edit)) }
+            model.onFrame = { [weak self] file, seconds, turns in
+                self?.enqueue([file], .tool(.saveFrame), .frame(seconds: seconds, quarterTurns: turns))
+            }
+            controller = MediaEditorWindowController(model: model)
         case .password:
             let pdfs = files.filter { $0.kind == .pdf }
             guard !pdfs.isEmpty else { return }

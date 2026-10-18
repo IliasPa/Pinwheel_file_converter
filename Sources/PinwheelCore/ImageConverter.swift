@@ -106,7 +106,7 @@ public enum ImageConverter {
     }
 
     /// The full-size image with its EXIF rotation already applied.
-    static func orientedImage(_ src: CGImageSource, index: Int, maxPixelSize: Int? = nil) throws -> CGImage {
+    public static func orientedImage(_ src: CGImageSource, index: Int, maxPixelSize: Int? = nil) throws -> CGImage {
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
         let width = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
         let height = properties[kCGImagePropertyPixelHeight] as? Int ?? 0

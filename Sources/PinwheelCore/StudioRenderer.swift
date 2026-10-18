@@ -133,11 +133,12 @@ public enum StudioRenderer {
 
     // MARK: - Drawing
 
-    /// The whole edit: content, markup and frame.
+    /// The whole edit: content, markup, watermark and frame.
     public static func render(_ source: StudioSource, mask: CGImage?, edit: ImageEdit) throws -> CGImage {
         let content = try content(source, mask: mask, edit: edit)
         let marked = try drawMarkup(on: content.image, edit: edit, source: source)
-        return try framed(marked, plain: content.plain, style: edit.frame)
+        let stamped = try drawWatermark(on: marked, edit.watermark)
+        return try framed(stamped, plain: content.plain, style: edit.frame)
     }
 
     /// The picture turned, cropped, resized, cut out and adjusted. `mask` is
@@ -213,6 +214,77 @@ public enum StudioRenderer {
         return try image(of: ctx)
     }
 
+    /// Lays the watermark over the picture (on the picture, not the frame).
+    public static func drawWatermark(on picture: CGImage, _ mark: Watermark?) throws -> CGImage {
+        guard let mark, !mark.isBlank else { return picture }
+        let logo = mark.kind == .logo ? mark.logoPath.flatMap(Self.logo) : nil
+        if mark.kind == .logo && logo == nil { return picture }
+        let size = CGSize(width: picture.width, height: picture.height)
+        let unit = max(size.width, size.height)
+        let ctx = try bitmapContext(width: picture.width, height: picture.height, colorSpace: outputColorSpace(for: picture))
+        ctx.draw(picture, in: CGRect(origin: .zero, size: size))
+
+        // The "stamp": the text, or the logo with its longer side 3 × size.
+        let textHeight = max(mark.size * unit, 4)
+        let lines = mark.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let stamp: CGSize
+        if let logo {
+            let longSide = max(mark.size * unit * 3, 8)
+            let scale = longSide / CGFloat(max(logo.width, logo.height))
+            stamp = CGSize(width: CGFloat(logo.width) * scale, height: CGFloat(logo.height) * scale)
+        } else {
+            stamp = MarkupPainter.textSize(lines, height: textHeight)
+        }
+        func draw(centeredAt center: CGPoint) {
+            if let logo {
+                ctx.draw(logo, in: CGRect(x: center.x - stamp.width / 2, y: center.y - stamp.height / 2, width: stamp.width, height: stamp.height))
+            } else {
+                MarkupPainter.text(lines, at: center, height: textHeight, color: mark.color, glow: false, in: ctx)
+            }
+        }
+
+        ctx.interpolationQuality = .high
+        ctx.setAlpha(mark.opacity)
+        if mark.shadow {
+            ctx.setShadow(offset: CGSize(width: 0, height: -unit * 0.0015), blur: unit * 0.006, color: CGColor(gray: 0, alpha: 0.55))
+        }
+        if mark.placement == .tiled {
+            // A slanted grid of stamps, covering the corners too.
+            ctx.translateBy(x: size.width / 2, y: size.height / 2)
+            ctx.rotate(by: .pi / 6)
+            let stepX = stamp.width + max(stamp.width, unit * 0.08) * 0.9
+            let stepY = stamp.height * 4 + unit * 0.03
+            let reach = hypot(size.width, size.height) / 2 + max(stepX, stepY)
+            var row = 0
+            for y in stride(from: -reach, through: reach, by: stepY) {
+                let shift = row % 2 == 0 ? 0 : stepX / 2
+                for x in stride(from: -reach, through: reach, by: stepX) {
+                    draw(centeredAt: CGPoint(x: x + shift, y: y))
+                }
+                row += 1
+            }
+        } else {
+            let margin = mark.margin * unit
+            let anchor = mark.placement.anchor
+            let x = margin + anchor.x * (size.width - 2 * margin - stamp.width) + stamp.width / 2
+            let yDown = margin + anchor.y * (size.height - 2 * margin - stamp.height) + stamp.height / 2
+            draw(centeredAt: CGPoint(x: x, y: size.height - yDown))
+        }
+        return try image(of: ctx)
+    }
+
+    /// Logos are loaded once and kept (the preview redraws often).
+    private static let logos = Locked<[String: CGImage]>([:])
+
+    static func logo(_ path: String) -> CGImage? {
+        if let cached = logos.value[path] { return cached }
+        guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+              let image = try? ImageConverter.orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src), maxPixelSize: 2048)
+        else { return nil }
+        logos.value[path] = image
+        return image
+    }
+
     /// Puts the picture on its background with padding, rounded corners and
     /// a shadow. `plain` (the picture before its background was removed)
     /// feeds a blurred backdrop.
@@ -278,8 +350,21 @@ public enum StudioRenderer {
             // Clockwise, with Core Image's y pointing up: (x, y) → (y, -x).
             result = result.transformed(by: CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: 0))
         }
-        let extent = result.extent
-        return result.transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
+        var extent = result.extent
+        result = result.transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
+        extent = result.extent
+        guard edit.straighten != 0 else { return result }
+
+        // Straighten: turn around the middle, enlarged just enough that the
+        // picture still fills its rectangle (no empty corners).
+        let angle = -edit.straighten * .pi / 180  // clockwise, y up
+        let (width, height) = (extent.width, extent.height)
+        let scale = cos(abs(angle)) + max(width / height, height / width) * sin(abs(angle))
+        let transform = CGAffineTransform(translationX: -width / 2, y: -height / 2)
+            .concatenating(CGAffineTransform(rotationAngle: angle))
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+            .concatenating(CGAffineTransform(translationX: width / 2, y: height / 2))
+        return result.clampedToExtent().transformed(by: transform).cropped(to: extent)
     }
 
     /// Exactly `size` pixels, with good-quality resampling.
@@ -424,16 +509,23 @@ public enum StudioRenderer {
     }
 }
 
-/// Saves what the image editor (or Remove BG) made, at full size.
+/// Saves what the image editor (or Remove BG) made, at full size. Returns
+/// a note for the progress window, if any.
 enum StudioExporter {
-    static func export(_ url: URL, edit: ImageEdit, format: OutputFormat, destination: URL, options: ConversionOptions) throws {
+    @discardableResult
+    static func export(_ url: URL, edit: ImageEdit, format: OutputFormat, destination: URL, options: ConversionOptions) throws -> String? {
         let source = try StudioSource.load(url)
         var mask: CGImage?
+        var note: String?
         if edit.removeBackground {
-            guard let subject = try SubjectMask.make(for: source.image) else {
-                throw NothingToDo(reason: "No clear subject was found, so nothing was saved.")
+            if let subject = try SubjectMask.make(for: source.image) {
+                mask = subject
+            } else if let plain = PlainBackground.mask(for: source.image) {
+                mask = plain
+                note = "No subject was found, so the plain background was removed instead."
+            } else {
+                throw NothingToDo(reason: "No clear subject or plain background was found, so nothing was saved.")
             }
-            mask = subject
         }
         try Task.checkCancellation()
         var image = try StudioRenderer.render(source, mask: mask, edit: edit)
@@ -449,5 +541,6 @@ enum StudioExporter {
         let dest = try ImageConverter.makeDestination(destination, format: format)
         CGImageDestinationAddImage(dest, image, ImageConverter.uprightMetadata(from: properties).merging(settings) { $1 } as CFDictionary)
         try ImageConverter.finalize(dest, destination)
+        return note
     }
 }

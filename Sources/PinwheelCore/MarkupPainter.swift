@@ -136,6 +136,18 @@ enum MarkupPainter {
         }
     }
 
+    /// How much room `text(_:at:height:…)` takes.
+    static func textSize(_ lines: [String], height: CGFloat) -> CGSize {
+        let font = CTFontCreateUIFontForLanguage(.emphasizedSystem, height, nil)
+            ?? CTFontCreateWithName("Helvetica-Bold" as CFString, height, nil)
+        let attributes = [kCTFontAttributeName: font] as CFDictionary
+        let width = lines.map { line -> CGFloat in
+            let built = CTLineCreateWithAttributedString(CFAttributedStringCreate(nil, line as CFString, attributes)!)
+            return CGFloat(CTLineGetTypographicBounds(built, nil, nil, nil))
+        }.max() ?? 0
+        return CGSize(width: max(width, 1), height: height * 1.2 * CGFloat(max(lines.count, 1)))
+    }
+
     /// A filled circle with a number in it, for numbered steps.
     static func badge(_ label: String, at center: CGPoint, diameter: CGFloat, color: MarkupColor, in ctx: CGContext) {
         let circle = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)

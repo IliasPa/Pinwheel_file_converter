@@ -14,6 +14,7 @@ struct StudioSidebar: View {
                 case .adjust: AdjustPanel(model: model)
                 case .background: BackgroundPanel(model: model)
                 case .markup: MarkupPanel(model: model)
+                case .watermark: WatermarkPanel(model: model)
                 }
             }
             .padding(16)
@@ -172,6 +173,17 @@ private struct CropPanel: View {
                 Text("px").foregroundStyle(.secondary)
             }
             sizeNote
+        }
+
+        PanelSection(title: "Straighten") {
+            EditSlider(
+                title: "Angle", value: model.edit.straighten, range: -45...45,
+                label: { String(format: "%+.1f°", $0) }, model: model, set: model.setStraighten
+            )
+            Text("Levels a tilted horizon. The picture is enlarged just enough to leave no empty corners.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
 
         PanelSection(title: "Turn and flip") {
@@ -392,7 +404,15 @@ private struct BackgroundPanel: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             case .notFound:
-                Text("No clear subject found in this picture.").font(.caption).foregroundStyle(.orange)
+                Text("No clear subject or plain background found in this picture, so the background stays.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .plainBackground:
+                Text("No subject found, so the plain background color is removed instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             case .failed(let reason):
                 Text(reason).font(.caption).foregroundStyle(.red)
             case .found, .idle:
@@ -513,6 +533,125 @@ private struct MarkupPanel: View {
         case .redact: "Drag over anything private (names, faces, numbers) to blur it out."
         case .pen, .highlighter: "Drag to draw."
         default: "Drag on the picture to draw."
+        }
+    }
+}
+
+// MARK: - Watermark
+
+private struct WatermarkPanel: View {
+    var model: StudioModel
+
+    private static let colors: [MarkupColor] = [.white, .black, MarkupColor(hex: 0x8E8E93), .yellow, .red, .blue]
+    private static let spots: [[Watermark.Placement]] = [
+        [.topLeft, .top, .topRight], [.left, .center, .right], [.bottomLeft, .bottom, .bottomRight],
+    ]
+
+    var body: some View {
+        Toggle("Add a watermark", isOn: Binding(get: { model.watermark != nil }, set: model.setWatermarkShown))
+            .toggleStyle(.switch)
+        if let mark = model.watermark {
+            Picker("Kind", selection: Binding(get: { mark.kind }, set: { kind in model.changeWatermark { $0.kind = kind } })) {
+                Text("Text").tag(Watermark.Kind.text)
+                Text("Logo").tag(Watermark.Kind.logo)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if mark.kind == .text {
+                PanelSection(title: "Text") {
+                    TextField("© Your Name", text: Binding(get: { mark.text }, set: model.setWatermarkText), axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...3)
+                    HStack(spacing: 7) {
+                        ForEach(Self.colors, id: \.self) { color in
+                            Button { model.changeWatermark { $0.color = color } } label: {
+                                Circle()
+                                    .fill(color.color)
+                                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 0.5))
+                                    .frame(width: 20, height: 20)
+                                    .padding(2)
+                                    .overlay(Circle().strokeBorder(mark.color == color ? Color.accentColor : Color.clear, lineWidth: 2))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            } else {
+                PanelSection(title: "Logo") {
+                    HStack {
+                        Text(mark.logoPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "None chosen")
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("Choose…", action: chooseLogo)
+                    }
+                    Text("A PNG with a see-through background looks best.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            PanelSection(title: "Position") {
+                HStack(alignment: .top, spacing: 14) {
+                    Grid(horizontalSpacing: 4, verticalSpacing: 4) {
+                        ForEach(0..<3, id: \.self) { row in
+                            GridRow {
+                                ForEach(Self.spots[row], id: \.self) { spot in
+                                    Button { model.changeWatermark { $0.placement = spot } } label: {
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .fill(mark.placement == spot ? Color.accentColor : Color.primary.opacity(0.12))
+                                            .frame(width: 22, height: 16)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                    .padding(6)
+                    .background(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15)))
+                    ChoiceButton(title: "Tile", symbol: "square.grid.3x3", isOn: mark.placement == .tiled) {
+                        model.changeWatermark { $0.placement = .tiled }
+                    }
+                    .frame(width: 80)
+                }
+            }
+
+            PanelSection(title: "Look") {
+                EditSlider(title: "Size", value: mark.size, range: 0.01...0.15, label: { String(format: "%.1f%%", $0 * 100) }, model: model) {
+                    model.slideWatermark(\.size, $0)
+                }
+                EditSlider(title: "Opacity", value: mark.opacity, range: 0.1...1, label: EditSlider.percent, model: model) {
+                    model.slideWatermark(\.opacity, $0)
+                }
+                if mark.placement != .tiled {
+                    EditSlider(title: "Margin", value: mark.margin, range: 0...0.12, label: { String(format: "%.1f%%", $0 * 100) }, model: model) {
+                        model.slideWatermark(\.margin, $0)
+                    }
+                }
+                Toggle("Soft shadow", isOn: Binding(get: { mark.shadow }, set: { on in model.changeWatermark { $0.shadow = on } }))
+            }
+        }
+
+        Text(model.files.count > 1
+             ? "Saves all \(model.files.count) pictures with this watermark, placed the same way on each."
+             : "Drop several pictures on Watermark… to mark them all at once. Pinwheel remembers your last watermark.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func chooseLogo() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.message = "Choose a logo for the watermark."
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url {
+            model.changeWatermark { mark in
+                mark.kind = .logo
+                mark.logoPath = url.path
+            }
         }
     }
 }

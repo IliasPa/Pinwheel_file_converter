@@ -164,11 +164,14 @@ public enum JobParameters: Sendable, Equatable, Codable {
     case image(ImageEdit)
     /// New title, author… from the Info window.
     case metadata(MetadataEdit)
-    /// The part to keep, in seconds from the start.
-    case timeRange(start: Double, end: Double)
-    /// Which frame to save, in seconds from the start.
-    case frame(seconds: Double)
+    /// Trim, speed, turn and sound, from the video and audio editor (also
+    /// the part a GIF is made from).
+    case media(MediaEdit)
+    /// Which frame to save, in seconds from the start, turned as shown.
+    case frame(seconds: Double, quarterTurns: Int = 0)
     case password(String)
+    case collage(CollageSpec)
+    case pages(PageArrangement)
 }
 
 /// One conversion: usually one file, or several files becoming one PDF.
@@ -198,14 +201,25 @@ public struct ConversionRequest: Sendable, Equatable, Codable {
         action == .tool(.merge) && files.count > 1
     }
 
+    /// All the files make one result (a merged PDF, a collage, organized pages).
+    public var isCombined: Bool {
+        isMerge || action == .tool(.collage) || action == .tool(.organize)
+    }
+
     /// Whether the result stands in for the original, so "Move the original
-    /// to the Trash" applies. Text and single frames are taken *from* a
-    /// file; the file itself is still wanted (and may still be open).
+    /// to the Trash" applies. Text, frames, collages and GIFs of a part are
+    /// taken *from* files that are still wanted (and may still be open).
     public var replacesOriginal: Bool {
         switch action {
-        case .tool(.extractText), .tool(.saveFrame): false
+        case .tool(.extractText), .tool(.saveFrame), .tool(.collage): false
+        case .convert(.gif): mediaEdit == nil  // a GIF of a part is taken from the video
         default: true
         }
+    }
+
+    var mediaEdit: MediaEdit? {
+        if case .media(let edit)? = parameters { return edit }
+        return nil
     }
 
     /// The image editor's edit (an empty edit when there is none).

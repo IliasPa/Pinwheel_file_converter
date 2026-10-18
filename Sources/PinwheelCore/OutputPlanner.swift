@@ -75,6 +75,11 @@ enum OutputPlanner {
             return (format, format == file.format ? ext : format.fileExtension)
         case (.image, .extractText), (.pdf, .extractText):
             return (nil, "txt")
+        case (.image, .collage):
+            var spec = CollageSpec()
+            if case .collage(let chosen)? = request?.parameters { spec = chosen }
+            let format: OutputFormat = spec.format == .jpeg && spec.background.alpha < 1 ? .png : spec.format
+            return (format, format.fileExtension)
         case (.image, .editInfo):
             return (file.format, ext)  // same picture, new info
         case (.image, _):
@@ -86,8 +91,11 @@ enum OutputPlanner {
             return (.m4a, OutputFormat.m4a.fileExtension)
         case (.video, .saveFrame):
             return (.jpeg, OutputFormat.jpeg.fileExtension)
-        case (.video, .trim), (.audio, .trim):
-            return trimOutput(for: file, options: options)
+        case (.video, .editMedia), (.audio, .editMedia), (.audio, .normalize):
+            if tool == .editMedia, request?.mediaEdit?.isTrimOnly ?? true {
+                return trimOutput(for: file, options: options)
+            }
+            return editedMediaOutput(for: file, options: options)
         case (.pdf, .split):
             return (.pdf, nil)  // a folder with one PDF per page
         case (.pdf, _):
@@ -95,6 +103,19 @@ enum OutputPlanner {
         default:
             return (nil, ext)  // Strip Info, Mute and Edit Info keep the container
         }
+    }
+
+    /// A file with changed sound or picture keeps its container when macOS
+    /// can write it (or, for audio such as MP3, ffmpeg); otherwise it
+    /// becomes MOV (video) or M4A (audio).
+    static func editedMediaOutput(for file: SourceFile, options: ConversionOptions) -> (OutputFormat?, String) {
+        let ext = file.url.pathExtension.lowercased()
+        if file.kind == .video {
+            return ToolConverter.avVideoContainers[ext] != nil ? (nil, ext) : (.mov, OutputFormat.mov.fileExtension)
+        }
+        let native: Set<String> = ["m4a", "m4b", "wav", "aif", "aiff", "aifc", "caf", "flac"]
+        if native.contains(ext) || options.ffmpegURL != nil { return (nil, ext) }
+        return (.m4a, OutputFormat.m4a.fileExtension)
     }
 
     /// A trimmed file keeps its container when macOS (or ffmpeg) can cut it

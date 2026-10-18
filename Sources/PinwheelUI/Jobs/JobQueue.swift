@@ -60,6 +60,22 @@ final class Job: Identifiable {
         return false
     }
 
+    /// Nothing was saved, on purpose (e.g. no subject to cut out).
+    var isSkipped: Bool {
+        if case .skipped = state { return true }
+        return false
+    }
+
+    var skipReason: String? {
+        if case .skipped(let reason) = state { return reason }
+        return nil
+    }
+
+    var failureReason: String? {
+        if case .failed(let reason) = state { return reason }
+        return nil
+    }
+
     /// Video jobs share the Mac's video engines, so fewer run at once.
     var isVideo: Bool {
         request.files.contains { $0.kind == .video }

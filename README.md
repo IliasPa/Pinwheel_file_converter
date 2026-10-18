@@ -7,9 +7,9 @@ converts them. Everything happens on your Mac: nothing is uploaded.
 
 - Hold **⇧ Shift** while dragging: the **format wheel** (PNG, JPEG, MP4, MP3…).
 - Hold **⌥ Option + ⇧ Shift** while dragging: the **tools wheel** (Compress,
-  Resize, Remove BG, Crop…, Edit…, Markup…, Info…, Trim…, Merge and more). Tools
-  ending in "…" open a window where you choose the details first, like the
-  crop's shape and size.
+  Resize, Remove BG, Crop…, Edit…, Watermark…, Info…, Organize…, Normalize
+  and more). Tools ending in "…" open a window where you choose the details
+  first, like the crop's shape and size.
 - Let go of Shift, or drop in the middle or outside the wheel: nothing happens.
 
 What changed in each version is listed in [CHANGES.md](CHANGES.md).
@@ -51,7 +51,7 @@ Then use one of these commands:
 |---|---|
 | `make run` | Builds Pinwheel and starts it (quits the old copy first). |
 | `make install` | Builds Pinwheel, copies it into **/Applications**, and starts it from there. |
-| `make test` | Runs the automated tests (about 160 of them, including real conversions). |
+| `make test` | Runs the automated tests (about 185 of them, including real conversions). |
 | `make build` | Only builds. |
 | `make clean` | Deletes all build files, so the next build starts fresh. |
 | `make uninstall` | Quits Pinwheel and removes it from /Applications. |
@@ -157,10 +157,10 @@ allow Pinwheel in **System Settings › General › Login Items & Extensions**.
 
 | You drag… | ⇧ Shift wheel | ⌥⇧ Option + Shift wheel |
 |---|---|---|
-| **Images** (JPEG, PNG, HEIC, TIFF, GIF, WebP, BMP, camera RAW…) | PNG, JPEG, HEIC, TIFF, GIF, PDF | Compress, Resize, Remove BG, Crop…, Edit…, Add BG…, Markup…, Info… (also Strip Info, Get Text: see Settings › Tools wheel) |
-| **Videos** (MOV, MP4, M4V; MKV, WebM, AVI with ffmpeg) | MP4, MOV, GIF\*, M4A, MP3\* | Compress, Strip Info, Get Audio, Mute, Trim…, Info… |
-| **Audio** (MP3, M4A, WAV, AIFF, FLAC, OGG…) | MP3\*, M4A, WAV, AIFF, FLAC | Compress, Strip Info, Trim…, Info… (MP3/FLAC Strip Info and saving info need ffmpeg) |
-| **PDFs** | PNG, JPEG, HEIC, TIFF (one image per page), Smaller PDF | Compress, Strip Info, Merge, Split Pages, Get Text, Password…, Info… |
+| **Images** (JPEG, PNG, HEIC, TIFF, GIF, WebP, BMP, camera RAW…) | PNG, JPEG, HEIC, TIFF, GIF, PDF; **Collage…** (two or more) | Compress, Resize, Remove BG, Crop…, Edit…, Add BG…, Markup…, Watermark…, Info… (also Strip Info, Get Text: see Settings › Tools wheel) |
+| **Videos** (MOV, MP4, M4V; MKV, WebM, AVI with ffmpeg) | MP4, MOV, GIF\*, M4A, MP3\* | Compress, Strip Info, Get Audio, Mute, Edit… (trim, speed, turn, sound, GIF), Info… |
+| **Audio** (MP3, M4A, WAV, AIFF, FLAC, OGG…) | MP3\*, M4A, WAV, AIFF, FLAC | Compress, Strip Info, Normalize, Edit… (trim, speed, fades, loudness), Info… (MP3/FLAC Strip Info and saving info need ffmpeg) |
+| **PDFs** | PNG, JPEG, HEIC, TIFF (one image per page), Smaller PDF | Compress, Strip Info, Merge, Split Pages, Organize…, Get Text, Password…, Info… |
 
 \* needs ffmpeg. Without it, these wedges are grayed out and say why.
 
@@ -187,7 +187,12 @@ allow Pinwheel in **System Settings › General › Login Items & Extensions**.
 - **Get Audio:** saves a video's sound as M4A.
 - **Remove BG:** keeps the subject (people, pets, objects) on a see-through
   PNG, `photo (no background).png`. Uses the same on-device model as
-  Photos' "Lift subject"; if there's no clear subject, nothing is saved.
+  Photos' "Lift subject". Logos, icons and drawings without a subject lose
+  their plain background color instead (holes in letters too). If there's
+  neither, nothing is saved and a notification says why.
+- **Normalize** (audio): evens out the loudness to −16 LUFS, the level
+  podcasts and Apple Music use, without letting peaks clip:
+  `song (normalized).mp3`. A file that's already there is left alone.
 - **Mute:** the same video without its sound, `clip (muted).mov`.
 - **Merge** (two or more PDFs): one PDF with all their pages, in name order,
   `a (merged).pdf`. **Split Pages:** a folder with one PDF per page.
@@ -204,13 +209,14 @@ until you click **Save Copy**; the copy goes next to the original as usual
 (`photo (edited).jpg`) and shows up in the progress window. While such a
 window is open, Pinwheel appears in the Dock and in ⌘-Tab.
 
-**The image editor** (Crop…, Edit…, Add BG… and Markup… open its tabs):
+**The image editor** (Crop…, Edit…, Add BG…, Markup… and Watermark… open its tabs):
 
 - **Crop:** drag the corners or edges, drag inside to move the box, or drag
   outside it to draw a new one. Pick a shape (Free, Original, Square, 4:3,
   3:2, 5:4, 16:9; Make Portrait/Landscape turns it). Type a **width and
   height** to get exactly that many pixels (say 1080 × 1080 for a post).
-  Turn left or right and flip.
+  **Straighten** a tilted horizon (±45°; the picture is enlarged just enough
+  to leave no empty corners). Turn left or right and flip.
 - **Adjust:** Auto Enhance, exposure, highlights, shadows, contrast,
   saturation, warmth, sharpness, vignette, and 11 filters. Right-click a
   slider to reset it.
@@ -221,6 +227,10 @@ window is open, Pinwheel appears in the Dock and in ⌘-Tab.
 - **Markup:** arrows, boxes, ovals, pen, highlighter, text, numbered steps
   (1, 2, 3…), and **Blur Out** to hide names, faces or numbers. Choose
   *Select* to move things, ⌘⌫ to delete.
+- **Watermark:** your text (e.g. "© Ilias 2026") or a logo file, in one of
+  nine spots or **tiled** across the picture, with size, opacity, margin and
+  a soft shadow. Drop a whole folder's worth of photos on Watermark… to mark
+  them all at once; Pinwheel remembers your last watermark.
 - **Undo/Redo** (⌘Z, ⇧⌘Z) for everything; hold **Compare** to see the
   original; **Save as** keeps the format (or PNG when parts are
   see-through). Drop several pictures to save the same edit for each (the
@@ -233,10 +243,31 @@ author, copyright and keywords (photos), title/artist/album/genre/year
 Copy Without Info**. The picture or sound itself is copied as it is, never
 re-encoded.
 
-**Trim…** (videos and audio): drag the yellow handles, then click **Trim**.
-The part is cut without re-encoding (MP3 and FLAC need ffmpeg for that;
-without it they become M4A). For videos, **Save This Frame** saves the
-frame under the playhead as a JPEG. Several files come one after another.
+**Edit…** (videos and audio): a timeline (frames, or the sound's waveform)
+with yellow handles for the part to keep; Space plays it.
+- **Speed** 0.25× to 4×; voices keep their pitch.
+- **Turn** videos left or right (the picture isn't re-encoded).
+- **Sound:** mute, fade in and out, louder or quieter, or **even out the
+  loudness** to −16 LUFS (it shows the file's loudness first).
+- **Save Copy**, **Save as GIF** (just the part, at that speed and turn;
+  needs ffmpeg) or **Save Frame** (the frame under the playhead, as a JPEG).
+- With several files, each keeps its own part; speed, turn and sound can be
+  the same for all of them.
+Only keeping a part copies the streams as they are (MP3 and FLAC need ffmpeg
+for that; without it they become M4A). Changed sound is re-encoded (AAC in
+videos), but the picture is copied whenever it can be.
+
+**Collage…** (⇧ wheel, two or more pictures): a **grid** (cells of one
+shape, photos cropped to fill them), **rows** (every photo keeps its shape)
+or a **contact sheet** (each photo whole, with its name, and an optional
+title). Choose how many across, spacing, margin, rounded corners,
+background, width (1,500 to 6,000 pixels) and format. Drag the names to
+change the order. Saved as `first (collage).jpg`.
+
+**Organize…** (one or more PDFs): every page as a thumbnail. Drag pages to
+reorder them (even between PDFs), turn them, remove them, reverse the order;
+⌘-click and ⇧-click select several. **Save as One PDF** makes
+`first (organized).pdf`.
 
 **Password…** (PDFs): a copy that asks for the password to open.
 Pinwheel doesn't remember it.
@@ -245,9 +276,10 @@ The **progress window** (top right) shows each file, with ✕ to cancel and 🔍
 show the result in Finder, the size before and after (for example
 `2.4 MB → 1.1 MB (−54%)`), and anything worth knowing (skipped and why, saved
 in Downloads, original in Trash). It closes itself a few seconds after
-everything succeeds; if something fails, it stays open with the reason. For
-conversions that take 10 seconds or more you also get a **notification**
-(click it to see the files).
+everything succeeds; if something fails, it stays open with the reason. You
+get a **notification** for conversions that take 10 seconds or more (click
+it to see the files), and whenever something couldn't be saved or there was
+nothing to do, with the reason.
 
 **Where files are saved:** next to the original by default, or in Downloads,
 or in a folder you choose (Settings › Saving). If that place can't be written
@@ -274,13 +306,14 @@ Menu-bar icon › **Settings…** (or ⌘, while the menu is open):
   (Tink, Pop, Bottle, Morse, Purr or Frog; volume; Test), and a trackpad
   vibration (Force Touch trackpads, felt only while your finger is on it).
 - **After converting:** progress window; show new files in Finder; notify
-  when a long conversion finishes; **move the original to the Trash** (off by
-  default; only after the new file is saved).
+  when a long conversion finishes or something isn't saved; **move the
+  original to the Trash** (off by default; only after the new file is saved;
+  never for Get Text, frames, collages and GIFs of a part).
 - **Saving:** next to the original, in Downloads, or in a folder you choose.
 - **Images and PDFs:** JPEG, HEIC and Compress quality; Resize size; combine
   several images into one PDF; PDF page resolution.
 - **Tools wheel:** which tools the ⌥⇧ wheel shows for images, videos,
-  audio and PDFs. A wheel holds up to 8, so images start without Strip Info
+  audio and PDFs. A wheel holds up to 9, so images start without Strip Info
   and Get Text (Info… can remove the info too); switch one off to make room.
 - **Video and audio:** video Compress quality (Smallest file / Balanced /
   Best quality) and size limit (keep, 4K, 1080p, 720p); audio Compress bit
@@ -328,10 +361,11 @@ Settings › System.
 **`make test` says "plugin for module 'TestingMacros' not found".**
 Run `make clean` and then `make test` again.
 
-**Remove BG says "No clear subject was found".**
-The model looks for people, animals and objects that stand out. Flat
-graphics, landscapes and busy scenes may not have one. Try Crop… first so
-the subject fills more of the picture.
+**Remove BG says "No clear subject or plain background was found".**
+The model looks for people, animals and objects that stand out; failing
+that, Pinwheel removes a plain background color around the edges. Busy
+scenes and landscapes have neither. Try Crop… first so the subject fills
+more of the picture.
 
 **Get Text finds nothing, or the wrong letters.**
 Text recognition doesn't know every language (no Greek yet), and very small
@@ -403,7 +437,11 @@ Accessibility** and from **Login Items**. Its settings are stored in
   jobs with what was chosen (`JobParameters`), so saving runs in the worker.
 - Apple frameworks do the work: ImageIO (images), AVFoundation and Core Audio
   (video, audio, FLAC), PDFKit with a Quartz filter (PDFs), Vision (subject
-  cut-out and text recognition), AVKit (the trim bar). ffmpeg is used
+  cut-out and text recognition), AVAudioEngine (speed changes that keep the
+  pitch). Loudness is measured the ITU-R BS.1770 way (LUFS).
+- Waiting work (decoding sound, Vision, offline audio rendering) runs on
+  threads of its own, not Swift's small shared thread pool: Apple's
+  frameworks need that pool too, and filling it froze them. ffmpeg is used
   only for MP3, GIFs from video, and files macOS can't open; pngquant only
   for PNG compression. If macOS fails on a file, ffmpeg gets a second try.
 - In the macOS 27 SDK, SwiftUI's `@State` is a macro whose plugin only comes

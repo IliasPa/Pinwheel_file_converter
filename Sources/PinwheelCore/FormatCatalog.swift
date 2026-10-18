@@ -3,7 +3,7 @@ import Foundation
 /// Which wedges each kind of file gets.
 public enum FormatCatalog {
     /// The most wedges a wheel shows. More get too small to hit easily.
-    public static let maxWedges = 8
+    public static let maxWedges = 9
 
     /// Everything a kind of file can get, in wheel order (clockwise from the
     /// top). Images have more tools than fit; Settings chooses which show.
@@ -20,23 +20,23 @@ public enum FormatCatalog {
         case (.image, .tools):
             [
                 .tool(.compress), .tool(.resize), .tool(.removeBackground), .open(.crop),
-                .open(.adjust), .open(.background), .open(.markup), .open(.info),
+                .open(.adjust), .open(.background), .open(.markup), .open(.watermark), .open(.info),
                 .tool(.stripMetadata), .tool(.extractText),
             ]
         case (.video, .tools):
             [.tool(.compress), .tool(.stripMetadata), .tool(.extractAudio), .tool(.mute), .open(.trim), .open(.info)]
         case (.audio, .tools):
-            [.tool(.compress), .tool(.stripMetadata), .open(.trim), .open(.info)]
+            [.tool(.compress), .tool(.stripMetadata), .tool(.normalize), .open(.trim), .open(.info)]
         case (.pdf, .tools):
             [
-                .tool(.compress), .tool(.stripMetadata), .tool(.merge), .tool(.split),
+                .tool(.compress), .tool(.stripMetadata), .tool(.merge), .tool(.split), .open(.organize),
                 .tool(.extractText), .open(.password), .open(.info),
             ]
         }
     }
 
     /// Tools left off the wheel until switched on in Settings. Images have
-    /// ten; these two have a stand-in (Info… can remove the info too).
+    /// eleven; these two have a stand-in (Info… can remove the info too).
     public static let defaultHidden: Set<String> = [
         hiddenKey(.image, .tool(.stripMetadata)),
         hiddenKey(.image, .tool(.extractText)),
@@ -68,6 +68,10 @@ public enum FormatCatalog {
             let formats = Set(files.map(\.format))
             if formats.count == 1, let only = formats.first! {
                 result.removeAll { $0 == .convert(only) }
+            }
+            // Several pictures can also become one.
+            if files.count > 1 && kinds.allSatisfy({ $0 == .image }) {
+                result.append(.open(.collage))
             }
         }
         return Array(result.prefix(maxWedges))

@@ -278,5 +278,8 @@ struct ToolAvailabilityTests {
         #expect(plan("a.mov", .saveFrame) == "jpg")
         #expect(plan("a.jpeg", .edit) == "jpeg")
         #expect(plan("a.heic", .editInfo) == "heic")
+        #expect(plan("a.wav", .normalize) == "wav")
+        #expect(plan("a.mov", .editMedia) == "mov")
+        #expect(plan("a.pdf", .organize) == "pdf")
     }
 }

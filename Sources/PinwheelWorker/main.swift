@@ -45,9 +45,11 @@ let control = WorkerControl()
 let writer = MessageWriter()
 
 // Pinwheel asks a job to stop with SIGTERM: watch for it (then ignore the
-// signal's default "quit at once"), so the job can clean up first.
+// signal's default "quit at once"), so the job can clean up first. The
+// handler runs on a background queue, so it must not belong to the main
+// actor (top-level code does by default): that crashed the worker instead.
 let stopSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global())
-stopSignal.setEventHandler { [control] in control.stop() }
+stopSignal.setEventHandler { @Sendable [control] in control.stop() }
 stopSignal.resume()
 signal(SIGTERM, SIG_IGN)
 

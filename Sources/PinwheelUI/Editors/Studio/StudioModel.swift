@@ -8,7 +8,7 @@ import PinwheelCore
 @Observable
 final class StudioModel {
     enum Tab: String, CaseIterable, Identifiable {
-        case crop, adjust, background, markup
+        case crop, adjust, background, markup, watermark
 
         var id: Self { self }
 
@@ -17,6 +17,7 @@ final class StudioModel {
             case .adjust: self = .adjust
             case .background: self = .background
             case .markup: self = .markup
+            case .watermark: self = .watermark
             default: self = .crop
             }
         }
@@ -27,6 +28,7 @@ final class StudioModel {
             case .adjust: "Adjust"
             case .background: "Background"
             case .markup: "Markup"
+            case .watermark: "Watermark"
             }
         }
 
@@ -36,12 +38,15 @@ final class StudioModel {
             case .adjust: "slider.horizontal.3"
             case .background: "photo.artframe"
             case .markup: "pencil.tip.crop.circle"
+            case .watermark: "signature"
             }
         }
     }
 
     enum SubjectState: Equatable {
         case idle, finding, found, notFound
+        /// No subject, but the plain background could be removed instead.
+        case plainBackground
         case failed(String)
     }
 
@@ -135,12 +140,18 @@ final class StudioModel {
         var hasMask: Bool
     }
 
-    init(files: [SourceFile], tab: Tab) {
+    /// `watermark` is the last one used; opening on the Watermark tab starts with it.
+    init(files: [SourceFile], tab: Tab, watermark: Watermark? = nil) {
         self.files = files
         self.tab = tab
+        lastWatermark = watermark
         undoManager.levelsOfUndo = 200
+        if tab == .watermark { edit.watermark = watermark ?? Watermark() }
         load()
     }
+
+    /// Offered again when a watermark is switched on.
+    @ObservationIgnored private let lastWatermark: Watermark?
 
     var file: SourceFile { files[index] }
 
@@ -296,7 +307,8 @@ final class StudioModel {
             cached: cache?.key == key ? cache?.content : nil,
             markupEdit: shownTab == .crop ? nil : edit,
             draft: shownTab == .markup ? draft : nil,
-            frame: shownTab == .adjust || shownTab == .background ? edit.frame : nil
+            watermark: shownTab == .crop ? nil : edit.watermark,
+            frame: [.adjust, .background, .watermark].contains(shownTab) ? edit.frame : nil
         )
         let current = generation
         let result = await Self.render(request)
@@ -316,6 +328,7 @@ final class StudioModel {
         let cached: StudioContent?
         let markupEdit: ImageEdit?
         let draft: Annotation?
+        let watermark: Watermark?
         let frame: FrameStyle?
     }
 
@@ -331,6 +344,7 @@ final class StudioModel {
 
     private struct Subject: @unchecked Sendable {
         let mask: CGImage?
+        var isPlainBackground = false
     }
 
     @concurrent
@@ -346,6 +360,7 @@ final class StudioModel {
             if let markupEdit = request.markupEdit {
                 image = try StudioRenderer.drawMarkup(on: image, edit: markupEdit, source: request.source, extra: request.draft)
             }
+            image = try StudioRenderer.drawWatermark(on: image, request.watermark)
             if let frame = request.frame {
                 image = try StudioRenderer.framed(image, plain: content.plain, style: frame)
             }
@@ -378,9 +393,12 @@ final class StudioModel {
         return result
     }
 
-    @concurrent
+    /// Vision's subject, else a plain background (as the saved file will do).
     private nonisolated static func findSubject(in source: StudioSource) async throws -> Subject {
-        Subject(mask: try SubjectMask.make(for: source.image))
+        try await Blocking.run { _ in
+            if let subject = try SubjectMask.make(for: source.image) { return Subject(mask: subject) }
+            return Subject(mask: PlainBackground.mask(for: source.image), isPlainBackground: true)
+        }
     }
 
     private func findSubject() {
@@ -392,7 +410,7 @@ final class StudioModel {
                 let found = try await Self.findSubject(in: source)
                 guard current == generation else { return }
                 mask = found.mask
-                subject = found.mask == nil ? .notFound : .found
+                subject = found.mask == nil ? .notFound : (found.isPlainBackground ? .plainBackground : .found)
                 scheduleRender()
             } catch {
                 guard current == generation else { return }
@@ -614,6 +632,42 @@ final class StudioModel {
     func setRemoveBackground(_ on: Bool) {
         change { $0.removeBackground = on }
     }
+
+    // MARK: - Straighten and watermark
+
+    func setStraighten(_ degrees: Double) {
+        update { $0.straighten = (degrees * 10).rounded() / 10 }
+    }
+
+    var watermark: Watermark? { edit.watermark }
+
+    func setWatermarkShown(_ shown: Bool) {
+        change { $0.watermark = shown ? (lastWatermark ?? Watermark()) : nil }
+    }
+
+    /// An undoable change to the watermark (sliders: `beginSliding` first, then `slideWatermark`).
+    func changeWatermark(_ body: (inout Watermark) -> Void) {
+        change { edit in
+            var mark = edit.watermark ?? Watermark()
+            body(&mark)
+            edit.watermark = mark
+        }
+    }
+
+    func slideWatermark(_ keyPath: WritableKeyPath<Watermark, Double>, _ value: Double) {
+        update { $0.watermark?[keyPath: keyPath] = value }
+    }
+
+    /// Typing the text is one undo step.
+    func setWatermarkText(_ text: String) {
+        if textBeingTyped != Self.watermarkTyping {
+            checkpoint()
+            textBeingTyped = Self.watermarkTyping
+        }
+        apply({ var copy = edit; copy.watermark?.text = text; return copy }())
+    }
+
+    private static let watermarkTyping = UUID()
 
     func resetFrame() {
         change { edit in

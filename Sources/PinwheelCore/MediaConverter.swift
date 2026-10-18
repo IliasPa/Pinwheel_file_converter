@@ -5,15 +5,22 @@ import Foundation
 /// ffmpeg only handles MP3, GIFs from video, and files AVFoundation can't open.
 enum MediaConverter {
     /// Returns a note for the progress window (e.g. "only the first 15 seconds").
+    /// `part` (from the video editor) makes a GIF of just that part, at that
+    /// speed and turned that way.
     static func convert(
         _ file: SourceFile,
         to format: OutputFormat,
         destination: URL,
         options: ConversionOptions,
+        part: MediaEdit? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> String? {
         if ConversionEngine.usesFFmpeg(.convert(format), for: file) {
             guard let ffmpeg = options.ffmpegURL else { throw ConversionError.needsFFmpeg }
+            if format == .gif, let part {
+                try await gif(of: file, part: part, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
+                return nil
+            }
             return try await convertWithFFmpeg(file, to: format, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
         }
         var note: String?
@@ -73,6 +80,32 @@ enum MediaConverter {
             arguments: arguments, duration: duration, progress: progress
         )
         return note
+    }
+
+    /// A GIF of the chosen part: fast seek to it, then retime and turn.
+    static func gif(
+        of file: SourceFile, part: MediaEdit, destination: URL, ffmpeg: URL,
+        options: ConversionOptions, progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
+        let duration = await FFmpeg.duration(of: file, ffmpeg: ffmpeg) ?? (part.end ?? 0)
+        let (start, end) = part.range(duration: max(duration, part.end ?? 0))
+        var filters: [String] = []
+        if part.speed != 1 { filters.append("setpts=PTS/\(part.speed)") }
+        switch ((part.quarterTurns % 4) + 4) % 4 {
+        case 1: filters.append("transpose=1")
+        case 2: filters.append("transpose=1,transpose=1")
+        case 3: filters.append("transpose=2")
+        default: break
+        }
+        var arguments = ffmpegArguments(for: .gif, options: options)
+        if !filters.isEmpty, let index = arguments.firstIndex(of: "-vf") {
+            arguments[index + 1] = filters.joined(separator: ",") + "," + arguments[index + 1]
+        }
+        try await FFmpeg.convert(
+            ffmpeg: ffmpeg, input: file.url, output: destination,
+            inputArguments: ["-ss", String(format: "%.3f", start), "-t", String(format: "%.3f", end - start)],
+            arguments: arguments, duration: (end - start) / part.speed, progress: progress
+        )
     }
 
     private static func convertWithApple(

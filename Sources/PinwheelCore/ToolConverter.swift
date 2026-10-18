@@ -31,9 +31,14 @@ enum ToolConverter {
     ) async throws -> String? {
         let file = request.files[0]
         switch (file.kind, tool) {
+        case (.image, .collage):
+            guard case .collage(let spec)? = request.parameters, let format = plan.format else {
+                throw ConversionError.failed("Choose the collage's layout first.")
+            }
+            try CollageRenderer.export(request.files.map(\.url), spec: spec, format: format, destination: destination, options: options, progress: progress)
         case (_, .extractText):
             progress(0.05)
-            return try TextExtractor.write(file, to: destination, progress: progress)
+            return try await Blocking.run { _ in try TextExtractor.write(file, to: destination, progress: progress) }
         case (_, .editInfo):
             guard case .metadata(let edit)? = request.parameters else { throw NothingToDo(reason: "Nothing was changed.") }
             progress(0.1)
@@ -45,7 +50,10 @@ enum ToolConverter {
                 throw NothingToDo(reason: "Nothing was changed, so nothing was saved.")
             }
             progress(0.1)
-            try StudioExporter.export(file.url, edit: edit, format: format, destination: destination, options: options)
+            let chosen = edit
+            return try await Blocking.run { _ in
+                try StudioExporter.export(file.url, edit: chosen, format: format, destination: destination, options: options)
+            }
         case (.image, _):
             guard let format = plan.format else { throw ConversionError.unsupported(destination.pathExtension.uppercased()) }
             progress(0.1)
@@ -54,7 +62,7 @@ enum ToolConverter {
             progress(0.05)
             try PDFTools.run(tool, request: request, destination: destination, options: options, progress: progress)
         case (.video, _), (.audio, _):
-            try await MediaTools.run(tool, request: request, destination: destination, options: options, progress: progress)
+            return try await MediaTools.run(tool, request: request, destination: destination, options: options, progress: progress)
         case (nil, _):
             throw ConversionError.unsupported(file.url.lastPathComponent)
         }
@@ -213,33 +221,35 @@ enum MediaTools {
         destination: URL,
         options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
-    ) async throws {
+    ) async throws -> String? {
         let file = request.files[0]
         switch tool {
-        case .trim:
-            guard case .timeRange(let start, let end)? = request.parameters, end > start else {
-                throw ConversionError.failed("Choose the part to keep first.")
-            }
-            try await MediaEdits.trim(file, from: start, to: end, destination: destination, options: options, progress: progress)
-            return
+        case .editMedia:
+            guard let edit = request.mediaEdit else { throw ConversionError.failed("Choose what to change first.") }
+            return try await MediaEdits.edit(file, edit: edit, destination: destination, options: options, progress: progress)
+        case .normalize:
+            var edit = MediaEdit()
+            edit.normalize = true
+            return try await MediaEdits.edit(file, edit: edit, destination: destination, options: options, progress: progress)
         case .saveFrame:
-            guard case .frame(let seconds)? = request.parameters else { throw ConversionError.failed("Choose a frame first.") }
+            guard case .frame(let seconds, let turns)? = request.parameters else { throw ConversionError.failed("Choose a frame first.") }
             progress(0.2)
-            try await MediaEdits.saveFrame(file.url, at: seconds, destination: destination, options: options)
-            return
+            try await MediaEdits.saveFrame(file.url, at: seconds, quarterTurns: turns, destination: destination, options: options)
+            return nil
         default:
             break
         }
         if ToolConverter.usesFFmpeg(tool, for: file) {
             guard let ffmpeg = options.ffmpegURL else { throw ConversionError.needsFFmpeg }
             try await runFFmpeg(tool, file: file, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
-            return
+            return nil
         }
         try await MediaConverter.appleThenFFmpeg(destination: destination, ffmpegURL: options.ffmpegURL) {
             try await runApple(tool, file: file, destination: destination, options: options, progress: progress)
         } ffmpeg: { ffmpeg in
             try await runFFmpeg(tool, file: file, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
         }
+        return nil
     }
 
     private static func runApple(

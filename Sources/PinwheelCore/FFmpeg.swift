@@ -35,11 +35,13 @@ public enum FFmpeg {
     }
 
     /// Converts `input` into `output`, reporting progress 0...1.
-    /// `arguments` go between the input and the output path.
+    /// `arguments` go between the input and the output path;
+    /// `inputArguments` before the input (e.g. a fast seek).
     static func convert(
         ffmpeg: URL,
         input: URL,
         output: URL,
+        inputArguments: [String] = [],
         arguments: [String],
         duration: Double?,
         progress: @escaping @Sendable (Double) -> Void
@@ -48,8 +50,7 @@ public enum FFmpeg {
             "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error",
             "-progress", "pipe:1",
             "-n",  // never overwrite; Pinwheel always picks a new name anyway
-            "-i", input.path,
-        ] + arguments + [output.path]
+        ] + inputArguments + ["-i", input.path] + arguments + [output.path]
 
         let result = try await ProcessRunner.run(ffmpeg, fullArguments) { line in
             // ffmpeg writes "key=value" lines; out_time_us is how far it got.
@@ -251,5 +252,26 @@ private final class OutputCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return String(decoding: err, as: UTF8.self)
+    }
+}
+
+/// Runs blocking work (a decoding loop, Vision, offline audio rendering) on
+/// a thread of its own instead of Swift's small shared thread pool. Apple's
+/// frameworks use that pool themselves, so filling it with waiting work can
+/// freeze them. `isCancelled` becomes true when the task is cancelled.
+public enum Blocking {
+    public static func run<T: Sendable>(_ work: @escaping @Sendable (_ isCancelled: @escaping @Sendable () -> Bool) throws -> T) async throws -> T {
+        let cancelled = Locked(false)
+        let result: T = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    continuation.resume(with: Result { try work { cancelled.value } })
+                }
+            }
+        } onCancel: {
+            cancelled.value = true
+        }
+        try Task.checkCancellation()
+        return result
     }
 }

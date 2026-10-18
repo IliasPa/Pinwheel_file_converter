@@ -1,7 +1,39 @@
 import Foundation
 import PDFKit
 
-/// The PDF tools: Compress, Strip Info, Merge, Split Pages and Add Password.
+/// The pages of one or more PDFs, in a new order, some turned or left out.
+public struct PageArrangement: Codable, Sendable, Equatable {
+    public struct Page: Codable, Sendable, Equatable, Hashable, Identifiable {
+        /// Which file (in the job's order) and which page in it (from 0).
+        public var file: Int
+        public var page: Int
+        /// Clockwise quarter turns, on top of the page's own rotation.
+        public var turns: Int
+
+        public init(file: Int, page: Int, turns: Int = 0) {
+            self.file = file
+            self.page = page
+            self.turns = turns
+        }
+
+        public var id: String { "\(file):\(page)" }
+    }
+
+    public var pages: [Page]
+
+    public init(pages: [Page]) {
+        self.pages = pages
+    }
+
+    /// Every page of every file, in order, as they are.
+    public static func all(pageCounts: [Int]) -> PageArrangement {
+        PageArrangement(pages: pageCounts.enumerated().flatMap { file, count in
+            (0..<count).map { Page(file: file, page: $0) }
+        })
+    }
+}
+
+/// The PDF tools: Compress, Strip Info, Merge, Split Pages, Organize and Add Password.
 enum PDFTools {
     static func run(
         _ tool: ToolAction,
@@ -26,6 +58,11 @@ enum PDFTools {
             try merge(ordered, destination: destination, progress: progress)
         case .split:
             try split(source, folder: destination, progress: progress)
+        case .organize:
+            guard case .pages(let arrangement)? = request.parameters else {
+                throw ConversionError.failed("Arrange the pages first.")
+            }
+            try organize(request.files.map(\.url), arrangement: arrangement, destination: destination, progress: progress)
         case .protect:
             guard case .password(let password)? = request.parameters else {
                 throw ConversionError.failed("Choose a password first.")
@@ -51,6 +88,22 @@ enum PDFTools {
             progress(Double(number + 1) / Double(sources.count) * 0.9)
         }
         guard merged.write(to: destination) else { throw ConversionError.cannotWrite(destination.lastPathComponent) }
+    }
+
+    /// The chosen pages, in the chosen order and turns, as one PDF.
+    static func organize(_ sources: [URL], arrangement: PageArrangement, destination: URL, progress: @Sendable (Double) -> Void) throws {
+        let documents = try sources.map(PDFConverter.open)
+        let result = PDFDocument()
+        for (number, item) in arrangement.pages.enumerated() {
+            try Task.checkCancellation()
+            guard documents.indices.contains(item.file),
+                  let page = documents[item.file].page(at: item.page)?.copy() as? PDFPage else { continue }
+            page.rotation = ((page.rotation + item.turns * 90) % 360 + 360) % 360
+            result.insert(page, at: result.pageCount)
+            progress(Double(number + 1) / Double(max(arrangement.pages.count, 1)) * 0.9)
+        }
+        guard result.pageCount > 0 else { throw NothingToDo(reason: "No pages were left, so nothing was saved.") }
+        guard result.write(to: destination) else { throw ConversionError.cannotWrite(destination.lastPathComponent) }
     }
 
     /// One PDF per page in a new folder: "report page 01.pdf", "report page 02.pdf"…

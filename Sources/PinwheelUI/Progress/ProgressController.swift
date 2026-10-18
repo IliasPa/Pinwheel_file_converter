@@ -85,8 +85,10 @@ final class ProgressController {
     private func scheduleAutoHide() {
         autoHide?.cancel()
         guard panel?.isVisible == true, !queue.jobs.isEmpty, queue.isIdle, !queue.hasFailures else { return }
+        // Give "nothing was saved, because…" time to be read.
+        let delay: Double = queue.jobs.contains(where: \.isSkipped) ? 12 : 4
         autoHide = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(delay))
             while self?.hover.isHovering == true, !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
             }
