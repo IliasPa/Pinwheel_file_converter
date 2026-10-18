@@ -52,7 +52,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if warned { menu.addItem(.separator()) }
 
         menu.addItem(hint("Drag files and hold ⇧ Shift to convert"))
-        menu.addItem(hint("Hold ⌥ Option + ⇧ Shift for tools"))
+        menu.addItem(hint("Hold ⌥ Option + ⇧ Shift for tools and editing"))
         menu.addItem(.separator())
 
         let recentItem = NSMenuItem(title: "Recent Conversions", action: nil, keyEquivalent: "")

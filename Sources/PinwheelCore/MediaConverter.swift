@@ -145,13 +145,16 @@ enum MediaConverter {
     }
 
     /// Exports with AVAssetExportSession, reporting progress. Cancelling the
-    /// task cancels the export.
+    /// task cancels the export. `metadata` replaces the file's tags (nil
+    /// keeps them); `timeRange` keeps just that part.
     static func export(
-        _ asset: AVURLAsset,
+        _ asset: AVAsset,
         preset: String,
         fileType: AVFileType,
         to url: URL,
         stripMetadata: Bool = false,
+        metadata: [AVMetadataItem]? = nil,
+        timeRange: CMTimeRange? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         try Task.checkCancellation()
@@ -159,6 +162,8 @@ enum MediaConverter {
             throw ConversionError.failed("macOS can't export this file.")
         }
         session.shouldOptimizeForNetworkUse = true
+        if let metadata { session.metadata = metadata }
+        if let timeRange { session.timeRange = timeRange }
         if stripMetadata {
             // No title, location, device or dates; the filter also catches
             // anything left inside the individual tracks.

@@ -7,7 +7,9 @@ converts them. Everything happens on your Mac: nothing is uploaded.
 
 - Hold **⇧ Shift** while dragging: the **format wheel** (PNG, JPEG, MP4, MP3…).
 - Hold **⌥ Option + ⇧ Shift** while dragging: the **tools wheel** (Compress,
-  Resize, Strip Info, Get Audio).
+  Resize, Remove BG, Crop…, Edit…, Markup…, Info…, Trim…, Merge and more). Tools
+  ending in "…" open a window where you choose the details first, like the
+  crop's shape and size.
 - Let go of Shift, or drop in the middle or outside the wheel: nothing happens.
 
 What changed in each version is listed in [CHANGES.md](CHANGES.md).
@@ -49,7 +51,7 @@ Then use one of these commands:
 |---|---|
 | `make run` | Builds Pinwheel and starts it (quits the old copy first). |
 | `make install` | Builds Pinwheel, copies it into **/Applications**, and starts it from there. |
-| `make test` | Runs the automated tests (about 80 of them, including real conversions). |
+| `make test` | Runs the automated tests (about 160 of them, including real conversions). |
 | `make build` | Only builds. |
 | `make clean` | Deletes all build files, so the next build starts fresh. |
 | `make uninstall` | Quits Pinwheel and removes it from /Applications. |
@@ -155,10 +157,10 @@ allow Pinwheel in **System Settings › General › Login Items & Extensions**.
 
 | You drag… | ⇧ Shift wheel | ⌥⇧ Option + Shift wheel |
 |---|---|---|
-| **Images** (JPEG, PNG, HEIC, TIFF, GIF, WebP, BMP, camera RAW…) | PNG, JPEG, HEIC, TIFF, GIF, PDF | Compress, Resize, Strip Info |
-| **Videos** (MOV, MP4, M4V; MKV, WebM, AVI with ffmpeg) | MP4, MOV, GIF\*, M4A, MP3\* | Compress, Strip Info, Get Audio |
-| **Audio** (MP3, M4A, WAV, AIFF, FLAC, OGG…) | MP3\*, M4A, WAV, AIFF, FLAC | Compress, Strip Info (MP3/FLAC need ffmpeg) |
-| **PDFs** | PNG, JPEG, HEIC, TIFF (one image per page), Smaller PDF | Compress, Strip Info |
+| **Images** (JPEG, PNG, HEIC, TIFF, GIF, WebP, BMP, camera RAW…) | PNG, JPEG, HEIC, TIFF, GIF, PDF | Compress, Resize, Remove BG, Crop…, Edit…, Add BG…, Markup…, Info… (also Strip Info, Get Text: see Settings › Tools wheel) |
+| **Videos** (MOV, MP4, M4V; MKV, WebM, AVI with ffmpeg) | MP4, MOV, GIF\*, M4A, MP3\* | Compress, Strip Info, Get Audio, Mute, Trim…, Info… |
+| **Audio** (MP3, M4A, WAV, AIFF, FLAC, OGG…) | MP3\*, M4A, WAV, AIFF, FLAC | Compress, Strip Info, Trim…, Info… (MP3/FLAC Strip Info and saving info need ffmpeg) |
+| **PDFs** | PNG, JPEG, HEIC, TIFF (one image per page), Smaller PDF | Compress, Strip Info, Merge, Split Pages, Get Text, Password…, Info… |
 
 \* needs ffmpeg. Without it, these wedges are grayed out and say why.
 
@@ -183,6 +185,61 @@ allow Pinwheel in **System Settings › General › Login Items & Extensions**.
 - **Strip Info:** removes location, camera model, dates, titles and authors.
   For photos in the same format, the picture itself isn't re-compressed.
 - **Get Audio:** saves a video's sound as M4A.
+- **Remove BG:** keeps the subject (people, pets, objects) on a see-through
+  PNG, `photo (no background).png`. Uses the same on-device model as
+  Photos' "Lift subject"; if there's no clear subject, nothing is saved.
+- **Mute:** the same video without its sound, `clip (muted).mov`.
+- **Merge** (two or more PDFs): one PDF with all their pages, in name order,
+  `a (merged).pdf`. **Split Pages:** a folder with one PDF per page.
+- **Get Text:** all the text as a `.txt` file. In PDFs, pages that are scans
+  are read with on-device text recognition (about 30 languages, including
+  English, French, German, Spanish and Russian, but not Greek).
+
+---
+
+## Tools that ask first (the "…" wedges)
+
+Drop files on a wedge ending in "…" and a window opens. Nothing is saved
+until you click **Save Copy**; the copy goes next to the original as usual
+(`photo (edited).jpg`) and shows up in the progress window. While such a
+window is open, Pinwheel appears in the Dock and in ⌘-Tab.
+
+**The image editor** (Crop…, Edit…, Add BG… and Markup… open its tabs):
+
+- **Crop:** drag the corners or edges, drag inside to move the box, or drag
+  outside it to draw a new one. Pick a shape (Free, Original, Square, 4:3,
+  3:2, 5:4, 16:9; Make Portrait/Landscape turns it). Type a **width and
+  height** to get exactly that many pixels (say 1080 × 1080 for a post).
+  Turn left or right and flip.
+- **Adjust:** Auto Enhance, exposure, highlights, shadows, contrast,
+  saturation, warmth, sharpness, vignette, and 11 filters. Right-click a
+  slider to reset it.
+- **Background:** remove the background; put the picture on a color, a
+  gradient, a blurred copy of itself, or nothing (see-through); padding,
+  rounded corners and a shadow; and a canvas shape (1:1, 4:5, 16:9…).
+  Handy for screenshots and product photos.
+- **Markup:** arrows, boxes, ovals, pen, highlighter, text, numbered steps
+  (1, 2, 3…), and **Blur Out** to hide names, faces or numbers. Choose
+  *Select* to move things, ⌘⌫ to delete.
+- **Undo/Redo** (⌘Z, ⇧⌘Z) for everything; hold **Compare** to see the
+  original; **Save as** keeps the format (or PNG when parts are
+  see-through). Drop several pictures to save the same edit for each (the
+  crop keeps its shape on pictures of other sizes).
+
+**Info…** (any file): dimensions, camera and exposure, date and place (with
+**Show in Maps**), codecs, pages and more. Edit the title, description,
+author, copyright and keywords (photos), title/artist/album/genre/year
+(music), or title/author/subject (PDFs); **remove the location**; or **Save
+Copy Without Info**. The picture or sound itself is copied as it is, never
+re-encoded.
+
+**Trim…** (videos and audio): drag the yellow handles, then click **Trim**.
+The part is cut without re-encoding (MP3 and FLAC need ffmpeg for that;
+without it they become M4A). For videos, **Save This Frame** saves the
+frame under the playhead as a JPEG. Several files come one after another.
+
+**Password…** (PDFs): a copy that asks for the password to open.
+Pinwheel doesn't remember it.
 
 The **progress window** (top right) shows each file, with ✕ to cancel and 🔍 to
 show the result in Finder, the size before and after (for example
@@ -222,6 +279,9 @@ Menu-bar icon › **Settings…** (or ⌘, while the menu is open):
 - **Saving:** next to the original, in Downloads, or in a folder you choose.
 - **Images and PDFs:** JPEG, HEIC and Compress quality; Resize size; combine
   several images into one PDF; PDF page resolution.
+- **Tools wheel:** which tools the ⌥⇧ wheel shows for images, videos,
+  audio and PDFs. A wheel holds up to 8, so images start without Strip Info
+  and Get Text (Info… can remove the info too); switch one off to make room.
 - **Video and audio:** video Compress quality (Smallest file / Balanced /
   Best quality) and size limit (keep, 4K, 1080p, 720p); audio Compress bit
   rate; GIF width, frame rate and length.
@@ -267,6 +327,16 @@ Settings › System.
 
 **`make test` says "plugin for module 'TestingMacros' not found".**
 Run `make clean` and then `make test` again.
+
+**Remove BG says "No clear subject was found".**
+The model looks for people, animals and objects that stand out. Flat
+graphics, landscapes and busy scenes may not have one. Try Crop… first so
+the subject fills more of the picture.
+
+**Get Text finds nothing, or the wrong letters.**
+Text recognition doesn't know every language (no Greek yet), and very small
+or blurry text is hard to read. PDFs with real text don't need recognition
+and work in any language.
 
 **Launch at Login doesn't stick.**
 Install into /Applications with `make install`, then turn it on again.
@@ -325,8 +395,15 @@ Accessibility** and from **Login Items**. Its settings are stored in
 - `Tests/PinwheelCoreTests`: tests that make real images, videos, songs and
   PDFs, convert them, and check the results. `Tests/PinwheelUITests`: the job
   queue, settings, the wheel's labels, and that every glass level draws.
+- The image editor's preview and the saved file are drawn by the same code
+  (`StudioRenderer`: Core Image for turning, cropping and adjusting, Core
+  Graphics for markup and frames). The edit itself (`ImageEdit`) is a small
+  value with every position from 0 to 1, so it fits the preview, the
+  full-size picture and other pictures alike. Editor windows start ordinary
+  jobs with what was chosen (`JobParameters`), so saving runs in the worker.
 - Apple frameworks do the work: ImageIO (images), AVFoundation and Core Audio
-  (video, audio, FLAC), PDFKit with a Quartz filter (PDFs). ffmpeg is used
+  (video, audio, FLAC), PDFKit with a Quartz filter (PDFs), Vision (subject
+  cut-out and text recognition), AVKit (the trim bar). ffmpeg is used
   only for MP3, GIFs from video, and files macOS can't open; pngquant only
   for PNG compression. If macOS fails on a file, ffmpeg gets a second try.
 - In the macOS 27 SDK, SwiftUI's `@State` is a macro whose plugin only comes

@@ -32,7 +32,7 @@ final class WheelController {
     func show(urls: [URL], mode: WheelMode, at location: NSPoint) {
         isDemo = false
         files = urls.map(SourceFile.init)
-        model.load(files: files, mode: mode, options: settings.conversionOptions, availability: availability)
+        model.load(files: files, mode: mode, options: settings.conversionOptions, hidden: settings.hiddenTools, availability: availability)
         present(at: location)
     }
 
@@ -58,7 +58,7 @@ final class WheelController {
     func setMode(_ mode: WheelMode) {
         guard mode != model.mode, !isDemo else { return }
         model.hovered = nil
-        model.load(files: files, mode: mode, options: settings.conversionOptions, availability: availability)
+        model.load(files: files, mode: mode, options: settings.conversionOptions, hidden: settings.hiddenTools, availability: availability)
     }
 
     /// Hides the wheel. When several hide requests overlap, the earliest wins.

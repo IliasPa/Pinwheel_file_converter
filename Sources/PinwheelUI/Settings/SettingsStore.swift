@@ -25,6 +25,7 @@ final class SettingsStore {
         case jpegQuality, heicQuality, compressQuality, resize, combineImagesIntoOnePDF, pdfDPI
         case videoQuality, videoMaxSize, audioBitRate, gifWidth, gifFPS, gifMaxSeconds
         case maxConcurrentJobs, ffmpegPath
+        case hiddenTools
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -71,6 +72,10 @@ final class SettingsStore {
     /// Empty means "find ffmpeg automatically".
     var ffmpegPath: String { didSet { save(ffmpegPath, .ffmpegPath) } }
 
+    // Tools wheel
+    /// Tools left off the Option+Shift wheel ("image:tool.stripMetadata").
+    var hiddenTools: Set<String> { didSet { save(Array(hiddenTools).sorted(), .hiddenTools) } }
+
     private static let factory = ConversionOptions()
 
     private static var defaultValues: [Key: Any] {
@@ -101,6 +106,7 @@ final class SettingsStore {
             .gifMaxSeconds: factory.gifMaxSeconds ?? 0,
             .maxConcurrentJobs: 0,
             .ffmpegPath: "",
+            .hiddenTools: Array(FormatCatalog.defaultHidden).sorted(),
         ]
     }
 
@@ -134,6 +140,7 @@ final class SettingsStore {
         gifMaxSeconds = defaults.integer(forKey: Key.gifMaxSeconds.rawValue)
         maxConcurrentJobs = defaults.integer(forKey: Key.maxConcurrentJobs.rawValue)
         ffmpegPath = string(.ffmpegPath)
+        hiddenTools = Set(defaults.stringArray(forKey: Key.hiddenTools.rawValue) ?? [])
     }
 
     /// The ffmpeg to use: the custom path if it works, else the usual places.
@@ -199,6 +206,17 @@ final class SettingsStore {
         gifMaxSeconds = fresh.gifMaxSeconds
         maxConcurrentJobs = fresh.maxConcurrentJobs
         ffmpegPath = fresh.ffmpegPath
+        hiddenTools = fresh.hiddenTools
+    }
+
+    /// Whether a tool is on the wheel for this kind of file.
+    func isOnWheel(_ action: WheelAction, for kind: FileKind) -> Bool {
+        !hiddenTools.contains(FormatCatalog.hiddenKey(kind, action))
+    }
+
+    func setOnWheel(_ action: WheelAction, for kind: FileKind, _ shown: Bool) {
+        let key = FormatCatalog.hiddenKey(kind, action)
+        if shown { hiddenTools.remove(key) } else { hiddenTools.insert(key) }
     }
 
     private func save(_ value: Any, _ key: Key) {

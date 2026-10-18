@@ -237,7 +237,8 @@ struct ToolAvailabilityTests {
     @Test func everyToolWorksWithoutFFmpegForCommonFiles() {
         for name in ["a.jpg", "a.png", "a.heic", "a.pdf", "a.mov", "a.mp4", "a.m4a", "a.wav"] {
             let file = SourceFile(url: URL(fileURLWithPath: "/tmp/\(name)"))
-            for action in FormatCatalog.actions(for: [file], mode: .tools) {
+            // (Merge needs two files; it has its own test.)
+            for action in FormatCatalog.actions(for: [file], mode: .tools) where action != .tool(.merge) {
                 #expect(
                     ConversionEngine.availability(of: action, for: [file], ffmpegAvailable: false) == .available,
                     "\(action.id) on \(name)"
@@ -270,5 +271,12 @@ struct ToolAvailabilityTests {
         #expect(plan("a.bmp", .resize) == "png")
         #expect(plan("a.JPEG", .resize) == "jpeg")
         #expect(ToolAction.resize.nameSuffix() == "50%")
+        #expect(plan("a.jpg", .removeBackground) == "png")
+        #expect(plan("a.png", .extractText) == "txt")
+        #expect(plan("a.pdf", .split) == nil)  // a folder
+        #expect(plan("a.mov", .mute) == "mov")
+        #expect(plan("a.mov", .saveFrame) == "jpg")
+        #expect(plan("a.jpeg", .edit) == "jpeg")
+        #expect(plan("a.heic", .editInfo) == "heic")
     }
 }

@@ -21,6 +21,8 @@ public enum ConversionEngine {
     /// Whether ffmpeg is needed for this action on this file.
     public static func usesFFmpeg(_ action: WheelAction, for file: SourceFile) -> Bool {
         switch (file.kind, action) {
+        case (_, .open):
+            false  // the window says what it can do; Info works without ffmpeg
         case (.video, .convert(.gif)), (.video, .convert(.mp3)), (.audio, .convert(.mp3)):
             true
         case (.video, .tool(let tool)), (.audio, .tool(let tool)):
@@ -34,9 +36,15 @@ public enum ConversionEngine {
 
     /// Whether a wedge can be used right now (it's grayed out otherwise).
     public static func availability(of action: WheelAction, for files: [SourceFile], ffmpegAvailable: Bool) -> Availability {
+        if action == .tool(.merge) && files.count < 2 {
+            return .unavailable("Drop two or more PDFs to merge them")
+        }
         for file in files {
             guard file.kind != nil else {
                 return .unavailable("Pinwheel can't convert this kind of file")
+            }
+            if action == .open(.trim) && file.needsFFmpegToRead {
+                return .unavailable("macOS can't play this file, so it can't be trimmed here")
             }
             if usesFFmpeg(action, for: file) && !ffmpegAvailable {
                 return .unavailable("Needs ffmpeg (brew install ffmpeg)")
@@ -71,6 +79,10 @@ public enum ConversionEngine {
         guard !request.files.isEmpty, request.files.allSatisfy({ $0.kind != nil }) else {
             throw ConversionError.unsupported(request.files.first?.url.lastPathComponent ?? "This file")
         }
+        if case .open(let editor) = request.action {
+            // Editors open a window, which then starts a `.tool` job.
+            throw ConversionError.unsupported("\(editor.title) as a job")
+        }
         let plan = OutputPlanner.plan(request, options: options)
         let destination = naming.reserve(
             in: plan.folder, baseName: plan.baseName, suffix: plan.suffix, fileExtension: plan.fileExtension
@@ -100,7 +112,9 @@ public enum ConversionEngine {
             case (.video, .convert(let format)), (.audio, .convert(let format)):
                 notes.append(try await MediaConverter.convert(file, to: format, destination: destination, options: options, progress: progress))
             case (_, .tool(let tool)):
-                try await ToolConverter.run(tool, file: file, plan: plan, destination: destination, options: options, progress: progress)
+                notes.append(try await ToolConverter.run(tool, request: request, plan: plan, destination: destination, options: options, progress: progress))
+            case (_, .open(let editor)):
+                throw ConversionError.unsupported("\(editor.title) as a job")
             case (nil, _):
                 throw ConversionError.unsupported(file.url.lastPathComponent)
             }

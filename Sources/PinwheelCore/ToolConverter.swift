@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 import ImageIO
 
-/// The Option+Shift tools: Compress, Resize, Strip Info, Get Audio.
+/// The Option+Shift tools, and the jobs the editor windows start.
 enum ToolConverter {
     /// Containers AVFoundation can re-save with the metadata removed.
     static let avVideoContainers: [String: AVFileType] = ["mov": .mov, "mp4": .mp4, "m4v": .m4v, "3gp": .mobile3GPP]
@@ -14,40 +14,51 @@ enum ToolConverter {
         if file.needsFFmpegToRead { return true }
         let ext = file.url.pathExtension.lowercased()
         switch (file.kind, tool) {
-        case (.video, .stripMetadata): return avVideoContainers[ext] == nil
+        case (.video, .stripMetadata), (.video, .mute): return avVideoContainers[ext] == nil
         case (.audio, .stripMetadata): return avAudioContainers[ext] == nil
         default: return false
         }
     }
 
+    /// Does the tool; returns a note for the progress window, if any.
     static func run(
         _ tool: ToolAction,
-        file: SourceFile,
+        request: ConversionRequest,
         plan: OutputPlan,
         destination: URL,
         options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
-    ) async throws {
-        switch file.kind {
-        case .image:
+    ) async throws -> String? {
+        let file = request.files[0]
+        switch (file.kind, tool) {
+        case (_, .extractText):
+            progress(0.05)
+            return try TextExtractor.write(file, to: destination, progress: progress)
+        case (_, .editInfo):
+            guard case .metadata(let edit)? = request.parameters else { throw NothingToDo(reason: "Nothing was changed.") }
+            progress(0.1)
+            try await MetadataWriter.write(file, edit: edit, destination: destination, options: options, progress: progress)
+        case (.image, .edit), (.image, .removeBackground):
+            var edit = request.imageEdit
+            if tool == .removeBackground { edit.removeBackground = true }
+            guard !edit.isEmpty, let format = plan.format else {
+                throw NothingToDo(reason: "Nothing was changed, so nothing was saved.")
+            }
+            progress(0.1)
+            try StudioExporter.export(file.url, edit: edit, format: format, destination: destination, options: options)
+        case (.image, _):
             guard let format = plan.format else { throw ConversionError.unsupported(destination.pathExtension.uppercased()) }
             progress(0.1)
             try await ImageTools.run(tool, source: file.url, format: format, destination: destination, options: options)
-        case .pdf:
-            progress(0.1)
-            switch tool {
-            case .compress:
-                try PDFConverter.compress(file.url, destination: destination, quality: options.compressQuality, dpi: options.pdfImageDPI)
-            case .stripMetadata:
-                try PDFConverter.stripMetadata(file.url, destination: destination)
-            default:
-                throw ConversionError.unsupported("\(tool.title) for PDFs")
-            }
-        case .video, .audio:
-            try await MediaTools.run(tool, file: file, destination: destination, options: options, progress: progress)
-        case nil:
+        case (.pdf, _):
+            progress(0.05)
+            try PDFTools.run(tool, request: request, destination: destination, options: options, progress: progress)
+        case (.video, _), (.audio, _):
+            try await MediaTools.run(tool, request: request, destination: destination, options: options, progress: progress)
+        case (nil, _):
             throw ConversionError.unsupported(file.url.lastPathComponent)
         }
+        return nil
     }
 }
 
@@ -68,8 +79,8 @@ enum ImageTools {
             try resize(src, to: destination, format: format, options: options)
         case .stripMetadata:
             try stripMetadata(src, to: destination, format: format)
-        case .extractAudio:
-            throw ConversionError.unsupported("Getting audio from an image")
+        default:
+            throw ConversionError.unsupported("\(tool.title) for images")
         }
     }
 
@@ -128,17 +139,7 @@ enum ImageTools {
         let image = try ImageConverter.orientedImage(src, index: index, maxPixelSize: newLongSide)
 
         // The new image is already upright, and its size has changed.
-        var metadata = ImageConverter.metadata(from: properties)
-        metadata[kCGImagePropertyOrientation] = 1
-        if var tiff = metadata[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
-            tiff[kCGImagePropertyTIFFOrientation] = 1
-            metadata[kCGImagePropertyTIFFDictionary] = tiff
-        }
-        if var exif = metadata[kCGImagePropertyExifDictionary] as? [CFString: Any] {
-            exif.removeValue(forKey: kCGImagePropertyExifPixelXDimension)
-            exif.removeValue(forKey: kCGImagePropertyExifPixelYDimension)
-            metadata[kCGImagePropertyExifDictionary] = exif
-        }
+        let metadata = ImageConverter.uprightMetadata(from: properties)
         var settings = ImageConverter.encoderSettings(for: format, options: options)
         if format == .jpeg || format == .heic {
             settings[kCGImageDestinationLossyCompressionQuality] = 0.9
@@ -208,11 +209,27 @@ enum ImageTools {
 enum MediaTools {
     static func run(
         _ tool: ToolAction,
-        file: SourceFile,
+        request: ConversionRequest,
         destination: URL,
         options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
+        let file = request.files[0]
+        switch tool {
+        case .trim:
+            guard case .timeRange(let start, let end)? = request.parameters, end > start else {
+                throw ConversionError.failed("Choose the part to keep first.")
+            }
+            try await MediaEdits.trim(file, from: start, to: end, destination: destination, options: options, progress: progress)
+            return
+        case .saveFrame:
+            guard case .frame(let seconds)? = request.parameters else { throw ConversionError.failed("Choose a frame first.") }
+            progress(0.2)
+            try await MediaEdits.saveFrame(file.url, at: seconds, destination: destination, options: options)
+            return
+        default:
+            break
+        }
         if ToolConverter.usesFFmpeg(tool, for: file) {
             guard let ffmpeg = options.ffmpegURL else { throw ConversionError.needsFFmpeg }
             try await runFFmpeg(tool, file: file, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
@@ -245,6 +262,8 @@ enum MediaTools {
             )
         case (.audio, .compress):
             try await AudioCompressor.compress(file.url, destination: destination, bitRate: options.audioBitRate, progress: progress)
+        case (.video, .mute):
+            try await MediaEdits.mute(file.url, destination: destination, progress: progress)
         default:
             throw ConversionError.unsupported("\(tool.title) for \(file.url.lastPathComponent)")
         }
@@ -273,6 +292,11 @@ enum MediaTools {
         case (.audio, .stripMetadata):
             // Audio only: this also drops embedded cover art.
             arguments = ["-map", "0:a", "-map_metadata", "-1", "-c", "copy"]
+        case (.video, .mute):
+            if try await !MediaEdits.hasSound(file, ffmpeg: ffmpeg) {
+                throw NothingToDo(reason: "This video has no sound, so nothing was changed.")
+            }
+            arguments = ["-map", "0", "-map", "-0:a", "-c", "copy"]
         default:
             throw ConversionError.unsupported("\(tool.title) for \(file.url.lastPathComponent)")
         }

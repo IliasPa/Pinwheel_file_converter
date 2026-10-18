@@ -80,6 +80,31 @@ public enum ImageConverter {
         return properties.filter { keys.contains($0.key) }
     }
 
+    /// The metadata for a new picture that's already upright and may have
+    /// a new size: orientation 1, no old pixel dimensions.
+    static func uprightMetadata(from properties: [CFString: Any]) -> [CFString: Any] {
+        var metadata = metadata(from: properties)
+        metadata[kCGImagePropertyOrientation] = 1
+        if var tiff = metadata[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            tiff[kCGImagePropertyTIFFOrientation] = 1
+            metadata[kCGImagePropertyTIFFDictionary] = tiff
+        }
+        if var exif = metadata[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            exif.removeValue(forKey: kCGImagePropertyExifPixelXDimension)
+            exif.removeValue(forKey: kCGImagePropertyExifPixelYDimension)
+            metadata[kCGImagePropertyExifDictionary] = exif
+        }
+        return metadata
+    }
+
+    /// Whether the picture has a transparency channel (false if unreadable).
+    static func hasAlpha(_ url: URL) -> Bool {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(src, CGImageSourceGetPrimaryImageIndex(src), nil) as? [CFString: Any]
+        else { return false }
+        return properties[kCGImagePropertyHasAlpha] as? Bool ?? false
+    }
+
     /// The full-size image with its EXIF rotation already applied.
     static func orientedImage(_ src: CGImageSource, index: Int, maxPixelSize: Int? = nil) throws -> CGImage {
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]

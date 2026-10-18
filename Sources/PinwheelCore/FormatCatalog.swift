@@ -2,6 +2,11 @@ import Foundation
 
 /// Which wedges each kind of file gets.
 public enum FormatCatalog {
+    /// The most wedges a wheel shows. More get too small to hit easily.
+    public static let maxWedges = 8
+
+    /// Everything a kind of file can get, in wheel order (clockwise from the
+    /// top). Images have more tools than fit; Settings chooses which show.
     public static func actions(for kind: FileKind, mode: WheelMode) -> [WheelAction] {
         switch (kind, mode) {
         case (.image, .convert):
@@ -13,27 +18,50 @@ public enum FormatCatalog {
         case (.pdf, .convert):
             [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .tool(.compress)]
         case (.image, .tools):
-            [.tool(.compress), .tool(.resize), .tool(.stripMetadata)]
+            [
+                .tool(.compress), .tool(.resize), .tool(.removeBackground), .open(.crop),
+                .open(.adjust), .open(.background), .open(.markup), .open(.info),
+                .tool(.stripMetadata), .tool(.extractText),
+            ]
         case (.video, .tools):
-            [.tool(.compress), .tool(.stripMetadata), .tool(.extractAudio)]
+            [.tool(.compress), .tool(.stripMetadata), .tool(.extractAudio), .tool(.mute), .open(.trim), .open(.info)]
         case (.audio, .tools):
-            [.tool(.compress), .tool(.stripMetadata)]
+            [.tool(.compress), .tool(.stripMetadata), .open(.trim), .open(.info)]
         case (.pdf, .tools):
-            [.tool(.compress), .tool(.stripMetadata)]
+            [
+                .tool(.compress), .tool(.stripMetadata), .tool(.merge), .tool(.split),
+                .tool(.extractText), .open(.password), .open(.info),
+            ]
         }
     }
 
-    /// Wedges valid for *every* file. Files Pinwheel can't handle (folders,
-    /// text files…) leave nothing in common, so the wheel shows no wedges.
-    /// Converting a file to the format it already has is left out.
-    public static func actions(for files: [SourceFile], mode: WheelMode) -> [WheelAction] {
+    /// Tools left off the wheel until switched on in Settings. Images have
+    /// ten; these two have a stand-in (Info… can remove the info too).
+    public static let defaultHidden: Set<String> = [
+        hiddenKey(.image, .tool(.stripMetadata)),
+        hiddenKey(.image, .tool(.extractText)),
+    ]
+
+    /// How a hidden tool is remembered: "image:tool.stripMetadata".
+    public static func hiddenKey(_ kind: FileKind, _ action: WheelAction) -> String {
+        "\(kind.rawValue):\(action.id)"
+    }
+
+    /// Wedges valid for *every* file, minus hidden tools, at most `maxWedges`.
+    /// Files Pinwheel can't handle (folders, text files…) leave nothing in
+    /// common, so the wheel shows no wedges. Converting a file to the format
+    /// it already has is left out.
+    public static func actions(for files: [SourceFile], mode: WheelMode, hidden: Set<String> = []) -> [WheelAction] {
         guard !files.isEmpty else { return [] }
         let kinds = files.map(\.kind)
         guard !kinds.contains(nil) else { return [] }
 
-        var result = actions(for: kinds[0]!, mode: mode)
+        func visible(_ kind: FileKind) -> [WheelAction] {
+            actions(for: kind, mode: mode).filter { !hidden.contains(hiddenKey(kind, $0)) }
+        }
+        var result = visible(kinds[0]!)
         for kind in Set(kinds.compactMap { $0 }) {
-            let allowed = Set(actions(for: kind, mode: mode))
+            let allowed = Set(visible(kind))
             result.removeAll { !allowed.contains($0) }
         }
         if mode == .convert {
@@ -42,7 +70,7 @@ public enum FormatCatalog {
                 result.removeAll { $0 == .convert(only) }
             }
         }
-        return result
+        return Array(result.prefix(maxWedges))
     }
 
     /// "3 images", or "3 files" when they're mixed.

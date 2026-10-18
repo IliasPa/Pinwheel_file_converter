@@ -83,12 +83,24 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// Extra jobs offered on the Option+Shift wheel.
+/// Jobs offered on the Option+Shift wheel, plus the jobs the editor
+/// windows make (the last five, which never sit on a wedge themselves).
 public enum ToolAction: String, CaseIterable, Codable, Sendable {
     case compress
     case resize
     case stripMetadata
     case extractAudio
+    case removeBackground
+    case extractText
+    case mute
+    case merge
+    case split
+    // Made by an editor window, with what was chosen there.
+    case edit
+    case editInfo
+    case trim
+    case saveFrame
+    case protect
 
     /// The general name; Resize shows its chosen size on the wheel instead.
     public var title: String {
@@ -97,6 +109,16 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .resize: "Resize"
         case .stripMetadata: "Strip Info"
         case .extractAudio: "Get Audio"
+        case .removeBackground: "Remove BG"
+        case .extractText: "Get Text"
+        case .mute: "Mute"
+        case .merge: "Merge"
+        case .split: "Split Pages"
+        case .edit: "Edit"
+        case .editInfo: "Edit Info"
+        case .trim: "Trim"
+        case .saveFrame: "Save Frame"
+        case .protect: "Add Password"
         }
     }
 
@@ -106,6 +128,16 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .resize: "arrow.down.right.and.arrow.up.left"
         case .stripMetadata: "tag.slash"
         case .extractAudio: "speaker.wave.2"
+        case .removeBackground: "person.and.background.dotted"
+        case .extractText: "text.viewfinder"
+        case .mute: "speaker.slash"
+        case .merge: "arrow.triangle.merge"
+        case .split: "scissors"
+        case .edit: "slider.horizontal.3"
+        case .editInfo: "info.circle"
+        case .trim: "timeline.selection"
+        case .saveFrame: "camera.viewfinder"
+        case .protect: "lock.doc"
         }
     }
 
@@ -122,6 +154,16 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .resize: options.resize.detail
         case .stripMetadata: "Removes location, camera and other hidden info"
         case .extractAudio: "Saves the soundtrack as M4A"
+        case .removeBackground: "Keeps the subject, on a see-through PNG"
+        case .extractText: kind == .pdf ? "All the text as a .txt file, scanned pages too" : "The text in the picture, as a .txt file"
+        case .mute: "Removes the sound, keeps the picture"
+        case .merge: "Joins the PDFs into one, in name order"
+        case .split: "One PDF per page, in a folder"
+        case .edit: "Your edits"
+        case .editInfo: "Your changes to the file's info"
+        case .trim: "Just the part you chose"
+        case .saveFrame: "One frame as a JPEG"
+        case .protect: "Asks for a password to open"
         }
     }
 
@@ -132,6 +174,73 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .resize: options.resize.nameSuffix
         case .stripMetadata: "no metadata"
         case .extractAudio: "audio"
+        case .removeBackground: "no background"
+        case .extractText: "text"
+        case .mute: "muted"
+        case .merge: "merged"
+        case .split: "pages"
+        case .edit, .editInfo: "edited"
+        case .trim: "trimmed"
+        case .saveFrame: "frame"
+        case .protect: "protected"
+        }
+    }
+}
+
+/// Wedges that open a window to choose the details first ("Crop…"). The
+/// window then starts a job (see `tool`) with what was chosen.
+public enum Editor: String, CaseIterable, Codable, Sendable {
+    // The four tabs of the image editor.
+    case crop, adjust, background, markup
+    case info, trim, password
+
+    public var title: String {
+        switch self {
+        case .crop: "Crop…"
+        case .adjust: "Edit…"
+        case .background: "Add BG…"
+        case .markup: "Markup…"
+        case .info: "Info…"
+        case .trim: "Trim…"
+        case .password: "Password…"
+        }
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .crop: "crop"
+        case .adjust: "slider.horizontal.3"
+        case .background: "photo.artframe"
+        case .markup: "pencil.tip.crop.circle"
+        case .info: "info.circle"
+        case .trim: "timeline.selection"
+        case .password: "lock.doc"
+        }
+    }
+
+    public func detail(for kind: FileKind?) -> String {
+        switch self {
+        case .crop: "Choose the shape and size, rotate or flip"
+        case .adjust: "Light, color and filters"
+        case .background: "Background, padding, corners and shadow"
+        case .markup: "Arrows, shapes, text and blur-out"
+        case .info:
+            switch kind {
+            case .image: "See and edit title, camera, date, place…"
+            case .video, .audio: "See and edit title, artist and more"
+            case .pdf: "See and edit title, author and more"
+            case nil: "See and edit the details"
+            }
+        case .trim: "Keep just the part you choose"
+        case .password: "Only people with the password can open it"
+        }
+    }
+
+    /// One of the image editor's tabs.
+    public var isImageEditor: Bool {
+        switch self {
+        case .crop, .adjust, .background, .markup: true
+        case .info, .trim, .password: false
         }
     }
 }
@@ -140,11 +249,14 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
 public enum WheelAction: Hashable, Codable, Sendable {
     case convert(OutputFormat)
     case tool(ToolAction)
+    /// Opens a window first (the window then starts a `.tool` job).
+    case open(Editor)
 
     public var id: String {
         switch self {
         case .convert(let format): "convert.\(format.rawValue)"
         case .tool(let tool): "tool.\(tool.rawValue)"
+        case .open(let editor): "open.\(editor.rawValue)"
         }
     }
 
@@ -156,6 +268,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .tool(.compress) where mode == .convert: "Smaller PDF"
         case .tool(.resize): options.resize.title
         case .tool(let tool): tool.title
+        case .open(let editor): editor.title
         }
     }
 
@@ -164,6 +277,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .convert(let format): format.symbolName
         case .tool(.compress) where mode == .convert: "arrow.down.doc"
         case .tool(let tool): tool.symbolName
+        case .open(let editor): editor.symbolName
         }
     }
 
@@ -171,6 +285,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         switch self {
         case .convert(let format): format.detail(from: kind)
         case .tool(let tool): tool.detail(for: kind, options: options)
+        case .open(let editor): editor.detail(for: kind)
         }
     }
 
@@ -179,6 +294,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         switch self {
         case .convert(let format): "to \(format.title)"
         case .tool(let tool): tool.title
+        case .open(let editor): editor.title
         }
     }
 }

@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var wheel = WheelController(settings: settings)
     private lazy var progress = ProgressController(queue: jobs, settings: settings)
     private lazy var notifier = Notifier()
+    private lazy var editors = EditorCoordinator(settings: settings)
     private var menuBar: MenuBarController?
     private var settingsWindow: SettingsWindowController?
 
@@ -21,6 +22,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = MainMenu.make()
         let permission = self.permission
         let settings = self.settings
         menuBar = MenuBarController(
@@ -55,7 +57,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             ConversionEngine.availability(of: action, for: files, ffmpegAvailable: settings.ffmpegURL != nil)
         }
         wheel.onDrop = { [weak self] files, action in
-            self?.jobs.enqueue(files: files, action: action)
+            guard let self else { return }
+            if case .open(let editor) = action {
+                // "Crop…", "Info…" and friends ask first, in a window.
+                self.editors.open(editor, files: files)
+            } else {
+                self.jobs.enqueue(files: files, action: action)
+            }
+        }
+        editors.enqueue = { [weak self] files, action, parameters in
+            self?.jobs.enqueue(files: files, action: action, parameters: parameters)
         }
         jobs.optionsProvider = { settings.conversionOptions }
         jobs.concurrency = { settings.concurrencyLimit }

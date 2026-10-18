@@ -158,23 +158,60 @@ public struct ConversionOptions: Sendable, Equatable, Codable {
     public init() {}
 }
 
-/// One conversion: usually one file, or several images becoming one PDF.
+/// What an editor window chose, sent along with the job it starts.
+public enum JobParameters: Sendable, Equatable, Codable {
+    /// The image editor's crop, adjustments, background and markup.
+    case image(ImageEdit)
+    /// New title, author… from the Info window.
+    case metadata(MetadataEdit)
+    /// The part to keep, in seconds from the start.
+    case timeRange(start: Double, end: Double)
+    /// Which frame to save, in seconds from the start.
+    case frame(seconds: Double)
+    case password(String)
+}
+
+/// One conversion: usually one file, or several files becoming one PDF.
 public struct ConversionRequest: Sendable, Equatable, Codable {
     public var files: [SourceFile]
     public var action: WheelAction
+    /// What was chosen in an editor window, for jobs that come from one.
+    public var parameters: JobParameters?
 
-    public init(files: [SourceFile], action: WheelAction) {
+    public init(files: [SourceFile], action: WheelAction, parameters: JobParameters? = nil) {
         self.files = files
         self.action = action
+        self.parameters = parameters
     }
 
-    public init(file: SourceFile, action: WheelAction) {
-        self.init(files: [file], action: action)
+    public init(file: SourceFile, action: WheelAction, parameters: JobParameters? = nil) {
+        self.init(files: [file], action: action, parameters: parameters)
     }
 
     /// Several images going into one PDF.
     public var isCombinedPDF: Bool {
         action == .convert(.pdf) && files.count > 1 && files.allSatisfy { $0.kind == .image }
+    }
+
+    /// Several PDFs joined into one.
+    public var isMerge: Bool {
+        action == .tool(.merge) && files.count > 1
+    }
+
+    /// Whether the result stands in for the original, so "Move the original
+    /// to the Trash" applies. Text and single frames are taken *from* a
+    /// file; the file itself is still wanted (and may still be open).
+    public var replacesOriginal: Bool {
+        switch action {
+        case .tool(.extractText), .tool(.saveFrame): false
+        default: true
+        }
+    }
+
+    /// The image editor's edit (an empty edit when there is none).
+    var imageEdit: ImageEdit {
+        if case .image(let edit)? = parameters { return edit }
+        return ImageEdit()
     }
 }
 

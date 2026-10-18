@@ -41,7 +41,37 @@ struct FormatCatalogTests {
         #expect(FormatCatalog.actions(for: files("a.png", "b.pdf"), mode: .convert)
                 == [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff)])
         #expect(FormatCatalog.actions(for: files("a.png", "b.mov"), mode: .tools)
-                == [.tool(.compress), .tool(.stripMetadata)])
+                == [.tool(.compress), .open(.info), .tool(.stripMetadata)])
+        // Strip Info is off the image wheel by default (Info… can do it too).
+        #expect(FormatCatalog.actions(for: files("a.png", "b.mov"), mode: .tools, hidden: FormatCatalog.defaultHidden)
+                == [.tool(.compress), .open(.info)])
+    }
+
+    @Test func imageToolsFitOnOneWheel() {
+        let all = FormatCatalog.actions(for: .image, mode: .tools)
+        #expect(all.count > FormatCatalog.maxWedges)
+        let shown = FormatCatalog.actions(for: files("a.png"), mode: .tools, hidden: FormatCatalog.defaultHidden)
+        #expect(shown == [
+            .tool(.compress), .tool(.resize), .tool(.removeBackground), .open(.crop),
+            .open(.adjust), .open(.background), .open(.markup), .open(.info),
+        ])
+        // Never more than fit, whatever is hidden.
+        #expect(FormatCatalog.actions(for: files("a.png"), mode: .tools).count == FormatCatalog.maxWedges)
+        // Hiding one makes room for the next.
+        let swapped = FormatCatalog.actions(
+            for: files("a.png"), mode: .tools,
+            hidden: [FormatCatalog.hiddenKey(.image, .open(.markup)), FormatCatalog.hiddenKey(.image, .tool(.extractText))]
+        )
+        #expect(!swapped.contains(.open(.markup)) && swapped.last == .tool(.stripMetadata))
+    }
+
+    @Test func otherKindsGetTheirTools() {
+        #expect(FormatCatalog.actions(for: files("a.mov"), mode: .tools)
+                == [.tool(.compress), .tool(.stripMetadata), .tool(.extractAudio), .tool(.mute), .open(.trim), .open(.info)])
+        #expect(FormatCatalog.actions(for: files("a.pdf", "b.pdf"), mode: .tools).contains(.tool(.merge)))
+        #expect(FormatCatalog.actions(for: files("a.wav"), mode: .tools).contains(.open(.trim)))
+        // Hidden image tools don't hide the same tool for other kinds.
+        #expect(FormatCatalog.actions(for: files("a.mov"), mode: .tools, hidden: FormatCatalog.defaultHidden).contains(.tool(.stripMetadata)))
     }
 
     @Test func unsupportedFilesLeaveNothing() {
@@ -75,6 +105,7 @@ struct FormatCatalogTests {
         var names = Set<String>()
         for format in OutputFormat.allCases { names.insert(format.symbolName) }
         for tool in ToolAction.allCases { names.insert(tool.symbolName) }
+        for editor in Editor.allCases { names.insert(editor.symbolName) }
         for kind in FileKind.allCases { names.insert(kind.symbolName) }
         names.formUnion([
             WheelAction.tool(.compress).symbolName(in: .convert), "doc.on.doc",

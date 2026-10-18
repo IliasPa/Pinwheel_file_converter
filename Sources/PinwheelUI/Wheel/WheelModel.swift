@@ -37,6 +37,7 @@ final class WheelModel {
         files: [SourceFile],
         mode: WheelMode,
         options: ConversionOptions,
+        hidden: Set<String> = [],
         availability: (WheelAction, [SourceFile]) -> Availability
     ) {
         self.mode = mode
@@ -44,7 +45,7 @@ final class WheelModel {
         summarySymbol = FormatCatalog.symbolName(for: files)
         let kinds = Set(files.map(\.kind))
         let commonKind = kinds.count == 1 ? kinds.first! : nil
-        items = FormatCatalog.actions(for: files, mode: mode).map { action in
+        items = FormatCatalog.actions(for: files, mode: mode, hidden: hidden).map { action in
             var reason: String?
             if case .unavailable(let why) = availability(action, files) { reason = why }
             return WheelItem(

@@ -34,6 +34,7 @@ struct SettingsView: View {
             saving
             images
             media
+            toolsWheel
             system
             Section {
                 HStack {
@@ -254,6 +255,38 @@ struct SettingsView: View {
         }
     }
 
+    /// Which tools the Option+Shift wheel shows for each kind of file.
+    private var toolsWheel: some View {
+        Section {
+            ForEach(FileKind.allCases, id: \.self) { kind in
+                let actions = FormatCatalog.actions(for: kind, mode: .tools)
+                let shown = actions.filter { settings.isOnWheel($0, for: kind) }.count
+                DisclosureGroup {
+                    ForEach(actions, id: \.self) { action in
+                        let isOn = settings.isOnWheel(action, for: kind)
+                        Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, $0) })) {
+                            Label(action.title(in: .tools, options: settings.conversionOptions), systemImage: action.symbolName(in: .tools))
+                        }
+                        .help(action.detail(for: kind, options: settings.conversionOptions))
+                        .disabled(!isOn && shown >= FormatCatalog.maxWedges)
+                    }
+                } label: {
+                    HStack {
+                        Text(kind.pluralTitle)
+                        Spacer()
+                        Text("\(min(shown, FormatCatalog.maxWedges)) of \(actions.count) on the wheel")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+            }
+        } header: {
+            Text("Tools wheel (⌥ Option + ⇧ Shift)")
+        } footer: {
+            footnote("The wheel holds up to \(FormatCatalog.maxWedges) tools, so switch one off to make room for another. Tools with “…” open a window to choose the details first.")
+        }
+    }
+
     private var system: some View {
         Section {
             Toggle("Open Pinwheel when you log in", isOn: Binding(
@@ -469,5 +502,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+extension FileKind {
+    /// "Images", "Videos"… for headings.
+    var pluralTitle: String {
+        switch self {
+        case .image: "Images"
+        case .video: "Videos"
+        case .audio: "Audio"
+        case .pdf: "PDFs"
+        }
     }
 }

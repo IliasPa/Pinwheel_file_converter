@@ -113,12 +113,13 @@ final class JobQueue {
     var isIdle: Bool { jobs.allSatisfy(\.isDone) }
     var hasFailures: Bool { jobs.contains(where: \.isFailed) }
 
-    func enqueue(files: [SourceFile], action: WheelAction) {
+    /// `parameters` is what an editor window chose; every file gets the same.
+    func enqueue(files: [SourceFile], action: WheelAction, parameters: JobParameters? = nil) {
         let batch = UUID()
-        let combined = ConversionRequest(files: files, action: action)
-        let requests = combined.isCombinedPDF && optionsProvider().combineImagesIntoOnePDF
+        let combined = ConversionRequest(files: files, action: action, parameters: parameters)
+        let requests = combined.isMerge || (combined.isCombinedPDF && optionsProvider().combineImagesIntoOnePDF)
             ? [combined]
-            : files.map { ConversionRequest(file: $0, action: action) }
+            : files.map { ConversionRequest(file: $0, action: action, parameters: parameters) }
         let label = actionLabel(action)
         jobs.append(contentsOf: requests.map { Job(batch: batch, request: $0, actionLabel: label) })
         pump()
@@ -184,7 +185,7 @@ final class JobQueue {
                     job.outputSize = FileSize.total(result.outputs)
                     job.progress = 1
                     job.state = .finished
-                    if self?.shouldTrashOriginals() == true {
+                    if request.replacesOriginal, self?.shouldTrashOriginals() == true {
                         self?.trashOriginals(of: job)
                     }
                 }

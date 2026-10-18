@@ -3,6 +3,66 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v0.7 — 2026-10-18
+
+Edit, not just convert. Wedges that end in "…" now open a window where you
+choose the details first, and the tools wheel has new one-drop tools.
+
+**New: the image editor** (⌥⇧ wheel › Crop…, Edit…, Add BG… or Markup…)
+- **Crop:** drag the box (corners, edges, or inside to move it; drag outside
+  to draw a new one). Shapes: Free, Original, Square, 4:3, 3:2, 5:4, 16:9,
+  each in portrait or landscape. Type a **width × height** to get exactly
+  that many pixels. Turn left/right and flip.
+- **Adjust:** Auto Enhance; exposure, highlights, shadows, contrast,
+  saturation, warmth, sharpness, vignette; 11 filters (Vivid, Mono, Noir,
+  Sepia, Chrome, Fade…) with live previews.
+- **Background:** remove the background (keeps people, pets and objects);
+  put the picture on a color, a gradient, a blurred copy of itself, or
+  nothing; padding, rounded corners and shadow sliders; canvas shapes (1:1,
+  4:5, 16:9…) for posts and slides.
+- **Markup:** arrows, boxes, ovals, pen, highlighter, text, numbered steps,
+  and **Blur Out** for names, faces and numbers. Select to move, ⌘⌫ to
+  delete, eight colors, three sizes.
+- Undo/Redo for everything, **hold Compare** to see the original, choose
+  the format (Automatic keeps it, or PNG when parts are see-through). Drop
+  several pictures and the same edit is saved for each. Saved as
+  `photo (edited).jpg`; the preview and the saved file come from the same
+  drawing code, so what you see is what you get.
+
+**New tools**
+- **Remove BG** (images): the subject on a see-through PNG, in one drop.
+- **Info…** (every kind of file): see dimensions, camera, exposure, date,
+  place (with Show in Maps), codecs, pages…; edit the title, author,
+  description, keywords, artist, album, genre…; remove the location; or
+  save a copy without any info. The picture or sound is copied as it is.
+- **Trim…** (videos and audio): QuickTime-style handles; the part is cut
+  without re-encoding. Videos can also **Save This Frame** as a JPEG.
+- **Mute** (videos): the same video without sound.
+- **Merge** and **Split Pages** (PDFs): several PDFs into one (name order),
+  or one PDF per page in a folder.
+- **Password…** (PDFs): a copy that asks for a password to open.
+- **Get Text** (PDFs, and images if you switch it on): all the text as a
+  .txt file. Scanned PDF pages are read with on-device text recognition.
+
+**Tools wheel**
+- Images now have more tools than fit on one wheel (8 at most). Settings ›
+  Tools wheel chooses which show, for each kind of file. Strip Info and
+  Get Text start off the image wheel (Info… can remove the info too).
+
+**Also**
+- While an editor window is open, Pinwheel shows in the Dock and ⌘-Tab, and
+  the usual Edit menu shortcuts (⌘C, ⌘V, ⌘Z) work in its text fields.
+
+**Under the hood**
+- Jobs from editor windows carry what was chosen (`JobParameters`) and run
+  in the worker like any other job.
+- Vision (subject lifting, text recognition) takes turns within a process:
+  running several requests at once could deadlock.
+- New tests: turning and flipping, crop math, sizes, every filter, markup,
+  frames, subject cut-out, text recognition, PDF merge/split/password, mute,
+  trim, frames from video, metadata round trips for photos, PDFs, M4A, MOV
+  and MP3, and the editor's crop, markup, undo and save.
+
 ## v0.6 — 2026-10-03
 
 Faster and lighter. Every number below was measured on an M5 MacBook,

@@ -18,10 +18,8 @@ struct OutputPlan: Sendable, Equatable, Codable {
 
 enum OutputPlanner {
     static func plan(_ request: ConversionRequest, options: ConversionOptions) -> OutputPlan {
-        // A combined PDF is named after its first page (first file by name).
-        let file = request.isCombinedPDF
-            ? request.files.min { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }!
-            : request.files[0]
+        // A combined or merged PDF is named after its first page (first file by name).
+        let file = request.isCombinedPDF || request.isMerge ? firstByName(request.files) : request.files[0]
         let (folder, note) = outputFolder(for: file.url, options: options)
         var plan = OutputPlan(
             folder: folder,
@@ -44,13 +42,24 @@ enum OutputPlanner {
             }
         case .tool(let tool):
             plan.suffix = tool.nameSuffix(options: options)
-            (plan.format, plan.fileExtension) = toolOutput(tool, for: file)
+            (plan.format, plan.fileExtension) = toolOutput(tool, for: file, request: request, options: options)
+        case .open:
+            break  // opens a window; never a job (ConversionEngine.prepare refuses it)
         }
         return plan
     }
 
-    /// What a tool writes. Formats are kept whenever that makes sense.
-    static func toolOutput(_ tool: ToolAction, for file: SourceFile) -> (OutputFormat?, String) {
+    static func firstByName(_ files: [SourceFile]) -> SourceFile {
+        files.min { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }!
+    }
+
+    /// What a tool writes: a format (nil when the container is kept as it
+    /// is) and an extension (nil for a folder). Formats are kept whenever
+    /// that makes sense.
+    static func toolOutput(
+        _ tool: ToolAction, for file: SourceFile,
+        request: ConversionRequest? = nil, options: ConversionOptions = ConversionOptions()
+    ) -> (OutputFormat?, String?) {
         let ext = file.url.pathExtension.lowercased()
         switch (file.kind, tool) {
         case (.image, .compress):
@@ -58,6 +67,16 @@ enum OutputPlanner {
             // smaller themselves (TIFF, BMP, camera RAW…) become HEIC.
             if let format = file.format, [.jpeg, .heic, .png].contains(format) { return (format, ext) }
             return (.heic, OutputFormat.heic.fileExtension)
+        case (.image, .removeBackground):
+            return (.png, OutputFormat.png.fileExtension)
+        case (.image, .edit):
+            let edit = request?.imageEdit ?? ImageEdit()
+            let format = edit.outputFormat(for: file, hasAlpha: ImageConverter.hasAlpha(file.url))
+            return (format, format == file.format ? ext : format.fileExtension)
+        case (.image, .extractText), (.pdf, .extractText):
+            return (nil, "txt")
+        case (.image, .editInfo):
+            return (file.format, ext)  // same picture, new info
         case (.image, _):
             if let format = file.format, [.png, .jpeg, .heic, .tiff, .gif].contains(format) { return (format, ext) }
             return (.png, OutputFormat.png.fileExtension)
@@ -65,11 +84,27 @@ enum OutputPlanner {
             return (.mp4, OutputFormat.mp4.fileExtension)
         case (.video, .extractAudio), (.audio, .compress):
             return (.m4a, OutputFormat.m4a.fileExtension)
+        case (.video, .saveFrame):
+            return (.jpeg, OutputFormat.jpeg.fileExtension)
+        case (.video, .trim), (.audio, .trim):
+            return trimOutput(for: file, options: options)
+        case (.pdf, .split):
+            return (.pdf, nil)  // a folder with one PDF per page
         case (.pdf, _):
             return (.pdf, OutputFormat.pdf.fileExtension)
         default:
-            return (nil, ext)  // Strip Info keeps the original container
+            return (nil, ext)  // Strip Info, Mute and Edit Info keep the container
         }
+    }
+
+    /// A trimmed file keeps its container when macOS (or ffmpeg) can cut it
+    /// without re-encoding; otherwise it becomes MOV or M4A.
+    static func trimOutput(for file: SourceFile, options: ConversionOptions) -> (OutputFormat?, String) {
+        let ext = file.url.pathExtension.lowercased()
+        let containers = file.kind == .video ? ToolConverter.avVideoContainers : ToolConverter.avAudioContainers
+        if containers[ext] != nil || options.ffmpegURL != nil { return (nil, ext) }
+        let fallback: OutputFormat = file.kind == .video ? .mov : .m4a
+        return (fallback, fallback.fileExtension)
     }
 
     /// The chosen place, or the fallback folder (Downloads) with a note when
