@@ -269,7 +269,7 @@ private struct StepOptions: View {
     }
 
     private func turnPicker(_ turns: Int, set: @escaping @MainActor (Int) -> Void) -> some View {
-        Picker("Turn", selection: Binding(get: { turns }, set: set)) {
+        Picker("Turn", selection: Binding(get: { turns }, set: { set($0) })) {
             Text("Right").tag(1)
             Text("Left").tag(3)
             Text("180°").tag(2)

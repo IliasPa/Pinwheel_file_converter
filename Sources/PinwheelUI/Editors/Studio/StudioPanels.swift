@@ -66,7 +66,7 @@ struct EditSlider: View {
                     .foregroundStyle(.secondary)
             }
             Slider(
-                value: Binding(get: { value }, set: set),
+                value: Binding(get: { value }, set: { set($0) }),
                 in: range
             ) { editing in
                 editing ? model.beginSliding() : model.endSliding()
@@ -258,7 +258,7 @@ private struct AdjustPanel: View {
     private let filterColumns = [GridItem(.adaptive(minimum: 74), spacing: 8)]
 
     var body: some View {
-        Toggle(isOn: Binding(get: { settings.auto }, set: model.setAutoEnhance)) {
+        Toggle(isOn: Binding(get: { settings.auto }, set: { model.setAutoEnhance($0) })) {
             Label("Auto Enhance", systemImage: "wand.and.stars")
         }
         .toggleStyle(.button)
@@ -336,7 +336,7 @@ private struct BackgroundPanel: View {
 
     var body: some View {
         PanelSection(title: "Subject") {
-            Toggle("Remove the background", isOn: Binding(get: { model.edit.removeBackground }, set: model.setRemoveBackground))
+            Toggle("Remove the background", isOn: Binding(get: { model.edit.removeBackground }, set: { model.setRemoveBackground($0) }))
             subjectStatus
         }
 
@@ -495,7 +495,7 @@ private struct MarkupPanel: View {
         }
 
         PanelSection(title: "Size") {
-            Picker("Size", selection: Binding(get: { model.strokeSize }, set: model.setStrokeSize)) {
+            Picker("Size", selection: Binding(get: { model.strokeSize }, set: { model.setStrokeSize($0) })) {
                 ForEach(StudioModel.StrokeSize.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
@@ -504,7 +504,7 @@ private struct MarkupPanel: View {
 
         if model.tool == .text || model.selected?.kind == .text {
             PanelSection(title: model.selected?.kind == .text ? "Text" : "Text to place") {
-                TextField("Text", text: Binding(get: { model.text }, set: model.setText), axis: .vertical)
+                TextField("Text", text: Binding(get: { model.text }, set: { model.setText($0) }), axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
             }
@@ -548,7 +548,7 @@ private struct WatermarkPanel: View {
     ]
 
     var body: some View {
-        Toggle("Add a watermark", isOn: Binding(get: { model.watermark != nil }, set: model.setWatermarkShown))
+        Toggle("Add a watermark", isOn: Binding(get: { model.watermark != nil }, set: { model.setWatermarkShown($0) }))
             .toggleStyle(.switch)
         if let mark = model.watermark {
             Picker("Kind", selection: Binding(get: { mark.kind }, set: { kind in model.changeWatermark { $0.kind = kind } })) {
@@ -560,7 +560,7 @@ private struct WatermarkPanel: View {
 
             if mark.kind == .text {
                 PanelSection(title: "Text") {
-                    TextField("© Your Name", text: Binding(get: { mark.text }, set: model.setWatermarkText), axis: .vertical)
+                    TextField("© Your Name", text: Binding(get: { mark.text }, set: { model.setWatermarkText($0) }), axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(1...3)
                     HStack(spacing: 7) {

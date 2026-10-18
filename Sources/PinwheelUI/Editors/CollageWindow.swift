@@ -279,7 +279,7 @@ struct CollageView: View {
                 Text(title).font(.system(size: 12))
                 Spacer()
             }
-            Slider(value: Binding(get: { value }, set: set), in: range).controlSize(.small)
+            Slider(value: Binding(get: { value }, set: { set($0) }), in: range).controlSize(.small)
         }
     }
 

@@ -85,7 +85,7 @@ struct StudioView: View {
             if let error = model.renderError {
                 Text(error).font(.caption).foregroundStyle(.red).lineLimit(2)
             }
-            Picker("Save as", selection: Binding(get: { model.format }, set: model.setFormat)) {
+            Picker("Save as", selection: Binding(get: { model.format }, set: { model.setFormat($0) })) {
                 Text("Automatic (\(model.automaticFormat.title))").tag(OutputFormat?.none)
                 Divider()
                 ForEach([OutputFormat.jpeg, .png, .heic, .tiff], id: \.self) { format in
