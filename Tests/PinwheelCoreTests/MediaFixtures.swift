@@ -104,7 +104,9 @@ enum MediaFixtures {
                 let buffer = AVAudioPCMBuffer(pcmFormat: pcm, frameCapacity: AVAudioFrameCount(count))!
                 buffer.frameLength = AVAudioFrameCount(count)
                 for i in 0..<count {
-                    buffer.int16ChannelData![0][i] = Int16(sin(Double(nextSample + i) * 2 * .pi * 440 / Double(sampleRate)) * 8_000)
+                    // In two steps: older Swift compilers time out on it in one.
+                    let phase: Double = Double(nextSample + i) * 2 * Double.pi * 440 / Double(sampleRate)
+                    buffer.int16ChannelData![0][i] = Int16(sin(phase) * 8_000)
                 }
                 audio.append(try sampleBuffer(buffer, at: CMTime(value: CMTimeValue(nextSample), timescale: CMTimeScale(sampleRate))))
                 nextSample += count
