@@ -379,7 +379,12 @@ struct LoudnessMeter {
             let power = steps.isEmpty ? 0 : steps.reduce(0, +) / Double(steps.count)
             return power > 0 ? -0.691 + 10 * log10(power) : nil
         }
-        let blocks = (0...(steps.count - 4)).map { (steps[$0] + steps[$0 + 1] + steps[$0 + 2] + steps[$0 + 3]) / 4 }
+        // Spelled out step by step: older Swift compilers time out on it in one line.
+        let blocks: [Double] = (0...(steps.count - 4)).map { (start: Int) -> Double in
+            var sum = 0.0
+            for step in steps[start..<(start + 4)] { sum += step }
+            return sum / 4
+        }
         func loudness(_ power: Double) -> Double { -0.691 + 10 * log10(power) }
         let audible = blocks.filter { $0 > 0 && loudness($0) > -70 }
         guard !audible.isEmpty else { return nil }

@@ -3,6 +3,7 @@ name: Tests
 # Runs the whole test suite (make test) on every push and pull request.
 on:
   push:
+    branches: ["**"]  # not for version tags: their commit was already tested
   pull_request:
   workflow_dispatch:
 
@@ -18,8 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Show the toolchain
+      # The newest Xcode on the runner, to be closest to the Swift that
+      # builds the app (older ones can't type-check some expressions in time).
+      - name: Use the newest Xcode
         run: |
+          ls -d /Applications/Xcode*.app
+          newest="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$newest"
           sw_vers
           xcode-select -p
           swift --version
