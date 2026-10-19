@@ -3,6 +3,27 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v0.9.1 — 2026-10-19
+
+Fixes found by the new tests on GitHub (a 3-core Mac with macOS 26 and
+Xcode 26).
+
+**Fixed**
+- Compress and Size Limit for video and audio could stop forever on a Mac
+  with few cores: they read the file on Swift's shared threads, and on
+  macOS 26 the decoder needs those threads itself. Reading now has a
+  thread of its own, as audio decoding already did.
+- The `pinwheel` command now notices when Pinwheel quits during a job
+  (it asks again every 10 seconds and gives up after 35 seconds of
+  silence) instead of waiting for hours.
+- Builds with the Swift in Xcode 26 too: two long expressions are split
+  up, and settings sliders and pickers no longer pass functions where
+  that Swift's compiler crashed.
+
+**Under the hood**
+- GitHub runs the tests with the newest Xcode on its Mac; all 239 pass
+  there, Greek text recognition included.
+
 ## v0.9 — 2026-10-18
 
 Undo, custom actions, file size limits, batch rename, Greek text, and
