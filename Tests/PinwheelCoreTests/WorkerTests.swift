@@ -93,9 +93,12 @@ struct WorkerTests {
     @Test func stoppingAJobStopsTheWorkerAndCleansUp() async throws {
         let folder = try TempFolder()
         let source = folder.file("big.pdf")
-        try makeSlowPDF(at: source, pages: 48)
+        // Many light pages rather than a few heavy ones: the job runs long
+        // enough to be stopped, and each page being drawn when it's stopped
+        // finishes quickly, even on a busy 3-core Mac.
+        try makeSlowPDF(at: source, pages: 120)
         var options = ConversionOptions()
-        options.pdfDPI = 300
+        options.pdfDPI = 150
         let request = ConversionRequest(file: SourceFile(url: source), action: .convert(.png))
         let job = try ConversionEngine.prepare(request, options: options, naming: OutputNaming())
         let worker = try builtWorker()
