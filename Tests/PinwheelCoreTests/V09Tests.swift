@@ -353,6 +353,9 @@ struct SizeLimitTests {
         #expect(try #require(FileSize.of(output)) <= limit)
         let tracks = try await AVURLAsset(url: output).load(.tracks)
         #expect(tracks.contains { $0.mediaType == .audio })
+        // Only the original and the result: no working copies left beside them.
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.url.path).sorted()
+        #expect(names == ["clip (under \(SizeLimit.title(bytes: limit))).mp4", "clip.mov"])
     }
 
     @Test func pictureSizeShrinksWhenBitsRunShort() {

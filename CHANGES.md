@@ -3,6 +3,15 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v0.9.2 — 2026-10-19
+
+**Fixed**
+- Compressing a video (also Size Limit, and custom actions with those
+  steps) left a stray copy beside the result on macOS 27, named like
+  `clip (compressed).mp4.sb-43f18260-IOwLl9`: the not-yet-optimized
+  version, which the system forgets to delete. Pinwheel now removes it.
+  Found by trying the installed app; a test now checks for it.
+
 ## v0.9.1 — 2026-10-19
 
 Fixes found by the new tests on GitHub (a 3-core Mac with macOS 26 and

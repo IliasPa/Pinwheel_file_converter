@@ -82,6 +82,7 @@ enum VideoCompressor {
         let writer = try AVAssetWriter(outputURL: destination, fileType: .mp4)
         writer.metadata = metadata
         writer.shouldOptimizeForNetworkUse = true
+        defer { removeOptimizingCopy(of: destination) }
         var videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: size.width,
@@ -179,6 +180,18 @@ enum VideoCompressor {
         }
         await writer.finishWriting()
         guard writer.status == .completed else { throw writeError(writer) }
+    }
+
+    /// Making the file start playing before it's all downloaded, the writer
+    /// works on a copy named "<file>.sb-…", which macOS 27 leaves behind.
+    /// It's named after `destination`, a name Pinwheel picked fresh, so
+    /// nothing else can match it.
+    static func removeOptimizingCopy(of destination: URL) {
+        let folder = destination.deletingLastPathComponent()
+        let prefix = destination.lastPathComponent + ".sb-"
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [] where name.hasPrefix(prefix) {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+        }
     }
 
     /// The encoded size: the original, or smaller to fit `longSide`. Even
