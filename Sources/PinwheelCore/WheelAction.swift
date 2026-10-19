@@ -281,14 +281,6 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .rename: "Many files at once: replace, number, dates, case…"
         }
     }
-
-    /// One of the image editor's tabs.
-    public var isImageEditor: Bool {
-        switch self {
-        case .crop, .adjust, .background, .markup, .watermark: true
-        case .info, .trim, .password, .collage, .organize, .sizeLimit, .rename: false
-        }
-    }
 }
 
 /// Anything that can sit on a wedge.
@@ -338,16 +330,6 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .tool(let tool): tool.detail(for: kind, options: options)
         case .open(let editor): editor.detail(for: kind)
         case .recipe(let recipe): recipe.summary
-        }
-    }
-
-    /// A short past-tense label for menus and the progress window.
-    public var summary: String {
-        switch self {
-        case .convert(let format): "to \(format.title)"
-        case .tool(let tool): tool.title
-        case .open(let editor): editor.title
-        case .recipe(let recipe): recipe.name
         }
     }
 }

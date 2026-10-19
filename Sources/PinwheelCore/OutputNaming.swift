@@ -35,16 +35,6 @@ public final class OutputNaming: @unchecked Sendable {
         }
     }
 
-    /// Same, next to `source` and named after it.
-    public func reserve(for source: URL, suffix: String, fileExtension: String?) -> URL {
-        reserve(
-            in: source.deletingLastPathComponent(),
-            baseName: source.deletingPathExtension().lastPathComponent,
-            suffix: suffix,
-            fileExtension: fileExtension
-        )
-    }
-
     /// Call once the file is written (or the job failed).
     public func release(_ url: URL) {
         lock.lock()

@@ -3,6 +3,38 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.0 — 2026-10-19
+
+Ready for everyone: a download on GitHub, a README for new users, a
+license, and a cleaned-up, smaller app.
+
+**Fixed**
+- **Collage…** and **Organize…** with several files made one job per file
+  (a "collage" of each picture alone, or a PDF missing the other files'
+  pages). This was so since v0.8: the job queue kept only Merge and
+  images-into-one-PDF together. Found by the unused-code check below; a
+  test now goes through the job queue the way the windows do.
+
+**New**
+- **About Pinwheel** and **Check for Updates…** in the menu-bar menu. The
+  check asks GitHub for the newest release only when chosen.
+- Downloadable from GitHub Releases as **Pinwheel.zip** (`make release`
+  makes it), with install steps in the README (new, with pictures).
+- **MIT License.**
+
+**Smaller**
+- The app is **5.4 MB** (was 6.5 MB) and uses about **13 MB** of memory
+  when idle. Release builds are optimized for size (15% smaller programs;
+  the conversions measured just as fast), and the icon is 40% smaller with
+  no visible change.
+
+**Under the hood**
+- Unused code removed, found with Periphery: two crop helpers, an editor
+  flag, a menu label, a naming helper only the tests used (now in the
+  tests), unused parameters and properties. Types used only inside the
+  engine are no longer public. No unused imports or libraries were found;
+  Pinwheel depends only on Apple's frameworks.
+
 ## v0.9.2 — 2026-10-19
 
 **Fixed**

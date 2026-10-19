@@ -74,6 +74,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if launch.needsApproval { login.toolTip = "Waiting for your approval in System Settings › Login Items" }
         menu.addItem(login)
         menu.addItem(.separator())
+        menu.addItem(item("About Pinwheel", #selector(showAbout)))
+        menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
+        menu.addItem(.separator())
         menu.addItem(item("Quit Pinwheel", #selector(quit), key: "q"))
     }
 
@@ -170,6 +173,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         alert.runModal()
     }
     @objc private func quit() { actions.quit() }
+    @objc private func showAbout() { UpdateChecker.showAbout() }
+    @objc private func checkForUpdates() { Task { await UpdateChecker.check() } }
 }
 
 private extension String {

@@ -262,7 +262,7 @@ final class StudioModel {
         }
     }
 
-    /// True while a new preview is being drawn.
+    /// True while a new preview is being drawn (tests wait for it).
     var isRendering: Bool { renderTask != nil || loadTask.map { _ in source == nil && loadError == nil } == true }
 
     /// Draws again soon; several requests in a row draw once, with the latest edit.

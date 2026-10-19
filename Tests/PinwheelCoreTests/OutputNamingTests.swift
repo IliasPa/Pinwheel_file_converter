@@ -41,3 +41,13 @@ struct OutputNamingTests {
         #expect(naming.reserve(for: source, suffix: "compressed", fileExtension: "pdf").lastPathComponent == "doc (compressed).pdf")
     }
 }
+
+extension OutputNaming {
+    /// Next to `source` and named after it.
+    func reserve(for source: URL, suffix: String, fileExtension: String?) -> URL {
+        reserve(
+            in: source.deletingLastPathComponent(), baseName: source.deletingPathExtension().lastPathComponent,
+            suffix: suffix, fileExtension: fileExtension
+        )
+    }
+}

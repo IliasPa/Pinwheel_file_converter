@@ -123,7 +123,7 @@ enum OutputPlanner {
         var current = file
         var result: (OutputFormat?, String?) = (file.format, file.url.pathExtension.lowercased())
         for step in recipe.steps {
-            let (action, parameters) = step.job(for: current)
+            let (action, parameters) = step.job
             switch action {
             case .convert(let format):
                 result = (format, format.fileExtension)

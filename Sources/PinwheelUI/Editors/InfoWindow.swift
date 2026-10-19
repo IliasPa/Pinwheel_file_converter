@@ -120,7 +120,7 @@ struct InfoView: View {
             Form {
                 if let details = model.details {
                     if !details.fields.isEmpty { editableSection(details) }
-                    if let location = details.location { locationSection(location, details: details) }
+                    if let location = details.location { locationSection(location) }
                     ForEach(details.sections) { section in
                         Section(section.title) {
                             ForEach(section.rows) { row in
@@ -197,7 +197,7 @@ struct InfoView: View {
         }
     }
 
-    private func locationSection(_ location: GeoLocation, details: FileDetails) -> some View {
+    private func locationSection(_ location: GeoLocation) -> some View {
         Section("Location") {
             LabeledContent("Taken at") {
                 Text(location.description).textSelection(.enabled)
@@ -227,10 +227,7 @@ struct InfoView: View {
 }
 
 final class InfoWindowController: EditorWindowController {
-    let model: InfoModel
-
     init(model: InfoModel) {
-        self.model = model
         let title = model.files.count == 1 ? "Info: \(model.files[0].url.lastPathComponent)" : "Info: \(model.files.count) Files"
         super.init(title: title, size: NSSize(width: 560, height: 680), content: InfoView(model: model))
         model.onClose = { [weak self] in self?.window?.close() }

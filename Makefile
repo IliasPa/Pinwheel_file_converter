@@ -4,7 +4,7 @@ BUILD_ROOT := $(HOME)/Library/Developer/Pinwheel
 APP        := $(BUILD_ROOT)/Pinwheel.app
 INSTALLED  := /Applications/Pinwheel.app
 
-.PHONY: build run test install uninstall clean icon
+.PHONY: build run test install uninstall clean icon release
 
 build:            ## Build Pinwheel.app (outside OneDrive, in ~/Library/Developer/Pinwheel)
 	@scripts/build-app.sh
@@ -27,6 +27,9 @@ install: build    ## Build and copy into /Applications, then start it from there
 	@echo "==> Installed to $(INSTALLED)"
 	@open "$(INSTALLED)"
 
+release:          ## Build and pack Pinwheel.zip for a GitHub release
+	@scripts/release.sh
+
 uninstall:        ## Quit Pinwheel and remove it from /Applications
 	@pkill -x Pinwheel || true
 	@rm -rf "$(INSTALLED)"
@@ -38,5 +41,11 @@ icon:             ## Redraw Support/AppIcon.icns from scripts/make-icon.swift
 	@rm -rf "$(BUILD_ROOT)/AppIcon.iconset"
 	@mkdir -p "$(BUILD_ROOT)"
 	@swift scripts/make-icon.swift "$(BUILD_ROOT)/AppIcon.iconset"
+	@# pngquant (if installed) makes the icon 40% smaller with no visible change.
+	@if command -v pngquant >/dev/null; then \
+		for f in "$(BUILD_ROOT)"/AppIcon.iconset/*.png; do \
+			pngquant --quality=90-100 --speed 1 --strip --force --output "$$f" -- "$$f" || true; \
+		done; \
+	fi
 	@iconutil -c icns "$(BUILD_ROOT)/AppIcon.iconset" -o Support/AppIcon.icns
 	@echo "==> Wrote Support/AppIcon.icns"

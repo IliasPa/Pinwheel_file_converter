@@ -30,29 +30,29 @@ public struct TextRecognition: Codable, Sendable, Equatable {
 
 /// One word and where it is: `box` is a share (0…1) of the picture, from
 /// its top left corner.
-public struct RecognizedWord: Sendable, Equatable {
-    public var text: String
-    public var box: CGRect
+struct RecognizedWord: Sendable, Equatable {
+    var text: String
+    var box: CGRect
 
-    public init(text: String, box: CGRect) {
+    init(text: String, box: CGRect) {
         self.text = text
         self.box = box
     }
 }
 
-public struct RecognizedLine: Sendable, Equatable {
-    public var words: [RecognizedWord]
+struct RecognizedLine: Sendable, Equatable {
+    var words: [RecognizedWord]
     /// A new paragraph starts here (plain text gets a blank line before it).
-    public var startsParagraph = false
+    var startsParagraph = false
 
-    public var text: String { words.map(\.text).joined(separator: " ") }
+    var text: String { words.map(\.text).joined(separator: " ") }
 }
 
-public struct RecognizedText: Sendable, Equatable {
-    public var lines: [RecognizedLine] = []
+struct RecognizedText: Sendable, Equatable {
+    var lines: [RecognizedLine] = []
 
     /// The lines in reading order, with blank lines between paragraphs.
-    public var string: String {
+    var string: String {
         var result = ""
         for (index, line) in lines.enumerated() {
             if index > 0 { result += line.startsParagraph ? "\n\n" : "\n" }
@@ -61,11 +61,11 @@ public struct RecognizedText: Sendable, Equatable {
         return result
     }
 
-    public var isEmpty: Bool { lines.allSatisfy { $0.words.isEmpty } }
+    var isEmpty: Bool { lines.allSatisfy { $0.words.isEmpty } }
 }
 
-public enum TextRecognizer {
-    public static func recognize(_ image: CGImage, settings: TextRecognition) async throws -> RecognizedText {
+enum TextRecognizer {
+    static func recognize(_ image: CGImage, settings: TextRecognition) async throws -> RecognizedText {
         switch settings.engine {
         case .vision:
             return try await Blocking.run { _ in try vision(image) }

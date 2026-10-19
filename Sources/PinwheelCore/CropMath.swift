@@ -10,9 +10,7 @@ public enum CropHandle: Sendable, Equatable {
     case new
 
     var movesLeft: Bool { [.topLeft, .left, .bottomLeft].contains(self) }
-    var movesRight: Bool { [.topRight, .right, .bottomRight].contains(self) }
     var movesTop: Bool { [.topLeft, .top, .topRight].contains(self) }
-    var movesBottom: Bool { [.bottomLeft, .bottom, .bottomRight].contains(self) }
 }
 
 /// Dragging the crop box. Everything is in pixels of the turned picture,

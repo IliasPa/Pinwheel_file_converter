@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @testable import PinwheelCore
 
 struct ImageConverterTests {
-    private func convert(_ source: URL, to format: OutputFormat, in folder: TempFolder) async throws -> URL {
+    private func convert(_ source: URL, to format: OutputFormat) async throws -> URL {
         try await runConversion(source, .convert(format))
     }
 
@@ -16,7 +16,7 @@ struct ImageConverterTests {
         let source = folder.file("picture.\(format == .png ? "tiff" : "png")")
         try Fixtures.makeImage(at: source, type: format == .png ? .tiff : .png)
 
-        let output = try await convert(source, to: format, in: folder)
+        let output = try await convert(source, to: format)
         #expect(output.lastPathComponent == "picture (converted).\(format.fileExtension)")
         let info = try #require(Fixtures.readImage(output))
         #expect(info.type == format.utType.identifier)
@@ -27,7 +27,7 @@ struct ImageConverterTests {
         let folder = try TempFolder()
         let source = folder.file("logo.png")
         try Fixtures.makeImage(at: source)
-        let output = try await convert(source, to: .jpeg, in: folder)
+        let output = try await convert(source, to: .jpeg)
         let info = try #require(Fixtures.readImage(output))
         let transparentSide = Fixtures.pixel(info.image, x: 90, y: 30)
         #expect(transparentSide.r > 240 && transparentSide.g > 240 && transparentSide.b > 240)
@@ -41,7 +41,7 @@ struct ImageConverterTests {
         try Fixtures.makeImage(at: source, type: .jpeg, properties: [
             kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFMake: "PinwheelCam"],
         ])
-        let output = try await convert(source, to: .heic, in: folder)
+        let output = try await convert(source, to: .heic)
         let info = try #require(Fixtures.readImage(output))
         let tiff = info.properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
         #expect(tiff?[kCGImagePropertyTIFFMake] as? String == "PinwheelCam")
@@ -51,7 +51,7 @@ struct ImageConverterTests {
         let folder = try TempFolder()
         let source = folder.file("scan.png")
         try Fixtures.makeImage(at: source, width: 144, height: 72)
-        let output = try await convert(source, to: .pdf, in: folder)
+        let output = try await convert(source, to: .pdf)
         let pdf = try #require(CGPDFDocument(output as CFURL))
         #expect(pdf.numberOfPages == 1)
         let box = try #require(pdf.page(at: 1)?.getBoxRect(.mediaBox))
@@ -62,8 +62,8 @@ struct ImageConverterTests {
         let folder = try TempFolder()
         let source = folder.file("a.png")
         try Fixtures.makeImage(at: source)
-        let first = try await convert(source, to: .jpeg, in: folder)
-        let second = try await convert(source, to: .jpeg, in: folder)
+        let first = try await convert(source, to: .jpeg)
+        let second = try await convert(source, to: .jpeg)
         #expect(first.lastPathComponent == "a (converted).jpg")
         #expect(second.lastPathComponent == "a (converted 2).jpg")
         #expect(FileManager.default.fileExists(atPath: first.path))

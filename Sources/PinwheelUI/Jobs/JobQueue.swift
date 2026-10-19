@@ -134,11 +134,13 @@ final class JobQueue {
     var hasFailures: Bool { jobs.contains(where: \.isFailed) }
 
     /// `parameters` is what an editor window chose; every file gets the same.
-    /// Returns the batch, so whoever asked can follow it.
+    /// Files that make one result together (a merge, a collage, organized
+    /// pages, images into one PDF) are one job. Returns the batch, so
+    /// whoever asked can follow it.
     @discardableResult
     func enqueue(files: [SourceFile], action: WheelAction, parameters: JobParameters? = nil) -> UUID {
         let combined = ConversionRequest(files: files, action: action, parameters: parameters)
-        let requests = combined.isMerge || (combined.isCombinedPDF && optionsProvider().combineImagesIntoOnePDF)
+        let requests = combined.isCombined || (combined.isCombinedPDF && optionsProvider().combineImagesIntoOnePDF)
             ? [combined]
             : files.map { ConversionRequest(file: $0, action: action, parameters: parameters) }
         return enqueue(requests, label: actionLabel(action))

@@ -4,12 +4,12 @@ import Foundation
 
 /// Turns markup positions (0...1 of the turned picture) into pixels of the
 /// cropped and resized picture they're drawn on.
-public struct MarkupMapping: Sendable {
+struct MarkupMapping: Sendable {
     /// The turned picture's size, and the crop in its pixels (y down).
-    public let turnedSize: CGSize
-    public let crop: CGRect
+    let turnedSize: CGSize
+    let crop: CGRect
     /// The picture being drawn on.
-    public let contentSize: CGSize
+    let contentSize: CGSize
 
     var scaleX: CGFloat { contentSize.width / max(crop.width, 1) }
     var scaleY: CGFloat { contentSize.height / max(crop.height, 1) }

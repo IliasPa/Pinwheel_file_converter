@@ -669,10 +669,7 @@ final class PlayerLayerView: NSView {
 }
 
 final class MediaEditorWindowController: EditorWindowController {
-    let model: MediaEditorModel
-
     init(model: MediaEditorModel) {
-        self.model = model
         let title = model.files.count == 1 ? "Edit \(model.files[0].url.lastPathComponent)" : "Edit \(model.files.count) Files"
         super.init(title: title, size: NSSize(width: 1060, height: 680), content: MediaEditorView(model: model))
         model.onClose = { [weak self] in self?.window?.close() }

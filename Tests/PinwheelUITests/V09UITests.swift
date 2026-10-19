@@ -270,7 +270,7 @@ struct CommandTests {
         quitting.enqueue = { _, _, _ in UUID() }  // never finishes
         quitting.start()
         Task {
-            try await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .seconds(1))
             quitting.stop()
         }
         let gone = try await run(["compress", photo.path], channel: "\(channel).quit")
@@ -551,5 +551,51 @@ struct MediaEditorVideoTests {
         #expect(turned.width > turned.height, "the timeline turns with the picture")
         model.turn(clockwise: false)
         #expect(try #require(model.filmstrip.first).height > first.width)
+    }
+}
+
+// MARK: - Windows whose files make one result
+
+struct CombinedJobTests {
+    @Test func aCollageAndOrganizedPagesAreOneJobEach() async throws {
+        let scratch = try Scratch()
+        let pictures = try ["a.png", "b.png", "c.png"].map { SourceFile(url: try scratch.image($0)) }
+        let queue = JobQueue()
+        queue.enqueue(files: pictures, action: .tool(.collage), parameters: .collage(CollageSpec()))
+        #expect(queue.jobs.count == 1, "three pictures, one collage")
+
+        func pdf(_ name: String, pages: Int) -> SourceFile {
+            let url = scratch.url.appendingPathComponent(name)
+            let document = PDFDocument()
+            for _ in 0..<pages { document.insert(PDFPage(), at: document.pageCount) }
+            document.write(to: url)
+            return SourceFile(url: url)
+        }
+        let pdfs = [pdf("x.pdf", pages: 2), pdf("y.pdf", pages: 1)]
+        let pages = PageArrangement(pages: [.init(file: 1, page: 0), .init(file: 0, page: 1), .init(file: 0, page: 0)])
+        queue.enqueue(files: pdfs, action: .tool(.organize), parameters: .pages(pages))
+        #expect(queue.jobs.count == 2)
+        try await waitUntil { queue.isIdle }
+
+        let collage = try #require(queue.jobs[0].outputs.first)
+        #expect(collage.lastPathComponent.hasPrefix("a (collage)"))
+        let organized = try #require(queue.jobs[1].outputs.first)
+        #expect(PDFDocument(url: organized)?.pageCount == 3, "pages from both PDFs")
+        #expect(queue.jobs.allSatisfy { $0.state == .finished })
+    }
+}
+
+// MARK: - Updates
+
+struct UpdateCheckerTests {
+    @Test func versionsCompareNumberByNumber() throws {
+        #expect(UpdateChecker.isNewer("1.1", than: "1.0"))
+        #expect(UpdateChecker.isNewer("v1.10", than: "1.9"))
+        #expect(UpdateChecker.isNewer("2", than: "1.9.9"))
+        #expect(!UpdateChecker.isNewer("1.0", than: "1.0"))
+        #expect(!UpdateChecker.isNewer("1.0", than: "1.0.1"))
+        #expect(!UpdateChecker.isNewer("0.9.2", than: "1.0"))
+        let release = try JSONDecoder().decode(UpdateChecker.Release.self, from: Data(#"{"tag_name": "v1.1", "html_url": "https://github.com/IliasPa/Pinwheel_file_converter/releases/tag/v1.1", "name": "x"}"#.utf8))
+        #expect(release.version == "1.1")
     }
 }

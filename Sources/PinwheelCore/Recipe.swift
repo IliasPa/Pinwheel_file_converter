@@ -251,8 +251,8 @@ public enum RecipeStep: Codable, Sendable, Hashable {
         }
     }
 
-    /// The job that does this step on one file.
-    public func job(for file: SourceFile) -> (action: WheelAction, parameters: JobParameters?) {
+    /// The job that does this step (the same for every file).
+    public var job: (action: WheelAction, parameters: JobParameters?) {
         switch self {
         case .convert(let format): return (.convert(format), nil)
         case .compress: return (.tool(.compress), nil)
@@ -342,7 +342,7 @@ enum RecipeRunner {
             stepOptions.saveLocation = .folder(folder)
             stepOptions.fallbackFolder = folder
             if case .resize(let size) = step { stepOptions.resize = size }
-            let (action, parameters) = step.job(for: current)
+            let (action, parameters) = step.job
             let request = ConversionRequest(file: current, action: action, parameters: parameters)
             let total = Double(recipe.steps.count)
             let result = try await ConversionEngine.run(request, options: stepOptions, naming: naming) { value in

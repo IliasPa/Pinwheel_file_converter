@@ -71,7 +71,7 @@ public enum ConversionEngine {
             guard file.kind == recipe.kind else { return .unavailable("Made for \(recipe.kind.pluralTitle.lowercased())") }
             var current = file
             for step in recipe.steps {
-                let (action, _) = step.job(for: current)
+                let action = step.job.action
                 if case .unavailable(let reason) = availability(of: action, for: [current], ffmpegAvailable: ffmpegAvailable) {
                     return .unavailable("\(step.title): \(reason)")
                 }

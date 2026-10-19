@@ -120,10 +120,9 @@ final class Conversation: @unchecked Sendable {
     var failed = false
     /// When Pinwheel last answered (it answers each repeat of the request).
     var lastHeard = Date()
-    private var observer: NSObjectProtocol?
 
     func listen() {
-        observer = DistributedNotificationCenter.default().addObserver(forName: replyName, object: nil, queue: .main) { [self] note in
+        _ = DistributedNotificationCenter.default().addObserver(forName: replyName, object: nil, queue: .main) { [self] note in
             guard let info = note.userInfo, info["id"] as? String == id else { return }
             lastHeard = Date()
             let state = info["state"] as? String ?? ""
