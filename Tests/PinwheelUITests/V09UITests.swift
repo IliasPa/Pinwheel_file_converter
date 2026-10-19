@@ -229,13 +229,18 @@ struct CommandTests {
             let process = Process()
             process.executableURL = cli
             process.arguments = arguments
-            process.environment = ["PINWHEEL_CHANNEL": channel]
+            process.environment = ["PINWHEEL_CHANNEL": channel, "PINWHEEL_PATIENCE": "3"]
             let out = Pipe(), err = Pipe()
             process.standardOutput = out
             process.standardError = err
             try process.run()
-            // Keep the main thread free for the notifications while it runs.
-            for _ in 0..<600 where process.isRunning { try await Task.sleep(for: .milliseconds(25)) }
+            // Keep the main thread free for the notifications while it runs,
+            // for at most a minute (a command that hangs fails the test).
+            for _ in 0..<2400 where process.isRunning { try await Task.sleep(for: .milliseconds(25)) }
+            if process.isRunning {
+                process.terminate()
+                Issue.record("pinwheel \(arguments.joined(separator: " ")) didn't finish within a minute")
+            }
             process.waitUntilExit()
             let text = { (pipe: Pipe) in String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self) }
             return (process.terminationStatus, text(out), text(err))
@@ -257,6 +262,20 @@ struct CommandTests {
         let result = try await run(["convert", "jpg", photo.path], channel: channel)
         #expect(result.status == 0, "\(result.err)")
         #expect(result.out.trimmingCharacters(in: .whitespacesAndNewlines) == scratch.url.appendingPathComponent("photo (converted).jpg").path)
+        center.stop()
+
+        // Pinwheel takes the job, then goes quiet (it quit): the command says
+        // so after a while instead of waiting forever.
+        let quitting = CommandCenter(channel: "\(channel).quit")
+        quitting.enqueue = { _, _, _ in UUID() }  // never finishes
+        quitting.start()
+        Task {
+            try await Task.sleep(for: .seconds(1))
+            quitting.stop()
+        }
+        let gone = try await run(["compress", photo.path], channel: "\(channel).quit")
+        #expect(gone.status == 3)
+        #expect(gone.err.contains("stopped answering"))
     }
 }
 

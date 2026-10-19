@@ -134,41 +134,48 @@ enum VideoCompressor {
         }
         writer.startSession(atSourceTime: .zero)
 
-        // Feed both tracks in turn; the writer wants them interleaved.
-        var videoDone = false
-        var audioDone = audioInput == nil
-        do {
-            while !videoDone || !audioDone {
-                try Task.checkCancellation()
-                var fed = false
-                if !videoDone, videoInput.isReadyForMoreMediaData {
-                    if let buffer = videoOutput.copyNextSampleBuffer() {
-                        guard videoInput.append(buffer) else { throw writeError(writer) }
-                        if duration > 0 { progress(min(buffer.presentationTimeStamp.seconds / duration, 0.99)) }
-                    } else {
-                        videoInput.markAsFinished()
-                        videoDone = true
+        // Feed both tracks in turn; the writer wants them interleaved. On a
+        // thread of its own: reading waits for the decoder, which on macOS 26
+        // needs Swift's shared threads itself (with all of them waiting here,
+        // nothing moved on a Mac with few cores).
+        let pipeline = Handoff(value: (reader, writer, videoOutput, videoInput, audioOutput, audioInput))
+        try await Blocking.run { isCancelled in
+            let (reader, writer, videoOutput, videoInput, audioOutput, audioInput) = pipeline.value
+            var videoDone = false
+            var audioDone = audioInput == nil
+            do {
+                while !videoDone || !audioDone {
+                    if isCancelled() { throw CancellationError() }
+                    var fed = false
+                    if !videoDone, videoInput.isReadyForMoreMediaData {
+                        if let buffer = videoOutput.copyNextSampleBuffer() {
+                            guard videoInput.append(buffer) else { throw writeError(writer) }
+                            if duration > 0 { progress(min(buffer.presentationTimeStamp.seconds / duration, 0.99)) }
+                        } else {
+                            videoInput.markAsFinished()
+                            videoDone = true
+                        }
+                        fed = true
                     }
-                    fed = true
-                }
-                if !audioDone, let audioInput, let audioOutput, audioInput.isReadyForMoreMediaData {
-                    if let buffer = audioOutput.copyNextSampleBuffer() {
-                        guard audioInput.append(buffer) else { throw writeError(writer) }
-                    } else {
-                        audioInput.markAsFinished()
-                        audioDone = true
+                    if !audioDone, let audioInput, let audioOutput, audioInput.isReadyForMoreMediaData {
+                        if let buffer = audioOutput.copyNextSampleBuffer() {
+                            guard audioInput.append(buffer) else { throw writeError(writer) }
+                        } else {
+                            audioInput.markAsFinished()
+                            audioDone = true
+                        }
+                        fed = true
                     }
-                    fed = true
+                    if !fed { Thread.sleep(forTimeInterval: 0.002) }
                 }
-                if !fed { try await Task.sleep(for: .milliseconds(2)) }
+                if reader.status == .failed {
+                    throw ConversionError.failed(reader.error?.localizedDescription ?? "Couldn't read the video.")
+                }
+            } catch {
+                reader.cancelReading()
+                writer.cancelWriting()
+                throw error
             }
-            if reader.status == .failed {
-                throw ConversionError.failed(reader.error?.localizedDescription ?? "Couldn't read the video.")
-            }
-        } catch {
-            reader.cancelReading()
-            writer.cancelWriting()
-            throw error
         }
         await writer.finishWriting()
         guard writer.status == .completed else { throw writeError(writer) }

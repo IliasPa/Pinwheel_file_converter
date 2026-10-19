@@ -40,6 +40,11 @@ final class CommandCenter {
     private var seen: Set<String> = []
     private var observer: NSObjectProtocol?
 
+    func stop() {
+        if let observer { DistributedNotificationCenter.default().removeObserver(observer) }
+        observer = nil
+    }
+
     func start() {
         let name = Notification.Name("\(channel).command")
         observer = DistributedNotificationCenter.default().addObserver(forName: name, object: nil, queue: .main) { [weak self] note in

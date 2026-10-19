@@ -262,6 +262,12 @@ private final class OutputCollector: @unchecked Sendable {
     }
 }
 
+/// Apple objects that aren't marked Sendable (an asset reader and its
+/// writer), handed to the one thread that uses them until it's done.
+struct Handoff<Value>: @unchecked Sendable {
+    let value: Value
+}
+
 /// Runs blocking work (a decoding loop, Vision, offline audio rendering) on
 /// a thread of its own instead of Swift's small shared thread pool. Apple's
 /// frameworks use that pool themselves, so filling it with waiting work can

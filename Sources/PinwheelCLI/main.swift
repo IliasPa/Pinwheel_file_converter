@@ -9,6 +9,8 @@ let bundleID = "com.iliasmac.Pinwheel"
 /// Tests talk on a channel of their own, so a running Pinwheel stays out of it.
 let testChannel = ProcessInfo.processInfo.environment["PINWHEEL_CHANNEL"]
 let channel = testChannel ?? bundleID
+/// How long Pinwheel may stay silent before it's thought gone (tests wait less).
+let patience = testChannel.flatMap { _ in ProcessInfo.processInfo.environment["PINWHEEL_PATIENCE"].flatMap(Double.init) } ?? 35
 let requestName = Notification.Name("\(channel).command")
 let replyName = Notification.Name("\(channel).reply")
 
@@ -116,11 +118,14 @@ final class Conversation: @unchecked Sendable {
     var outputs: [String] = []
     var messages: [String] = []
     var failed = false
+    /// When Pinwheel last answered (it answers each repeat of the request).
+    var lastHeard = Date()
     private var observer: NSObjectProtocol?
 
     func listen() {
         observer = DistributedNotificationCenter.default().addObserver(forName: replyName, object: nil, queue: .main) { [self] note in
             guard let info = note.userInfo, info["id"] as? String == id else { return }
+            lastHeard = Date()
             let state = info["state"] as? String ?? ""
             outputs = info["outputs"] as? [String] ?? outputs
             messages = info["messages"] as? [String] ?? messages
@@ -215,7 +220,19 @@ if !conversation.accepted { fail("nobody answered on the test channel.", code: 3
 // A window was opened: show it in front of the app the command came from.
 if name == "open" && testChannel == nil { openPinwheel(front: true) }
 if wait {
-    _ = conversation.wait(seconds: 6 * 3600, until: { conversation.finished })
+    // Ask again now and then: Pinwheel answers "still on it", so a Pinwheel
+    // that quit or crashed is noticed instead of waited for forever.
+    var lastAsked = Date()
+    while !conversation.finished {
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.2))
+        if Date().timeIntervalSince(lastAsked) > patience / 3.5 {
+            conversation.send(request)
+            lastAsked = Date()
+        }
+        if Date().timeIntervalSince(conversation.lastHeard) > patience {
+            fail("Pinwheel stopped answering. Did it quit?", code: 3)
+        }
+    }
 }
 for output in conversation.outputs { print(output) }
 for message in conversation.messages { FileHandle.standardError.write(Data("\(message)\n".utf8)) }

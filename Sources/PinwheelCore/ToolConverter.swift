@@ -358,26 +358,32 @@ enum AudioCompressor {
             throw ConversionError.failed(reader.error?.localizedDescription ?? writer.error?.localizedDescription ?? "Couldn't read the audio.")
         }
         writer.startSession(atSourceTime: .zero)
-        do {
-            while let buffer = output.copyNextSampleBuffer() {
-                try Task.checkCancellation()
-                while !input.isReadyForMoreMediaData {
-                    try await Task.sleep(for: .milliseconds(5))
+        // On a thread of its own, like every reading loop (see VideoCompressor).
+        let pipeline = Handoff(value: (reader, writer, output, input))
+        try await Blocking.run { isCancelled in
+            let (reader, writer, output, input) = pipeline.value
+            do {
+                while let buffer = output.copyNextSampleBuffer() {
+                    if isCancelled() { throw CancellationError() }
+                    while !input.isReadyForMoreMediaData {
+                        if isCancelled() { throw CancellationError() }
+                        Thread.sleep(forTimeInterval: 0.005)
+                    }
+                    guard input.append(buffer) else {
+                        throw ConversionError.failed(writer.error?.localizedDescription ?? "Couldn't write the audio.")
+                    }
+                    if duration > 0 {
+                        progress(min(buffer.presentationTimeStamp.seconds / duration, 0.99))
+                    }
                 }
-                guard input.append(buffer) else {
-                    throw ConversionError.failed(writer.error?.localizedDescription ?? "Couldn't write the audio.")
+                if reader.status == .failed {
+                    throw ConversionError.failed(reader.error?.localizedDescription ?? "Couldn't read the audio.")
                 }
-                if duration > 0 {
-                    progress(min(buffer.presentationTimeStamp.seconds / duration, 0.99))
-                }
+            } catch {
+                reader.cancelReading()
+                writer.cancelWriting()
+                throw error
             }
-            if reader.status == .failed {
-                throw ConversionError.failed(reader.error?.localizedDescription ?? "Couldn't read the audio.")
-            }
-        } catch {
-            reader.cancelReading()
-            writer.cancelWriting()
-            throw error
         }
         input.markAsFinished()
         await writer.finishWriting()
