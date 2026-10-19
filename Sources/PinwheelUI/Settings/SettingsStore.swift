@@ -344,6 +344,14 @@ final class SettingsStore {
     }
 
     private static let lastSizeLimitKey = "lastSizeLimit"
+
+    /// The address last given in Send Feedback, offered again (kept on this Mac only).
+    var feedbackEmail: String {
+        get { defaults.string(forKey: Self.feedbackEmailKey) ?? "" }
+        set { defaults.set(newValue, forKey: Self.feedbackEmailKey) }
+    }
+
+    private static let feedbackEmailKey = "feedbackEmail"
     private static let recipesKey = "recipes"
     private static let renamePresetsKey = "renamePresets"
 

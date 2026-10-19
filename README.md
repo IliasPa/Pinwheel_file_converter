@@ -124,8 +124,10 @@ menu.
 
 Pinwheel converts and edits on your Mac and sends nothing anywhere. It goes
 online only when you ask it to: **Check for Updates…** asks GitHub for the
-newest version, and **Download Greek** gets Tesseract's Greek file from the
-Tesseract project.
+newest version, **Download Greek** gets Tesseract's Greek file from the
+Tesseract project, and **Send Feedback…** sends your message (with your
+email only if you add it, and Pinwheel's and macOS's version) to the
+developer through [formsubmit.co](https://formsubmit.co).
 
 The Accessibility permission is used only to notice the Shift and Option
 keys and the mouse while you drag files. Pinwheel never records what you
@@ -154,7 +156,10 @@ install Tesseract and click **Download Greek** in Settings › Text recognition.
 
 ## Ideas and bugs
 
-Open an [issue on GitHub](https://github.com/IliasPa/Pinwheel_file_converter/issues).
+Menu-bar icon › **Send Feedback…**: write up to 400 characters, and add your
+email if you'd like to hear back (whether it was added, if it can't be done,
+or when work on it starts). Or open an
+[issue on GitHub](https://github.com/IliasPa/Pinwheel_file_converter/issues).
 What changed in each version is in [CHANGES.md](CHANGES.md).
 
 ## Build it yourself

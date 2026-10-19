@@ -19,6 +19,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var editors = EditorCoordinator(settings: settings)
     private var menuBar: MenuBarController?
     private var settingsWindow: SettingsWindowController?
+    private var feedbackWindow: FeedbackWindowController?
 
     override public init() {
         super.init()
@@ -33,6 +34,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 showSettings: { [weak self] in self?.showSettings() },
                 showProgress: { [weak self] in self?.progress.show() },
                 showFFmpegHelp: { [weak self] in self?.showFFmpegHelp() },
+                showFeedback: { [weak self] in self?.showFeedback() },
                 quit: { NSApp.terminate(nil) }
             ),
             recents: recents,
@@ -172,6 +174,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         settingsWindow?.present()
+    }
+
+    private func showFeedback() {
+        if feedbackWindow?.window?.isVisible != true {
+            let model = FeedbackModel(email: settings.feedbackEmail)
+            model.onSent = { [weak self] email in self?.settings.feedbackEmail = email }
+            feedbackWindow = FeedbackWindowController(model: model)
+        }
+        feedbackWindow?.present()
     }
 
     private func showFFmpegHelp() {

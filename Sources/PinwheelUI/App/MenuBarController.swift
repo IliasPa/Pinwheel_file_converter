@@ -6,6 +6,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var showSettings: @MainActor () -> Void
         var showProgress: @MainActor () -> Void
         var showFFmpegHelp: @MainActor () -> Void
+        var showFeedback: @MainActor () -> Void
         var quit: @MainActor () -> Void
     }
 
@@ -74,6 +75,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if launch.needsApproval { login.toolTip = "Waiting for your approval in System Settings › Login Items" }
         menu.addItem(login)
         menu.addItem(.separator())
+        menu.addItem(item("Send Feedback…", #selector(showFeedback)))
         menu.addItem(item("About Pinwheel", #selector(showAbout)))
         menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
         menu.addItem(.separator())
@@ -173,6 +175,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         alert.runModal()
     }
     @objc private func quit() { actions.quit() }
+    @objc private func showFeedback() { actions.showFeedback() }
     @objc private func showAbout() { UpdateChecker.showAbout() }
     @objc private func checkForUpdates() { Task { await UpdateChecker.check() } }
 }

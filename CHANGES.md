@@ -3,6 +3,17 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.1 — 2026-10-19
+
+**New**
+- **Send Feedback…** in the menu-bar menu: an idea, a problem or a change,
+  in up to 400 characters, straight to Pinwheel's developer. Add an email
+  address to hear back (whether it was added, if it can't be done, or when
+  work starts); it's optional, and remembered on this Mac only. Messages go
+  through formsubmit.co with Pinwheel's and macOS's version, nothing else.
+  If sending doesn't work, **Send It by Email Instead** opens the message
+  in the Mail app.
+
 ## v1.0 — 2026-10-19
 
 Ready for everyone: a download on GitHub, a README for new users, a
