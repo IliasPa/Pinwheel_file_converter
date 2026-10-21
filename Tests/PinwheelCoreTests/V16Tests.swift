@@ -202,7 +202,10 @@ struct V16VideoTests {
 struct V16VisualizerTests {
     @Test func barsFollowThePitch() {
         let spectrum = Visualizer.Spectrum(size: 2048, rate: 44_100, bands: 48)
-        let tone = (0..<2048).map { Float(0.5 * sin(2 * .pi * 1000 * Double($0) / 44_100)) }
+        let tone: [Float] = (0..<2048).map { index in
+            let time = Double(index) / 44_100
+            return Float(0.5 * sin(2 * Double.pi * 1000 * time))
+        }
         let levels = spectrum.levels(tone)
         let loudest = levels.indices.max { levels[$0] < levels[$1] }!
         // 48 bands from 50 Hz to 12 kHz: 1 kHz is band 26.
@@ -217,7 +220,8 @@ struct V16VisualizerTests {
             return pink
         }
         let spread = spectrum.levels(noise)
-        #expect(spread[40...].reduce(0, +) / 8 > 0.3, "high bars: \(spread[40...])")
+        let high: Float = spread[40...].reduce(0, +) / 8
+        #expect(high > 0.3, "high bars: \(spread[40...])")
     }
 
     @Test func aVideoOfTheSound() async throws {

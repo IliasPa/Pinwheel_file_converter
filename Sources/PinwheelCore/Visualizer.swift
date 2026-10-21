@@ -347,10 +347,25 @@ public enum Visualizer {
         let scale = longerSide / max(full.width, full.height)
         let size = CGSize(width: (full.width * scale).rounded(), height: (full.height * scale).rounded())
         guard let background = try? backdrop(spec, size: size), let ctx = context(size) else { return nil }
-        let bands = (0..<bandCount).map { Float(0.25 + 0.65 * abs(sin(Double($0) * 0.42)) * (1 - Double($0) / Double(bandCount) * 0.6)) }
-        let wave = (0..<wavePoints).map { Float(sin(Double($0) * 0.3) * 0.5 + sin(Double($0) * 0.11) * 0.3) }
+        let bands = (0..<bandCount).map(previewBand)
+        let wave = (0..<wavePoints).map(previewWave)
         draw(ctx, size: size, spec: spec, background: background, bands: bands, wave: wave)
         return ctx.makeImage()
+    }
+
+    /// Made-up levels for the preview: higher low down, lower up high.
+    private static func previewBand(_ index: Int) -> Float {
+        let position = Double(index)
+        let shape: Double = abs(sin(position * 0.42))
+        let fall: Double = 1 - position / Double(bandCount) * 0.6
+        return Float(0.25 + 0.65 * shape * fall)
+    }
+
+    private static func previewWave(_ index: Int) -> Float {
+        let position = Double(index)
+        let slow: Double = sin(position * 0.3) * 0.5
+        let quick: Double = sin(position * 0.11) * 0.3
+        return Float(slow + quick)
     }
 
     private static func context(_ size: CGSize) -> CGContext? {
