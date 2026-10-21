@@ -40,11 +40,15 @@ jobs:
           mkdir -p "$folder"
           curl -fsSL -o "$folder/ell.traineddata" https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/main/ell.traineddata
 
-      # A run that stops moving (a deadlock) shows every thread's stack and
-      # fails after 20 minutes, instead of waiting out the hour.
+      # One test at a time: on GitHub's 3-core Macs (no hardware video
+      # encoder), ImageIO's HEIC/AVIF encoder and Vision block their thread
+      # while needing Swift's shared threads, so three of them side by side
+      # stall everything. (In the app each job runs alone in its own worker.)
+      # A run that stops moving still shows every thread's stack and fails
+      # after 20 minutes, instead of waiting out the hour.
       - name: Run the tests
         run: |
-          make test &
+          scripts/test.sh --no-parallel &
           tests=$!
           for _ in $(seq 1 120); do
             if ! kill -0 "$tests" 2>/dev/null; then
