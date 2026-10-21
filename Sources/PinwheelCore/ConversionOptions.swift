@@ -155,6 +155,9 @@ public struct ConversionOptions: Sendable, Equatable, Codable {
     public var pdfImageDPI: Double = 144
     /// Several images dropped on "PDF" become one PDF with a page each.
     public var combineImagesIntoOnePDF = true
+    /// PDFs into Word, Pages, EPUB…: each page as a picture (looks exactly
+    /// the same) instead of text that flows again (can be edited).
+    public var pdfPagesAsPictures = false
     public var saveLocation: SaveLocation = .nextToOriginal
     /// Used when the chosen place can't be written to (e.g. a read-only disk).
     public var fallbackFolder: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]

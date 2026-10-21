@@ -21,7 +21,8 @@ struct FormatCatalogTests {
         #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.ogg")) == .audio)
         #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.pdf")) == .pdf)
         #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.svg")) == .image)  // drawn as a picture first
-        #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.txt")) == nil)
+        #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.txt")) == .document)
+        #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.xyz")) == nil)
         #expect(FileKind.of(FileManager.default.temporaryDirectory) == nil)  // folders
     }
 
@@ -87,13 +88,15 @@ struct FormatCatalogTests {
     }
 
     @Test func unsupportedFilesLeaveNothing() {
-        #expect(FormatCatalog.actions(for: files("a.png", "notes.txt"), mode: .convert).isEmpty)
+        #expect(FormatCatalog.actions(for: files("a.png", "notes.xyz"), mode: .convert).isEmpty)
         #expect(FormatCatalog.actions(for: [], mode: .convert).isEmpty)
     }
 
     @Test func pdfWheel() {
-        #expect(FormatCatalog.actions(for: files("a.pdf"), mode: .convert)
-                == [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .tool(.compress)])
+        #expect(FormatCatalog.actions(for: files("a.pdf"), mode: .convert) == [
+            .convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .tool(.compress), .convert(.docx), .convert(.pages),
+            .convert(.pptx), .convert(.xlsx), .convert(.epub), .convert(.md), .convert(.txt),
+        ])
         #expect(WheelAction.tool(.compress).title(in: .convert) == "Smaller PDF")
         #expect(WheelAction.tool(.compress).title(in: .tools) == "Compress")
     }

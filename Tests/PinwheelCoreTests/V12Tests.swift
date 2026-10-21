@@ -20,7 +20,7 @@ struct CompatibilityTests {
         }
         #expect(Set(Compatibility.sources.map(\.id)).count == Compatibility.sources.count)
         // One table per kind, every row in its kind's table.
-        #expect(Compatibility.sections.map(\.kind) == [.image, .pdf, .video, .audio, .archive])
+        #expect(Compatibility.sections.map(\.kind) == [.image, .pdf, .video, .audio, .archive, .document, .spreadsheet, .presentation, .subtitle])
         #expect(Compatibility.sections.flatMap(\.rows).count == Compatibility.sources.count)
         for section in Compatibility.sections {
             #expect(section.rows.allSatisfy { $0.source.kind == section.kind && $0.cells.count == section.targets.count })
@@ -50,9 +50,11 @@ struct CompatibilityTests {
             }
         }
         #expect(dashes.sorted() == [
-            "7Z 7Z", "AIFF AIFF", "AVI AVI", "AVIF AVIF", "BMP BMP", "FLAC FLAC", "GIF GIF", "HEIC HEIC", "JPEG JPEG", "M4A M4A",
-            "MKV MKV", "MOV MOV", "MP3 MP3", "MP4 MP4", "OGG OGG", "Opus Opus", "PDF PDF", "PNG PNG", "TAR TAR",
-            "TAR.GZ TAR.GZ", "TIFF TIFF", "WAV WAV", "WMA WMA", "WMV WMV", "WebM WebM", "WebP WebP", "ZIP ZIP",
+            "7Z 7Z", "AIFF AIFF", "AVI AVI", "AVIF AVIF", "BMP BMP", "CSV CSV", "DOCX DOCX", "EPUB EPUB", "FLAC FLAC", "GIF GIF",
+            "HEIC HEIC", "HTML HTML", "JPEG JPEG", "M4A M4A", "MD MD", "MKV MKV", "MOV MOV", "MP3 MP3", "MP4 MP4", "ODS ODS",
+            "ODT ODT", "OGG OGG", "Opus Opus", "PDF PDF", "PNG PNG", "PPTX PPTX", "Pages Pages", "RTF RTF", "SRT SRT", "TAR TAR",
+            "TAR.GZ TAR.GZ", "TIFF TIFF", "TSV TSV", "TXT TXT", "VTT VTT", "WAV WAV", "WMA WMA", "WMV WMV", "WebM WebM",
+            "WebP WebP", "XLSX XLSX", "ZIP ZIP",
         ])
     }
 

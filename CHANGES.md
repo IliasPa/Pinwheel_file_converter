@@ -3,6 +3,36 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.5 — 2026-10-21
+
+Documents, spreadsheets, slides and subtitles.
+
+**New**
+- **PDFs into documents you can edit:** Word, Pages, EPUB, Markdown and
+  text, with the headings, paragraphs, lists and tables put back together
+  (lines joined, words broken at line ends mended, page numbers and
+  repeated headers left out; scanned pages read with text recognition). Or,
+  in Settings › Conversions, each page as a picture, so it looks exactly
+  the same. **PDF → Excel** puts the tables on each page in a sheet;
+  **PDF → PowerPoint** makes a slide of each page.
+- **Documents:** Word (.docx, and old .doc), Pages, RTF, ODT, Markdown,
+  text, web pages and EPUB books become any of PDF, Word, Pages, RTF, ODT,
+  Markdown, text, HTML and EPUB. Headings, bold and italic, links, lists,
+  quotes, code, tables and pictures come along.
+- **Spreadsheets:** Excel, Numbers, ODS, CSV, TSV and old .xls become
+  Excel, ODS, CSV, TSV or PDF (each sheet a table, the first row repeated
+  on every page). Dates, numbers and leading zeros stay as they were; CSVs
+  with semicolons and decimal commas are read right.
+- **Slides:** PowerPoint and Keynote files become PDF, PowerPoint, or a
+  folder with a picture of each slide.
+- **Subtitles:** SRT and WebVTT become each other, or just their words.
+- Pages, Keynote and Numbers (free on the App Store) are used for what only
+  they can open or make; the wedges say so when one isn't installed, and
+  macOS asks once whether Pinwheel may use each. Word, Excel, PowerPoint,
+  EPUB and OpenDocument files are written by Pinwheel itself.
+- The `pinwheel` command: `convert word`, `excel`, `powerpoint`, `epub`,
+  `md`, `srt`, `vtt`… for every new format.
+
 ## v1.4 — 2026-10-21
 
 Your own keys, a file actions wheel, archives, and many more formats.

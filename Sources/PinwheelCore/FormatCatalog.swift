@@ -36,7 +36,21 @@ public enum FormatCatalog {
                 .convert(.opus), .convert(.wma),
             ]
         case (.pdf, .convert):
-            [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .tool(.compress)]
+            [
+                .convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .tool(.compress), .convert(.docx),
+                .convert(.pages), .convert(.pptx), .convert(.xlsx), .convert(.epub), .convert(.md), .convert(.txt),
+            ]
+        case (.document, .convert):
+            [
+                .convert(.pdf), .convert(.docx), .convert(.pages), .convert(.rtf), .convert(.odt), .convert(.md),
+                .convert(.txt), .convert(.html), .convert(.epub),
+            ]
+        case (.spreadsheet, .convert):
+            [.convert(.xlsx), .convert(.ods), .convert(.csv), .convert(.tsv), .convert(.pdf)]
+        case (.presentation, .convert):
+            [.convert(.pdf), .convert(.png), .convert(.jpeg), .convert(.pptx)]
+        case (.subtitle, .convert):
+            [.convert(.srt), .convert(.vtt), .convert(.txt)]
         case (.archive, .convert):
             [.tool(.extract), .convert(.zip), .convert(.tar), .convert(.tgz), .convert(.sevenZip)]
         case (.image, .tools):
@@ -57,7 +71,7 @@ public enum FormatCatalog {
                 .tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.merge), .tool(.split), .open(.organize),
                 .tool(.makeSearchable), .tool(.extractText), .open(.password), .open(.info), .open(.rename),
             ]
-        case (.archive, .tools):
+        case (.archive, .tools), (.document, .tools), (.spreadsheet, .tools), (.presentation, .tools), (.subtitle, .tools):
             [.open(.rename)]
         }
     }

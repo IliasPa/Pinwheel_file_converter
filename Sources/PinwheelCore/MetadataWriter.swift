@@ -15,7 +15,7 @@ enum MetadataWriter {
         case .image: try writeImage(file.url, edit: edit, destination: destination)
         case .pdf: try writePDF(file.url, edit: edit, destination: destination)
         case .video, .audio: try await writeMedia(file, edit: edit, destination: destination, options: options, progress: progress)
-        case .archive, nil: throw ConversionError.unsupported(file.url.lastPathComponent)
+        case .archive, .document, .spreadsheet, .presentation, .subtitle, nil: throw ConversionError.unsupported(file.url.lastPathComponent)
         }
     }
 

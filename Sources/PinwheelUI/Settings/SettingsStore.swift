@@ -57,7 +57,7 @@ final class SettingsStore {
         case hapticFeedback
         case showProgressWindow, revealInFinder, moveOriginalToTrash, notifyWhenDone
         case saveLocation, customFolderPath
-        case jpegQuality, heicQuality, compressQuality, resize, combineImagesIntoOnePDF, pdfDPI
+        case jpegQuality, heicQuality, compressQuality, resize, combineImagesIntoOnePDF, pdfDPI, pdfPagesAsPictures
         case videoQuality, videoMaxSize, audioBitRate, gifWidth, gifFPS, gifMaxSeconds
         case maxConcurrentJobs, ffmpegPath
         case hiddenTools, knownTools, hiddenFormats
@@ -94,6 +94,8 @@ final class SettingsStore {
     var compressQuality: Double { didSet { save(compressQuality, .compressQuality) } }
     var resize: ResizeOption { didSet { save(resize.rawValue, .resize) } }
     var combineImagesIntoOnePDF: Bool { didSet { save(combineImagesIntoOnePDF, .combineImagesIntoOnePDF) } }
+    /// PDFs into Word, Pages, EPUB and HTML: pages as pictures, not text.
+    var pdfPagesAsPictures: Bool { didSet { save(pdfPagesAsPictures, .pdfPagesAsPictures) } }
     var pdfDPI: Int { didSet { save(pdfDPI, .pdfDPI) } }
 
     // Video and audio
@@ -158,6 +160,7 @@ final class SettingsStore {
             .compressQuality: factory.compressQuality,
             .resize: factory.resize.rawValue,
             .combineImagesIntoOnePDF: factory.combineImagesIntoOnePDF,
+            .pdfPagesAsPictures: factory.pdfPagesAsPictures,
             .pdfDPI: Int(factory.pdfDPI),
             .videoQuality: factory.videoQuality.rawValue,
             .videoMaxSize: factory.videoMaxSize.rawValue,
@@ -205,6 +208,7 @@ final class SettingsStore {
         compressQuality = defaults.double(forKey: Key.compressQuality.rawValue)
         resize = ResizeOption(rawValue: string(.resize)) ?? .half
         combineImagesIntoOnePDF = defaults.bool(forKey: Key.combineImagesIntoOnePDF.rawValue)
+        pdfPagesAsPictures = defaults.bool(forKey: Key.pdfPagesAsPictures.rawValue)
         pdfDPI = defaults.integer(forKey: Key.pdfDPI.rawValue)
         videoQuality = VideoQuality(rawValue: string(.videoQuality)) ?? .balanced
         videoMaxSize = VideoMaxSize(rawValue: string(.videoMaxSize)) ?? .original
@@ -321,6 +325,7 @@ final class SettingsStore {
         options.compressQuality = compressQuality
         options.resize = resize
         options.combineImagesIntoOnePDF = combineImagesIntoOnePDF
+        options.pdfPagesAsPictures = pdfPagesAsPictures
         options.pdfDPI = Double(pdfDPI)
         options.videoQuality = videoQuality
         options.videoMaxSize = videoMaxSize
@@ -363,6 +368,7 @@ final class SettingsStore {
         compressQuality = fresh.compressQuality
         resize = fresh.resize
         combineImagesIntoOnePDF = fresh.combineImagesIntoOnePDF
+        pdfPagesAsPictures = fresh.pdfPagesAsPictures
         pdfDPI = fresh.pdfDPI
         videoQuality = fresh.videoQuality
         videoMaxSize = fresh.videoMaxSize

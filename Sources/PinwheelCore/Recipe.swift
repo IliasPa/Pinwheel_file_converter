@@ -75,6 +75,10 @@ extension FileKind {
         case .audio: "Audio"
         case .pdf: "PDFs"
         case .archive: "Archives"
+        case .document: "Documents"
+        case .spreadsheet: "Spreadsheets"
+        case .presentation: "Presentations"
+        case .subtitle: "Subtitles"
         }
     }
 }
@@ -126,7 +130,7 @@ public enum RecipeStep: Codable, Sendable, Hashable {
             ]
         case .pdf:
             [.makeSearchable, .compress, .sizeLimit(megabytes: 10), .stripMetadata, .extractText, .convert(.jpeg)]
-        case .archive:
+        case .archive, .document, .spreadsheet, .presentation, .subtitle:
             []
         }
     }
@@ -221,8 +225,8 @@ public enum RecipeStep: Codable, Sendable, Hashable {
     public func works(on kind: FileKind) -> Bool {
         switch self {
         case .convert(let format):
-            kind != .archive && FormatCatalog.actions(for: kind, mode: .convert).contains(.convert(format))
-        case .compress, .sizeLimit, .stripMetadata: kind != .archive
+            FileKind.editable.contains(kind) && FormatCatalog.actions(for: kind, mode: .convert).contains(.convert(format))
+        case .compress, .sizeLimit, .stripMetadata: FileKind.editable.contains(kind)
         case .removeLocation: kind == .image || kind == .video
         case .resize, .crop, .turn, .flip, .removeBackground, .autoEnhance, .filter, .frame, .watermark: kind == .image
         case .extractText: kind == .image || kind == .pdf

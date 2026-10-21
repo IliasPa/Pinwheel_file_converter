@@ -291,7 +291,7 @@ enum MediaConverter {
         case .ogg: ["-vn", "-c:a", "libvorbis", "-q:a", "5"]
         case .opus: ["-vn", "-c:a", "libopus", "-b:a", "128k"]
         case .wma: ["-vn", "-c:a", "wmav2", "-b:a", "192k"]
-        case .png, .jpeg, .heic, .tiff, .pdf, .webp, .avif, .bmp, .ico, .icns, .zip, .tar, .tgz, .sevenZip: []
+        default: []  // not sound or video
         }
     }
 }

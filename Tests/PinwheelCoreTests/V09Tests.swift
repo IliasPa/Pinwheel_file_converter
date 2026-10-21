@@ -465,7 +465,7 @@ struct V09CatalogTests {
         let folder = try TempFolder()
         let photo = SourceFile(url: try folder.touch("a.jpg"))
         let pdf = SourceFile(url: try folder.touch("a.pdf"))
-        let text = SourceFile(url: try folder.touch("notes.txt"))
+        let text = SourceFile(url: try folder.touch("notes.xyz"))
         let images = FormatCatalog.actions(for: [photo], mode: .tools, hidden: FormatCatalog.defaultHidden)
         #expect(images == [
             .tool(.compress), .open(.sizeLimit), .tool(.resize), .tool(.removeBackground), .open(.crop),

@@ -9,8 +9,17 @@ extension SettingsStore {
         case .pngquant: pngquantURL != nil
         case .tesseract: tesseractURL != nil
         case .cwebp: cwebpURL != nil
+        case .pages, .keynote, .numbers: tool.locate() != nil
         }
     }
+}
+
+/// A row for a format or tool in one kind's section. The same one is in
+/// several sections, and named by itself SwiftUI put rows in the wrong
+/// section's box.
+struct KindAction: Hashable {
+    var kind: FileKind
+    var action: WheelAction
 }
 
 /// Settings › Conversions: for each kind of file, the formats on its
@@ -35,9 +44,9 @@ struct ConversionsPane: View {
                             Text("300 DPI (print)").tag(300)
                         }
                     }
-                    ForEach(FormatCatalog.choices(for: kind, mode: .convert), id: \.self) { action in
-                        formatSwitch(action, kind: kind)
-                        options(for: action, kind: kind)
+                    ForEach(FormatCatalog.choices(for: kind, mode: .convert).map { KindAction(kind: kind, action: $0) }, id: \.self) { row in
+                        formatSwitch(row.action, kind: kind)
+                        options(for: row.action, kind: kind)
                     }
                 } header: {
                     header(kind)
@@ -69,7 +78,7 @@ struct ConversionsPane: View {
         let missing = Compatibility.tool(for: action, kind: kind).flatMap { settings.isInstalled($0) ? nil : $0 }
         return Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, in: .convert, $0) })) {
             Label(action.title(in: .convert), systemImage: action.symbolName(in: .convert))
-            Text(caption(for: action, kind: kind) + (missing.map { " · Needs \($0.rawValue)" } ?? ""))
+            Text(caption(for: action, kind: kind) + (missing.map { " · Needs \($0.name)" } ?? ""))
         }
         .disabled(isLast || isFull)
         .help(isLast ? "At least one format stays on the wheel." : isFull ? "The wheel holds \(FormatCatalog.maxFormats); switch one off first." : "")
@@ -106,6 +115,13 @@ struct ConversionsPane: View {
             Toggle(isOn: $settings.combineImagesIntoOnePDF) {
                 Text("Several pictures make one PDF").padding(.leading, SettingsLayout.indent)
             }
+        case (.pdf, .convert(.docx)):
+            Picker(selection: $settings.pdfPagesAsPictures) {
+                Text("Text you can edit").tag(false)
+                Text("Pages as pictures (look the same)").tag(true)
+            } label: {
+                Text("Word, Pages, EPUB and HTML get").padding(.leading, SettingsLayout.indent)
+            }
         case (.video, .convert(.gif)):
             Picker(selection: $settings.gifWidth) {
                 ForEach([320, 480, 640, 800, 1080], id: \.self) { Text("\($0) pixels").tag($0) }
@@ -141,9 +157,17 @@ struct ConversionsPane: View {
             return "WAV and AIFF are uncompressed; FLAC is lossless and about half their size; Opus sounds best for its size."
                 + (ffmpeg ? "" : " MP3, OGG, Opus and WMA need ffmpeg: \(FFmpeg.installCommand)")
         case .pdf:
-            return "A PDF with several pages becomes a folder with a picture for each page."
+            return "A PDF with several pages becomes a folder with a picture for each page. Word, Pages, EPUB, Markdown and HTML get its text with headings, paragraphs and lists (scanned pages are read with text recognition), or each page as a picture; Excel gets the tables on each page; PowerPoint a slide for each page."
         case .archive:
             return "Extract opens ZIP, RAR, 7Z, TAR and GZ files. Archives are made without the Mac's hidden extras, so they open cleanly on any computer. Files with a password can't be opened yet."
+        case .document:
+            return "Word, RTF, ODT, Markdown, text, web pages and EPUBs become any of these. Pages files are opened by Pages, and Pages files are made by it (it's free on the App Store); macOS asks once whether Pinwheel may use it."
+        case .spreadsheet:
+            return "Excel, ODS, CSV and TSV become any of these; CSV and TSV hold one sheet. Numbers files and old Excel (.xls) files are opened by Numbers."
+        case .presentation:
+            return "Keynote draws the slides (PowerPoint and Keynote files), so it's needed for these. Each slide becomes a picture in a folder for PNG and JPEG."
+        case .subtitle:
+            return "SRT and WebVTT become each other, or just their words."
         }
     }
 
@@ -351,17 +375,17 @@ struct CompatibilityPane: View {
                 return "switched off for \(section.kind.pluralTitle.lowercased()) in Conversions"
             }
             if let needs {
-                return settings.isInstalled(needs) ? "on the format wheel, made with \(needs.rawValue)" : "needs \(needs.rawValue) (\(needs.installCommand))"
+                return settings.isInstalled(needs) ? "on the format wheel, made with \(needs.name)" : "needs \(needs.name) (\(needs.installCommand))"
             }
             return "on the format wheel"
         }
     }
 
     private var legend: some View {
-        let missing = [ExternalTool.ffmpeg, .cwebp].filter { !settings.isInstalled($0) }
+        let missing = [ExternalTool.ffmpeg, .cwebp, .pages, .keynote, .numbers].filter { !settings.isInstalled($0) }
         return HStack(spacing: 16) {
             legendItem("checkmark", .green, "Converts")
-            if !missing.isEmpty { legendItem("checkmark", .orange, "Needs " + missing.map(\.rawValue).joined(separator: " or ")) }
+            if !missing.isEmpty { legendItem("checkmark", .orange, "Needs " + missing.map(\.name).joined(separator: ", ")) }
             legendItem("checkmark", .tertiary, "Switched off in Conversions")
             legendItem("minus", .tertiary, "Same format")
         }

@@ -57,6 +57,14 @@ public enum Compatibility {
         Source("MP3", "mp3"), Source("M4A", "m4a"), Source("WAV", "wav"), Source("AIFF", "aiff"), Source("FLAC", "flac"),
         Source("OGG", "ogg", detail: "Ogg Vorbis"), Source("Opus", "opus"), Source("WMA", "wma"),
         Source("ZIP", "zip"), Source("TAR", "tar"), Source("TAR.GZ", "tar.gz"), Source("7Z", "7z"), Source("RAR", "rar"),
+        Source("DOCX", "docx", detail: "Word"), Source("Pages", "pages"), Source("RTF", "rtf"), Source("ODT", "odt"),
+        Source("MD", "md", detail: "Markdown"), Source("TXT", "txt"), Source("HTML", "html"), Source("EPUB", "epub"),
+        Source("DOC", "doc", detail: "Word 97–2004"),
+        Source("XLSX", "xlsx", detail: "Excel"), Source("ODS", "ods"), Source("CSV", "csv"), Source("TSV", "tsv"),
+        Source("XLS", "xls", detail: "Excel 97–2004, read by Numbers"), Source("Numbers", "numbers"),
+        Source("PPTX", "pptx", detail: "PowerPoint, read by Keynote"), Source("PPT", "ppt", detail: "PowerPoint 97–2004, read by Keynote"),
+        Source("Keynote", "key"),
+        Source("SRT", "srt"), Source("VTT", "vtt", detail: "WebVTT"),
     ]
 
     /// Columns come in this order in every table: pictures, PDF, video,
@@ -66,9 +74,11 @@ public enum Compatibility {
         .mp4, .mov, .mkv, .webm, .avi, .wmv,
         .mp3, .m4a, .wav, .aiff, .flac, .ogg, .opus, .wma,
         .zip, .tar, .tgz, .sevenZip,
+        .docx, .pages, .rtf, .odt, .md, .txt, .html, .epub,
+        .xlsx, .ods, .csv, .tsv, .pptx, .srt, .vtt,
     ]
 
-    public static let sections: [Section] = [FileKind.image, .pdf, .video, .audio, .archive].map(section)
+    public static let sections: [Section] = [FileKind.image, .pdf, .video, .audio, .archive, .document, .spreadsheet, .presentation, .subtitle].map(section)
 
     static func section(_ kind: FileKind) -> Section {
         let sources = sources.filter { $0.kind == kind }
@@ -90,9 +100,10 @@ public enum Compatibility {
         return .converts(needs: tool(for: action, file: file))
     }
 
-    /// The extra tool a wedge takes for this file, if any.
+    /// The extra tool (or Apple app) a wedge takes for this file, if any.
     static func tool(for action: WheelAction, file: SourceFile) -> ExternalTool? {
         if action == .convert(.webp) { return .cwebp }
+        if let app = ConversionEngine.app(for: action, file: file) { return app }
         return ConversionEngine.usesFFmpeg(action, for: file) ? .ffmpeg : nil
     }
 

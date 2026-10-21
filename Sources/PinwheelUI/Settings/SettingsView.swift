@@ -83,9 +83,11 @@ enum SettingsPane: String, CaseIterable, Identifiable {
                     "volume", "vibration", "haptic", "trackpad", "tap"]
         case .conversions:
             return formats + ["formats", "shift", "quality", "collage", "combined", "smaller pdf", "dpi", "resolution",
-                              "frame rate", "width", "length"]
+                              "frame rate", "width", "length", "word", "excel", "powerpoint", "keynote", "numbers", "documents",
+                              "spreadsheets", "slides", "subtitles", "editable", "pages as pictures"]
         case .compatibility:
-            return formats + Compatibility.sources.map(\.title) + ["table", "formats", "supported", "from"]
+            return formats + Compatibility.sources.map(\.title) + ["table", "formats", "supported", "from", "word", "excel",
+                                                                     "powerpoint", "keynote", "numbers", "subtitles"]
         case .tools:
             return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title) + FileAction.allCases.map(\.title)
                 + ["quality", "bit rate", "video size", "custom actions", "file actions", "path", "iterm", "zip", "qr", "barcode"]
@@ -510,7 +512,8 @@ struct SettingsView: View {
                 let custom = settings.recipes.filter { $0.kind == kind }
                 let shown = settings.shownCount(for: kind)
                 DisclosureGroup {
-                    ForEach(actions, id: \.self) { action in
+                    ForEach(actions.map { KindAction(kind: kind, action: $0) }, id: \.self) { row in
+                        let action = row.action
                         let isOn = settings.isOnWheel(action, for: kind)
                         Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, $0) })) {
                             Label(action.title(in: .tools, options: options), systemImage: action.symbolName(in: .tools))

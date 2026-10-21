@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreServices
 import Foundation
 
 /// Optional command-line helpers from Homebrew.
@@ -11,13 +12,28 @@ public enum ExternalTool: String, Sendable {
     case tesseract
     /// WebP pictures (macOS reads them but can't write them).
     case cwebp
+    /// Apple's free apps, for what only they can read or write.
+    case pages, keynote, numbers
 
-    /// cwebp comes in Homebrew's "webp".
-    public var installCommand: String { "brew install \(self == .cwebp ? "webp" : rawValue)" }
+    public var isApp: Bool { [.pages, .keynote, .numbers].contains(self) }
+
+    /// "ffmpeg", "Pages"
+    public var name: String { isApp ? rawValue.capitalized : rawValue }
+
+    /// cwebp comes in Homebrew's "webp"; the apps are on the App Store.
+    public var installCommand: String {
+        if isApp { return "free on the App Store" }
+        return "brew install \(self == .cwebp ? "webp" : rawValue)"
+    }
 
     /// The tool to use: `customPath` if it works, else the usual Homebrew
-    /// places. nil when it isn't installed.
+    /// places (apps: wherever macOS knows them). nil when it isn't installed.
     public func locate(customPath: String? = nil) -> URL? {
+        if isApp {
+            let id = "com.apple.iWork.\(name)" as CFString
+            let urls = LSCopyApplicationURLsForBundleIdentifier(id, nil)?.takeRetainedValue() as? [URL]
+            return urls?.first { $0.path.hasPrefix("/Applications") } ?? urls?.first
+        }
         var candidates = ["/opt/homebrew/bin/\(rawValue)", "/usr/local/bin/\(rawValue)"]
         if let customPath, !customPath.isEmpty {
             candidates.insert((customPath as NSString).expandingTildeInPath, at: 0)

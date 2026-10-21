@@ -35,8 +35,10 @@ enum OutputPlanner {
             if request.isCombinedPDF {
                 plan.suffix = "combined"
                 plan.fileExtension = OutputFormat.pdf.fileExtension
-            } else if file.kind == .pdf, PDFConverter.pageCount(of: file.url) > 1 {
+            } else if file.kind == .pdf, format.kind == .image, PDFConverter.pageCount(of: file.url) > 1 {
                 plan.fileExtension = nil  // a folder with one image per page
+            } else if file.kind == .presentation, format.kind == .image {
+                plan.fileExtension = nil  // a folder with one picture per slide
             } else {
                 plan.fileExtension = format.fileExtension
             }

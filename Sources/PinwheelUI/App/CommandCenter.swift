@@ -185,6 +185,7 @@ final class CommandCenter {
         let name = name.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ". "))
         let aliases = [
             "jpg": OutputFormat.jpeg, "jpe": .jpeg, "tif": .tiff, "aif": .aiff, "heif": .heic, "tgz": .tgz, "7zip": .sevenZip, "oga": .ogg,
+            "word": .docx, "excel": .xlsx, "powerpoint": .pptx, "markdown": .md, "text": .txt, "htm": .html, "webvtt": .vtt,
         ]
         return aliases[name] ?? OutputFormat(rawValue: name)
     }

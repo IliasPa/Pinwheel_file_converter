@@ -78,8 +78,8 @@ enum ToolConverter {
             try PDFTools.run(tool, request: request, destination: destination, options: options, progress: progress)
         case (.video, _), (.audio, _):
             return try await MediaTools.run(tool, request: request, destination: destination, options: options, progress: progress)
-        case (nil, _):
-            throw ConversionError.unsupported(file.url.lastPathComponent)
+        case (.document, _), (.spreadsheet, _), (.presentation, _), (.subtitle, _), (nil, _):
+            throw ConversionError.unsupported("\(tool.title) for \(file.url.lastPathComponent)")
         }
         return nil
     }

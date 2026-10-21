@@ -17,21 +17,25 @@ enum PDFConverter {
         to format: OutputFormat,
         destination: URL,
         options: ConversionOptions,
+        slidesOf deck: String? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         let count = try open(source).pageCount  // also stops at password-protected PDFs
         guard count > 0 else { throw ConversionError.failed("\(source.lastPathComponent) has no pages.") }
 
-        if count > 1 {
+        // Slides always go in a folder ("Deck slide 1.png"), pages when there are several.
+        let inFolder = count > 1 || deck != nil
+        if inFolder {
             try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false)
         }
-        let base = source.deletingPathExtension().lastPathComponent
+        let base = deck ?? source.deletingPathExtension().lastPathComponent
+        let word = deck == nil ? "page" : "slide"
         let digits = String(count).count
         let pageURL: @Sendable (Int) -> URL = { index in
-            guard count > 1 else { return destination }
+            guard inFolder else { return destination }
             let number = String(index + 1)
             let padded = String(repeating: "0", count: max(0, digits - number.count)) + number
-            return destination.appendingPathComponent("\(base) page \(padded).\(format.fileExtension)")
+            return destination.appendingPathComponent("\(base) \(word) \(padded).\(format.fileExtension)")
         }
 
         let pages = PageQueue(count: count, progress: progress)

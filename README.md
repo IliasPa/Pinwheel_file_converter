@@ -19,7 +19,17 @@ your Mac: nothing is uploaded.
   WebM, AVI, WMV, GIF, M4A, MP3.
 - Audio (MP3, M4A, WAV, AIFF, FLAC, OGG, Opus, WMA…) → MP3, M4A, WAV, AIFF,
   FLAC, OGG, Opus, WMA.
-- PDFs → PNG, JPEG, HEIC or TIFF (one picture per page), or a smaller PDF.
+- PDFs → PNG, JPEG, HEIC or TIFF (one picture per page), a smaller PDF,
+  or **Word, Pages, EPUB, Markdown or text** with headings, paragraphs,
+  lists and tables you can edit (scans are read too); **Excel** with the
+  tables on each page; **PowerPoint** with a slide for each page.
+- Documents (Word, Pages, RTF, ODT, Markdown, text, web pages, EPUB, old
+  .doc) → PDF, Word, Pages, RTF, ODT, Markdown, text, HTML or EPUB.
+- Spreadsheets (Excel, Numbers, ODS, CSV, TSV, old .xls) → Excel, ODS, CSV,
+  TSV or PDF.
+- Slides (PowerPoint, Keynote) → PDF, PowerPoint, or a picture of each
+  slide.
+- Subtitles: SRT ⇄ WebVTT, or just their words.
 - Archives (ZIP, RAR, 7Z, TAR, TAR.GZ, GZ) → **extracted** into a folder, or
   repacked as ZIP, TAR, TAR.GZ or 7Z.
 - Settings › Compatibility has the whole table, and Settings › Conversions
@@ -98,6 +108,12 @@ Shift, and drop.
 Without them everything else works; wedges that need them are grayed out
 and say why.
 
+**Pages, Keynote and Numbers** (free on the App Store) open and make what
+only they can: Pages and Keynote files, Numbers files, PowerPoint slides,
+old .xls spreadsheets, and the Pages format. The first time, macOS asks
+whether Pinwheel may use each of them. Word, Excel, PowerPoint (from PDFs),
+EPUB, OpenDocument and the rest are written by Pinwheel itself.
+
 **Updates:** menu-bar icon › **Check for Updates…**. Replace the app in
 Applications with the new one; your settings stay.
 
@@ -147,6 +163,7 @@ pinwheel size-limit 10MB video.mov
 pinwheel run "Instagram" photo.jpg      # one of your custom actions
 pinwheel zip ~/Desktop/Trip             # one .zip of a folder
 pinwheel extract download.rar
+pinwheel convert word report.pdf        # or excel, powerpoint, epub, md…
 pinwheel help
 ```
 
@@ -166,7 +183,9 @@ developer through [formsubmit.co](https://formsubmit.co).
 
 The Accessibility permission is used only to notice the Shift and Option
 keys and the mouse while you drag files. Pinwheel never records what you
-type.
+type. The Automation permission (asked for the first time a file needs
+Pages, Keynote or Numbers) is used only to have them open that file and
+save a copy.
 
 ## Troubleshooting
 
@@ -185,6 +204,9 @@ clearly smaller, so the original is the better file and nothing was saved.
 **Pinwheel isn't in Finder's right-click menu.** It's under **Services** at
 the bottom. If not, switch it on in System Settings › Keyboard › Keyboard
 Shortcuts › Services › Files and Folders.
+
+**"Pinwheel isn't allowed to use Pages"** (or Keynote, or Numbers). Switch
+it on in System Settings › Privacy & Security › Automation › Pinwheel.
 
 **Get Text reads Greek wrong.** Apple's text recognition doesn't read Greek:
 install Tesseract and click **Download Greek** in Settings › Text Recognition.
@@ -212,7 +234,7 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 240, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 340, with real conversions). GitHub runs them on every push too. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |
@@ -231,15 +253,18 @@ Access › Certificate Assistant › Create a Certificate…**, name it exactly
 
 - **Swift Package Manager**, Swift 6, AppKit and SwiftUI. No other
   dependencies: the work is done by Apple's frameworks (ImageIO, Core Image,
-  AVFoundation, PDFKit, Vision), with ffmpeg, pngquant and Tesseract used
-  only when they're installed.
+  AVFoundation, PDFKit, Vision, TextKit), with ffmpeg, pngquant, cwebp and
+  Tesseract used only when they're installed. Word, Excel, PowerPoint,
+  EPUB and OpenDocument files are read and written by Pinwheel's own code
+  (`DocumentModel.swift`, `WordDocument.swift`, `Spreadsheet.swift`…).
 - `PinwheelCore` is the conversion engine (no user interface).
   `PinwheelUI` is the menu-bar app. `PinwheelWorker` is a small helper the
   app starts for each job, so the memory it used goes back to macOS right
   away and a damaged file can't crash Pinwheel. `PinwheelCLI` is the
   `pinwheel` command.
-- The tests make real pictures, videos, songs and PDFs, convert them, and
-  check the results. `Tests/PinwheelUITests/ReadmeImages.swift` draws the
+- The tests make real pictures, videos, songs, PDFs, documents and
+  spreadsheets, convert them, and check the results. The ones that use
+  Pages, Keynote and Numbers run when asked: `PINWHEEL_IWORK=1 make test`. `Tests/PinwheelUITests/ReadmeImages.swift` draws the
   pictures in this README (`PINWHEEL_README_IMAGES=docs make test`).
 
 ## License

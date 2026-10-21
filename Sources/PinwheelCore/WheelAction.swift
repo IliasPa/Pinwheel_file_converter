@@ -10,6 +10,7 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
     case mkv, webm, avi, wmv
     case ogg, opus, wma
     case zip, tar, tgz = "tar.gz", sevenZip = "7z"
+    case docx, pages, pptx, xlsx, epub, md, txt, rtf, odt, html, ods, csv, tsv, srt, vtt
 
     public var fileExtension: String {
         switch self {
@@ -50,6 +51,7 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
         case .webp: "WebP"
         case .webm: "WebM"
         case .opus: "Opus"
+        case .pages: "Pages"
         default: rawValue.uppercased()
         }
     }
@@ -62,8 +64,15 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
         case .mp4, .mov, .mkv, .webm, .avi, .wmv: .video
         case .m4a, .mp3, .wav, .aiff, .flac, .ogg, .opus, .wma: .audio
         case .zip, .tar, .tgz, .sevenZip: .archive
+        case .docx, .pages, .epub, .md, .txt, .rtf, .odt, .html: .document
+        case .xlsx, .ods, .csv, .tsv: .spreadsheet
+        case .pptx: .presentation
+        case .srt, .vtt: .subtitle
         }
     }
+
+    /// The Apple app that writes this format, when only it can.
+    public var app: ExternalTool? { self == .pages ? .pages : nil }
 
     /// Made by ffmpeg whatever the file (macOS can't write these).
     public var needsFFmpeg: Bool {
@@ -101,18 +110,49 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
         case .tar: "archivebox"
         case .tgz: "shippingbox"
         case .sevenZip: "cube.box"
+        case .docx: "doc.fill"
+        case .pages: "doc.richtext"
+        case .pptx: "rectangle.stack"
+        case .xlsx: "tablecells"
+        case .epub: "book"
+        case .md: "number.square"
+        case .txt: "text.alignleft"
+        case .rtf: "textformat"
+        case .odt: "doc.circle"
+        case .html: "chevron.left.forwardslash.chevron.right"
+        case .ods: "tablecells.badge.ellipsis"
+        case .csv: "list.bullet.rectangle"
+        case .tsv: "list.bullet.indent"
+        case .srt: "captions.bubble"
+        case .vtt: "text.bubble"
         }
     }
 
     /// One short line shown in the middle of the wheel while hovering.
     public func detail(from kind: FileKind?) -> String {
         switch self {
-        case .png: kind == .pdf ? "One image per page, sharp and lossless" : "Lossless, keeps transparency"
-        case .jpeg: kind == .pdf ? "One photo per page, small files" : "Small files, works everywhere"
+        case .png:
+            switch kind {
+            case .pdf: "One image per page, sharp and lossless"
+            case .presentation: "A picture of each slide, in a folder"
+            default: "Lossless, keeps transparency"
+            }
+        case .jpeg:
+            switch kind {
+            case .pdf: "One photo per page, small files"
+            case .presentation: "A photo of each slide, in a folder"
+            default: "Small files, works everywhere"
+            }
         case .heic: "Half the size of JPEG, same quality"
         case .tiff: "Lossless, for print and editing"
         case .gif: kind == .video ? "Animated GIF of the clip" : "Works in any browser or chat"
-        case .pdf: "A PDF page for each image"
+        case .pdf:
+            switch kind {
+            case .document: "Looks the same everywhere, ready to print"
+            case .spreadsheet: "The sheets as tables, ready to print"
+            case .presentation: "A page for each slide"
+            default: "A PDF page for each image"
+            }
         case .mp4: "Plays everywhere"
         case .mov: "QuickTime movie"
         case .m4a: kind == .video ? "Just the sound, AAC" : "AAC, small and good quality"
@@ -136,6 +176,21 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
         case .tar: "Unix archive, not compressed"
         case .tgz: "Compressed Unix archive"
         case .sevenZip: "The smallest archives"
+        case .docx: kind == .pdf ? "Word, with text you can edit" : "Word"
+        case .pages: "Apple Pages (made by Pages)"
+        case .pptx: kind == .pdf ? "PowerPoint, a slide for each page" : "PowerPoint (made by Keynote)"
+        case .xlsx: kind == .pdf ? "Excel, the tables on each page" : "Excel workbook"
+        case .epub: "A book for Books and e-readers"
+        case .md: "Markdown text"
+        case .txt: kind == .subtitle ? "Just the words" : "Plain text"
+        case .rtf: "Rich text, for TextEdit"
+        case .odt: "OpenDocument, for LibreOffice"
+        case .html: "A web page"
+        case .ods: "OpenDocument spreadsheet"
+        case .csv: "Comma-separated, for any app"
+        case .tsv: "Tab-separated"
+        case .srt: "SubRip subtitles, for most players"
+        case .vtt: "WebVTT subtitles, for the web"
         }
     }
 
@@ -145,12 +200,21 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
         // and archives (".tar.gz" is two extensions).
         let name = url.lastPathComponent.lowercased()
         if name.hasSuffix(".tar.gz") || name.hasSuffix(".tgz") { return .tgz }
-        switch url.pathExtension.lowercased() {
+        let ext = url.pathExtension.lowercased()
+        switch ext {
         case "opus": return .opus
         case "zip": return .zip
         case "tar": return .tar
         case "7z": return .sevenZip
+        case "markdown", "mdown": return .md
+        case "htm", "xhtml": return .html
+        case "text": return .txt
+        case "tab": return .tsv
         default: break
+        }
+        // Documents are told by name: their types vary between systems.
+        if let format = allCases.first(where: { $0.fileExtension == ext }), ![.image, .video, .audio, .pdf].contains(format.kind) {
+            return format
         }
         guard let type = FileKind.contentType(of: url) else { return nil }
         // .m4a files are "com.apple.m4a-audio", a kind of MPEG-4 audio.
@@ -250,7 +314,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
             case .video: "Smaller HEVC video"
             case .audio: "Smaller AAC audio file"
             case .pdf: "Shrinks the images inside"
-            case .archive, nil: "Smaller files"
+            default: "Smaller files"
             }
         case .resize: options.resize.detail
         case .stripMetadata: "Removes location, camera and other hidden info"
@@ -365,7 +429,7 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
             case .image: "See and edit title, camera, date, place…"
             case .video, .audio: "See and edit title, artist and more"
             case .pdf: "See and edit title, author and more"
-            case .archive, nil: "See and edit the details"
+            default: "See and edit the details"
             }
         case .trim: kind == .audio ? "Trim, speed, fades and loudness" : "Trim, speed, turn, sound and GIF"
         case .password: "Only people with the password can open it"

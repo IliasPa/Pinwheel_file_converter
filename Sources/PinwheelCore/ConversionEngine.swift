@@ -38,6 +38,18 @@ public enum ConversionEngine {
         }
     }
 
+    /// The Apple app a conversion takes (Pages, Keynote, Numbers), if any.
+    public static func app(for action: WheelAction, file: SourceFile) -> ExternalTool? {
+        guard case .convert(let format) = action else { return nil }
+        if let app = format.app { return app }
+        switch file.url.pathExtension.lowercased() {
+        case "pages": return .pages
+        case "key", "ppt", "pptx": return .keynote
+        case "numbers", "xls": return .numbers
+        default: return nil
+        }
+    }
+
     /// Whether a wedge can be used right now (it's grayed out otherwise).
     public static func availability(
         of action: WheelAction, for files: [SourceFile], ffmpegAvailable: Bool, cwebpAvailable: Bool = true
@@ -68,6 +80,9 @@ public enum ConversionEngine {
             }
             if usesFFmpeg(action, for: file) && !ffmpegAvailable {
                 return .unavailable("Needs ffmpeg (brew install ffmpeg)")
+            }
+            if let app = app(for: action, file: file), app.locate() == nil {
+                return .unavailable("Needs \(app.name), free on the App Store")
             }
         }
         return .available
@@ -158,8 +173,11 @@ public enum ConversionEngine {
             case (.image, .convert(let format)):
                 progress(0.1)
                 try ImageConverter.convert(file.url, to: format, destination: destination, options: options)
-            case (.pdf, .convert(let format)):
+            case (.pdf, .convert(let format)) where format.kind == .image:
                 try await PDFConverter.renderPages(file.url, to: format, destination: destination, options: options, progress: progress)
+            case (.pdf, .convert(let format)), (.document, .convert(let format)), (.spreadsheet, .convert(let format)),
+                 (.presentation, .convert(let format)), (.subtitle, .convert(let format)):
+                notes.append(try await DocumentConverter.convert(file, to: format, destination: destination, options: options, progress: progress))
             case (.video, .convert(let format)), (.audio, .convert(let format)):
                 notes.append(try await MediaConverter.convert(
                     file, to: format, destination: destination, options: options, part: request.mediaEdit, progress: progress

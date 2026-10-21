@@ -37,7 +37,7 @@ struct Command {
 }
 
 let commands = [
-    Command("convert", "<format>", "Convert to png, jpg, heic, webp, avif, tiff, gif, bmp, ico, icns, pdf, mp4, mov, mkv, webm, avi, wmv, mp3, m4a, wav, aiff, flac, ogg, opus, wma, zip, tar, tar.gz or 7z"),
+    Command("convert", "<format>", "Convert to png, jpg, heic, webp, avif, tiff, gif, bmp, ico, icns, pdf, mp4, mov, mkv, webm, avi, wmv, mp3, m4a, wav, aiff, flac, ogg, opus, wma, zip, tar, tar.gz, 7z, docx, pages, pptx, xlsx, epub, md, txt, rtf, odt, html, ods, csv, tsv, srt or vtt"),
     Command("compress", "Compress, with the quality chosen in Settings"),
     Command("size-limit", "<size>", "Make each file smaller than a size: 10MB, 2.5MB, 500KB"),
     Command("resize", "Resize pictures to the size chosen in Settings"),

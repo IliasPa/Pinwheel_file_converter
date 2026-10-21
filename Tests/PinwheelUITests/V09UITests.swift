@@ -174,7 +174,7 @@ struct CommandTests {
         func job(_ r: CommandCenter.Request) -> WheelAction? { try? CommandCenter.job(for: r, recipes: [mine]).get().action }
         #expect(job(request("convert", "jpg")) == .convert(.jpeg))
         #expect(job(request("convert", ".TIF")) == .convert(.tiff))
-        #expect(job(request("convert", "docx")) == nil)
+        #expect(job(request("convert", "xyz")) == nil)
         #expect(job(request("searchable")) == .tool(.makeSearchable))
         #expect(job(request("run", "instagram")) == .recipe(mine))
         #expect(job(request("run", "nope")) == nil)
