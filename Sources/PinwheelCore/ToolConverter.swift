@@ -58,6 +58,13 @@ enum ToolConverter {
             guard case .metadata(let edit)? = request.parameters else { throw NothingToDo(reason: "Nothing was changed.") }
             progress(0.1)
             try await MetadataWriter.write(file, edit: edit, destination: destination, options: options, progress: progress)
+        case (.image, .blurPrivate):
+            guard let format = plan.format else { throw ConversionError.unsupported(destination.pathExtension.uppercased()) }
+            progress(0.1)
+            try await Blocking.run { _ in try PrivacyBlur.export(file.url, format: format, destination: destination, options: options) }
+        case (.audio, .visualize):
+            guard case .visualizer(let spec)? = request.parameters else { throw ConversionError.failed("Choose how the video looks first.") }
+            try await Visualizer.render(file, spec: spec, destination: destination, options: options, progress: progress)
         case (.image, .edit), (.image, .removeBackground):
             var edit = request.imageEdit
             if tool == .removeBackground { edit.removeBackground = true }
@@ -247,9 +254,9 @@ enum MediaTools {
             edit.normalize = true
             return try await MediaEdits.edit(file, edit: edit, destination: destination, options: options, progress: progress)
         case .saveFrame:
-            guard case .frame(let seconds, let turns)? = request.parameters else { throw ConversionError.failed("Choose a frame first.") }
+            guard case .frame(let seconds, let turns, let crop)? = request.parameters else { throw ConversionError.failed("Choose a frame first.") }
             progress(0.2)
-            try await MediaEdits.saveFrame(file.url, at: seconds, quarterTurns: turns, destination: destination, options: options)
+            try await MediaEdits.saveFrame(file.url, at: seconds, quarterTurns: turns, crop: crop, destination: destination, options: options)
             return nil
         default:
             break

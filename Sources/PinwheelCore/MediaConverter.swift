@@ -124,6 +124,9 @@ enum MediaConverter {
         case 3: filters.append("transpose=2")
         default: break
         }
+        if let crop = part.crop {
+            filters.append(String(format: "crop=w=iw*%.4f:h=ih*%.4f:x=iw*%.4f:y=ih*%.4f", crop.width, crop.height, crop.x, crop.y))
+        }
         var arguments = ffmpegArguments(for: .gif, options: options)
         if !filters.isEmpty, let index = arguments.firstIndex(of: "-vf") {
             arguments[index + 1] = filters.joined(separator: ",") + "," + arguments[index + 1]
@@ -206,7 +209,8 @@ enum MediaConverter {
 
     /// Exports with AVAssetExportSession, reporting progress. Cancelling the
     /// task cancels the export. `metadata` replaces the file's tags (nil
-    /// keeps them); `timeRange` keeps just that part.
+    /// keeps them); `timeRange` keeps just that part; `videoComposition`
+    /// draws the picture anew (a crop).
     static func export(
         _ asset: AVAsset,
         preset: String,
@@ -215,6 +219,7 @@ enum MediaConverter {
         stripMetadata: Bool = false,
         metadata: [AVMetadataItem]? = nil,
         timeRange: CMTimeRange? = nil,
+        videoComposition: AVVideoComposition? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         try Task.checkCancellation()
@@ -224,6 +229,7 @@ enum MediaConverter {
         session.shouldOptimizeForNetworkUse = true
         if let metadata { session.metadata = metadata }
         if let timeRange { session.timeRange = timeRange }
+        if let videoComposition { session.videoComposition = videoComposition }
         if stripMetadata {
             // No title, location, device or dates; the filter also catches
             // anything left inside the individual tracks.

@@ -3,6 +3,34 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.6 — 2026-10-21
+
+Cut, crop and bleep; a visualizer; faces and text blurred out; a shelf.
+
+**New**
+- **The video and audio editor** cuts the part into pieces (Split Here, or
+  S, at the playhead: each piece is saved on its own, in a folder), crops
+  videos (1:1, 4:5, 9:16, 16:9 or 4:3; drag the box over the video), bleeps
+  words (Bleep Here, or B: a beep, or silence, for half a second to three
+  seconds) and mixes the channels (mono, stereo from mono, or just the left
+  or right side, for a voice recorded on one side). Saved frames and GIFs
+  are cropped too.
+- **Visualizer…** (audio's tools wheel): the sound becomes an MP4 with
+  bars (its pitches) or a wave moving to it, over a picture or a gradient,
+  square, wide or tall, with the file's name or your own title. Made by
+  macOS itself: no ffmpeg needed (except to read OGG, Opus and WMA).
+- **Blur faces and text:** the image editor's Markup finds every face, or
+  all the text, and blurs it out (each blur can then be moved or deleted).
+  **Blur Faces & Text** does it in one go, on the wheel (switch it on in
+  Settings › Tools) and as a custom action step.
+- **The shelf:** a small floating window to park files on mid-drag. Drop
+  files on the new **Shelf** file action (⌃ Control + ⇧ Shift) or on the
+  shelf itself; drag them off later, all at once as a pile or one by one.
+  It stays above other windows without taking the keyboard from Finder,
+  and remembers its files. Menu-bar icon › **Shelf**.
+- Custom actions: **Mono** and **Blur Faces & Text** steps.
+- The `pinwheel` command: `blur`, `shelf`, and `open visualizer`.
+
 ## v1.5.1 — 2026-10-21
 
 **Fixed**

@@ -499,7 +499,7 @@ struct ClickWheelTests {
 
 /// A short H.264 movie filmed "upright" like a phone does it: landscape
 /// pixels with a quarter turn to show it portrait.
-private func phoneVideo(at url: URL, seconds: Int = 2) async throws {
+func phoneVideo(at url: URL, seconds: Int = 2) async throws {
     let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
     let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
         AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 180,

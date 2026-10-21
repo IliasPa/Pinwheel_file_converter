@@ -2,13 +2,17 @@ import AVFoundation
 import Foundation
 
 /// Mute, the video and audio editor, and Save Frame. Cutting, muting and
-/// turning copy the picture as it is (fast, no quality loss).
+/// turning copy the picture as it is (fast, no quality loss); cropping draws
+/// it anew.
 enum MediaEdits {
     /// The editor's job. Returns a note for the progress window, if any.
     static func edit(
         _ file: SourceFile, edit: MediaEdit, destination: URL,
         options: ConversionOptions, progress: @escaping @Sendable (Double) -> Void
     ) async throws -> String? {
+        if !edit.splits.isEmpty {
+            return try await split(file, edit: edit, into: destination, options: options, progress: progress)
+        }
         if edit.isTrimOnly {
             let duration = try await AVURLAsset(url: file.url).load(.duration).seconds
             let (start, end) = edit.range(duration: duration)
@@ -19,6 +23,7 @@ enum MediaEdits {
         if file.kind == .audio {
             // Normalizing alone does nothing to a file that's already right.
             let loudnessOnly = edit.normalize && edit.speed == 1 && edit.fadeIn == 0 && edit.fadeOut == 0 && edit.start <= 0 && edit.end == nil
+                && edit.bleeps.isEmpty && edit.channels == .unchanged
             return try await AudioProcessor.process(
                 file.url, edit: edit, to: destination, ffmpegURL: options.ffmpegURL,
                 skipIfAlreadyNormal: loudnessOnly, progress: progress
@@ -27,8 +32,43 @@ enum MediaEdits {
         return try await editVideo(file.url, edit: edit, destination: destination, options: options, progress: progress)
     }
 
+    /// The part cut into pieces, each with the same changes, as files in the
+    /// folder `destination` ("Clip part 1.mov"…).
+    static func split(
+        _ file: SourceFile, edit: MediaEdit, into folder: URL,
+        options: ConversionOptions, progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> String? {
+        let duration = try await AVURLAsset(url: file.url).load(.duration).seconds
+        let pieces = edit.pieces(duration: duration)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        } catch {
+            throw ConversionError.cannotWrite(folder.lastPathComponent)
+        }
+        let base = file.url.deletingPathExtension().lastPathComponent
+        let digits = String(pieces.count).count
+        var notes: [String] = []
+        for (index, piece) in pieces.enumerated() {
+            try Task.checkCancellation()
+            var part = edit
+            part.splits = []
+            (part.start, part.end) = (piece.start, piece.end)
+            let ext = part.isTrimOnly ? OutputPlanner.trimOutput(for: file, options: options).1 : OutputPlanner.editedMediaOutput(for: file, options: options).1
+            let number = String(index + 1)
+            let name = "\(base) part \(String(repeating: "0", count: digits - number.count) + number).\(ext)"
+            let share = 1 / Double(pieces.count)
+            if let note = try await self.edit(file, edit: part, destination: folder.appendingPathComponent(name), options: options, progress: {
+                progress((Double(index) + $0) * share)
+            }) {
+                notes.append(note)
+            }
+        }
+        return notes.first
+    }
+
     /// The picture is copied as it is (turned with its orientation flag,
-    /// retimed for a new speed); a changed soundtrack is made first and put in.
+    /// retimed for a new speed), or drawn anew when cropped; a changed
+    /// soundtrack is made first and put in.
     static func editVideo(
         _ source: URL, edit: MediaEdit, destination: URL,
         options: ConversionOptions, progress: @escaping @Sendable (Double) -> Void
@@ -41,12 +81,16 @@ enum MediaEdits {
         guard !videoTracks.isEmpty else { throw ConversionError.failed("\(source.lastPathComponent) has no picture.") }
 
         let composition = AVMutableComposition()
+        var shownSize = CGSize.zero
         for track in videoTracks {
             guard let copy = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
             try copy.insertTimeRange(range, of: track, at: .zero)
-            copy.preferredTransform = turned(
-                try await track.load(.preferredTransform), naturalSize: try await track.load(.naturalSize), quarterTurns: edit.quarterTurns
-            )
+            let naturalSize = try await track.load(.naturalSize)
+            copy.preferredTransform = turned(try await track.load(.preferredTransform), naturalSize: naturalSize, quarterTurns: edit.quarterTurns)
+            if shownSize == .zero {
+                let box = CGRect(origin: .zero, size: naturalSize).applying(copy.preferredTransform)
+                shownSize = CGSize(width: abs(box.width), height: abs(box.height))
+            }
         }
 
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("Pinwheel-\(UUID().uuidString)", isDirectory: true)
@@ -80,6 +124,15 @@ enum MediaEdits {
         let fileType = ToolConverter.avVideoContainers[source.pathExtension.lowercased()] ?? .mov
         let metadata = try await asset.load(.metadata)
         let report: @Sendable (Double) -> Void = { progress(soundShare + $0 * (1 - soundShare)) }
+        if let crop = edit.crop, let track = composition.tracks(withMediaType: .video).first {
+            // The kept part of the picture is drawn into a frame its size.
+            let video = cropped(track, shownSize: shownSize, crop: crop, duration: composition.duration)
+            try await MediaConverter.export(
+                composition, preset: AVAssetExportPresetHighestQuality, fileType: fileType, to: destination, metadata: metadata,
+                videoComposition: video, progress: report
+            )
+            return note
+        }
         do {
             try await MediaConverter.export(composition, preset: AVAssetExportPresetPassthrough, fileType: fileType, to: destination, metadata: metadata, progress: report)
         } catch is CancellationError {
@@ -90,6 +143,24 @@ enum MediaEdits {
             try await MediaConverter.export(composition, preset: AVAssetExportPresetHighestQuality, fileType: fileType, to: destination, metadata: metadata, progress: report)
         }
         return note
+    }
+
+    /// Draws `crop` (a share of the picture as shown) of the track into a
+    /// frame of that size, at the track's frame rate.
+    static func cropped(_ track: AVMutableCompositionTrack, shownSize: CGSize, crop: RelativeRect, duration: CMTime) -> AVVideoComposition {
+        let box = crop.pixels(in: shownSize)
+        // Sizes in whole, even pixels, as video encoders want.
+        func even(_ value: CGFloat) -> CGFloat { max(2, (value / 2).rounded(.down) * 2) }
+        var layer = AVVideoCompositionLayerInstruction.Configuration(assetTrack: track)
+        layer.setTransform(track.preferredTransform.concatenating(CGAffineTransform(translationX: -box.minX.rounded(), y: -box.minY.rounded())), at: .zero)
+        let instruction = AVVideoCompositionInstruction(configuration: .init(
+            layerInstructions: [AVVideoCompositionLayerInstruction(configuration: layer)], timeRange: CMTimeRange(start: .zero, duration: duration)
+        ))
+        let rate = track.nominalFrameRate
+        return AVVideoComposition(configuration: .init(
+            frameDuration: CMTime(value: 1, timescale: CMTimeScale(rate > 0 ? rate.rounded() : 30)), instructions: [instruction],
+            renderSize: CGSize(width: even(box.width), height: even(box.height))
+        ))
     }
 
     /// A track's orientation, turned clockwise by quarter turns of what's
@@ -197,8 +268,10 @@ enum MediaEdits {
         }
     }
 
-    /// The exact frame at `seconds`, upright and turned as shown, as a JPEG.
-    static func saveFrame(_ source: URL, at seconds: Double, quarterTurns: Int = 0, destination: URL, options: ConversionOptions) async throws {
+    /// The exact frame at `seconds`, upright, turned and cropped as shown, as a JPEG.
+    static func saveFrame(
+        _ source: URL, at seconds: Double, quarterTurns: Int = 0, crop: RelativeRect? = nil, destination: URL, options: ConversionOptions
+    ) async throws {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: source))
         generator.appliesPreferredTrackTransform = true
         generator.requestedTimeToleranceBefore = .zero
@@ -213,6 +286,9 @@ enum MediaEdits {
             var turn = ImageEdit()
             turn.quarterTurns = ((quarterTurns % 4) + 4) % 4
             image = try StudioRenderer.render(StudioSource(image: image), mask: nil, edit: turn)
+        }
+        if let crop, let part = image.cropping(to: crop.pixels(in: CGSize(width: image.width, height: image.height)).integral) {
+            image = part
         }
         try ImageConverter.write(image, to: destination, format: .jpeg, options: options)
     }

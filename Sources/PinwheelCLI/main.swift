@@ -52,9 +52,11 @@ let commands = [
     Command("split", "One PDF per page"),
     Command("zip", "Put files and folders into one .zip"),
     Command("extract", "Open archives (zip, rar, 7z, tar, gz) into folders"),
+    Command("blur", "Blur out every face and all text in pictures"),
+    Command("shelf", "Park files on the shelf, to drag them off later"),
     Command("run", "<name>", "Run one of your custom actions (see: pinwheel list)"),
     Command("show", "[tools|actions]", optional: true, "Show a wheel at the pointer, to choose with a click"),
-    Command("open", "<window>", "Open a window: rename, size-limit, crop, edit, watermark, info, organize, collage, codes"),
+    Command("open", "<window>", "Open a window: rename, size-limit, crop, edit, watermark, info, organize, collage, codes, visualizer"),
 ]
 
 func usage() -> String {

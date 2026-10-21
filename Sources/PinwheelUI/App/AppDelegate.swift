@@ -18,6 +18,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var progress = ProgressController(queue: jobs, settings: settings)
     private lazy var notifier = Notifier()
     private lazy var editors = EditorCoordinator(settings: settings)
+    private lazy var shelf = ShelfController(settings: settings)
     private var menuBar: MenuBarController?
     private var settingsWindow: SettingsWindowController?
     private var feedbackWindow: FeedbackWindowController?
@@ -36,8 +37,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 showProgress: { [weak self] in self?.progress.show() },
                 showFFmpegHelp: { [weak self] in self?.showFFmpegHelp() },
                 showFeedback: { [weak self] in self?.showFeedback() },
+                toggleShelf: { [weak self] in self?.shelf.toggle() },
                 quit: { NSApp.terminate(nil) }
             ),
+            shelfCount: { [weak self] in self?.shelf.model.items.count ?? 0 },
             recents: recents,
             history: history,
             launch: launch,
@@ -83,6 +86,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         fileActions.terminalApp = { settings.terminalApp }
         fileActions.onMoved = { [weak self] moves in self?.history.recordMove(moves) }
+        fileActions.onShelf = { [weak self] urls in self?.shelf.add(urls) }
         editors.enqueue = { [weak self] files, action, parameters in
             self?.jobs.enqueue(files: files, action: action, parameters: parameters)
         }
@@ -113,6 +117,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         commands.openEditor = { [weak self] editor, files in
             self?.editors.open(editor, files: files)
         }
+        commands.addToShelf = { [weak self] urls in self?.shelf.add(urls) }
         commands.recipes = { settings.recipes }
         commands.availability = availability
         commands.start()

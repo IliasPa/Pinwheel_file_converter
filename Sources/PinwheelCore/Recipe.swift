@@ -108,6 +108,10 @@ public enum RecipeStep: Codable, Sendable, Hashable {
     case fade(inSeconds: Double, outSeconds: Double)
     case volume(decibels: Double)
     case turnVideo(quarterTurns: Int)
+    /// Every face and all text blurred out.
+    case blurFacesAndText
+    /// Both sides of the sound mixed into one.
+    case mono
 
     /// The steps offered when adding one, with their usual choices.
     public static func templates(for kind: FileKind) -> [RecipeStep] {
@@ -115,17 +119,17 @@ public enum RecipeStep: Codable, Sendable, Hashable {
         case .image:
             [
                 .crop(AspectRatio(4, 5)), .resize(.fit1920), .turn(quarterTurns: 1), .flip, .autoEnhance, .filter(.vivid),
-                .removeBackground, .frame(Self.defaultFrame), .watermark(Watermark()), .removeLocation, .stripMetadata,
-                .compress, .sizeLimit(megabytes: 2), .convert(.jpeg), .extractText,
+                .removeBackground, .frame(Self.defaultFrame), .watermark(Watermark()), .blurFacesAndText, .removeLocation,
+                .stripMetadata, .compress, .sizeLimit(megabytes: 2), .convert(.jpeg), .extractText,
             ]
         case .video:
             [
-                .turnVideo(quarterTurns: 1), .speed(2), .mute, .fade(inSeconds: 1, outSeconds: 1), .normalize,
+                .turnVideo(quarterTurns: 1), .speed(2), .mute, .fade(inSeconds: 1, outSeconds: 1), .normalize, .mono,
                 .removeLocation, .stripMetadata, .compress, .sizeLimit(megabytes: 25), .convert(.mp4), .extractAudio,
             ]
         case .audio:
             [
-                .normalize, .fade(inSeconds: 1, outSeconds: 2), .volume(decibels: 3), .speed(1.25), .stripMetadata,
+                .normalize, .mono, .fade(inSeconds: 1, outSeconds: 2), .volume(decibels: 3), .speed(1.25), .stripMetadata,
                 .compress, .sizeLimit(megabytes: 10), .convert(.mp3),
             ]
         case .pdf:
@@ -155,6 +159,8 @@ public enum RecipeStep: Codable, Sendable, Hashable {
         case .turn: "Turn"
         case .flip: "Flip"
         case .removeBackground: "Remove Background"
+        case .blurFacesAndText: "Blur Faces & Text"
+        case .mono: "Mono"
         case .autoEnhance: "Auto Enhance"
         case .filter: "Filter"
         case .frame: "Background and Frame"
@@ -204,6 +210,8 @@ public enum RecipeStep: Codable, Sendable, Hashable {
         case .turn, .turnVideo: "rotate.right"
         case .flip: "arrow.left.and.right.righttriangle.left.righttriangle.right"
         case .removeBackground: ToolAction.removeBackground.symbolName
+        case .blurFacesAndText: ToolAction.blurPrivate.symbolName
+        case .mono: "speaker.wave.1"
         case .autoEnhance: "wand.and.stars"
         case .filter: "camera.filters"
         case .frame: "photo.artframe"
@@ -228,11 +236,11 @@ public enum RecipeStep: Codable, Sendable, Hashable {
             FileKind.editable.contains(kind) && FormatCatalog.actions(for: kind, mode: .convert).contains(.convert(format))
         case .compress, .sizeLimit, .stripMetadata: FileKind.editable.contains(kind)
         case .removeLocation: kind == .image || kind == .video
-        case .resize, .crop, .turn, .flip, .removeBackground, .autoEnhance, .filter, .frame, .watermark: kind == .image
+        case .resize, .crop, .turn, .flip, .removeBackground, .autoEnhance, .filter, .frame, .watermark, .blurFacesAndText: kind == .image
         case .extractText: kind == .image || kind == .pdf
         case .makeSearchable: kind == .pdf
         case .extractAudio, .mute, .turnVideo: kind == .video
-        case .normalize, .speed, .fade, .volume: kind == .video || kind == .audio
+        case .normalize, .speed, .fade, .volume, .mono: kind == .video || kind == .audio
         }
     }
 
@@ -308,6 +316,11 @@ public enum RecipeStep: Codable, Sendable, Hashable {
         case .turnVideo(let turns):
             var edit = MediaEdit()
             edit.quarterTurns = ((turns % 4) + 4) % 4
+            return (.tool(.editMedia), .media(edit))
+        case .blurFacesAndText: return (.tool(.blurPrivate), nil)
+        case .mono:
+            var edit = MediaEdit()
+            edit.channels = .mono
             return (.tool(.editMedia), .media(edit))
         }
     }

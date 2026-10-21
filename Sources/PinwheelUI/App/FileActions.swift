@@ -35,6 +35,8 @@ final class FileActions {
     /// Files were moved (for the menu bar's Undo).
     var onMoved: (_ moves: [Renamer.Move]) -> Void = { _ in }
     var terminalApp: () -> String = { TerminalApp.terminal.rawValue }
+    /// Files go on the shelf.
+    var onShelf: (_ urls: [URL]) -> Void = { _ in }
     var pasteboard = NSPasteboard.general
 
     func perform(_ action: FileAction, on urls: [URL]) {
@@ -46,6 +48,7 @@ final class FileActions {
         case .copyPath: copyPaths(urls)
         case .terminal: openTerminal(at: urls)
         case .quickLook: QuickLookPresenter.shared.show(urls)
+        case .shelf: onShelf(urls)
         }
     }
 

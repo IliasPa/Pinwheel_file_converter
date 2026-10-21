@@ -90,7 +90,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
                                                                      "powerpoint", "keynote", "numbers", "subtitles"]
         case .tools:
             return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title) + FileAction.allCases.map(\.title)
-                + ["quality", "bit rate", "video size", "custom actions", "file actions", "path", "iterm", "zip", "qr", "barcode"]
+                + ["quality", "bit rate", "video size", "custom actions", "file actions", "path", "iterm", "zip", "qr", "barcode",
+                   "shelf", "visualizer", "waveform", "faces", "blur", "redact", "bleep", "split", "crop video", "mono", "stereo", "channels"]
         case .textRecognition:
             return ["ocr", "get text", "searchable", "tesseract", "greek", "language", "apple"]
         case .finderAndShortcuts:

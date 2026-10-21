@@ -55,8 +55,8 @@ final class EditorCoordinator {
             let model = MediaEditorModel(files: media, ffmpegAvailable: settings.ffmpegURL != nil)
             model.onSave = { [weak self] file, edit in self?.enqueue([file], .tool(.editMedia), .media(edit)) }
             model.onGIF = { [weak self] file, edit in self?.enqueue([file], .convert(.gif), .media(edit)) }
-            model.onFrame = { [weak self] file, seconds, turns in
-                self?.enqueue([file], .tool(.saveFrame), .frame(seconds: seconds, quarterTurns: turns))
+            model.onFrame = { [weak self] file, seconds, turns, crop in
+                self?.enqueue([file], .tool(.saveFrame), .frame(seconds: seconds, quarterTurns: turns, crop: crop))
             }
             controller = MediaEditorWindowController(model: model)
         case .rename:
@@ -84,6 +84,12 @@ final class EditorCoordinator {
             let images = files.filter { $0.kind == .image }
             guard !images.isEmpty else { return }
             controller = CodesWindowController(model: CodesModel(files: images.map(\.url)))
+        case .visualizer:
+            let sounds = files.filter { $0.kind == .audio }
+            guard !sounds.isEmpty else { return }
+            let model = VisualizerModel(files: sounds)
+            model.onSave = { [weak self] requests in self?.enqueueRequests(requests) }
+            controller = VisualizerWindowController(model: model)
         }
         show(controller)
     }

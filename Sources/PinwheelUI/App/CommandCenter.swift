@@ -16,6 +16,7 @@ final class CommandCenter {
     var enqueue: ([SourceFile], WheelAction, JobParameters?) -> UUID = { _, _, _ in UUID() }
     var showWheel: ([URL], WheelMode) -> Void = { _, _ in }
     var openEditor: (Editor, [SourceFile]) -> Void = { _, _ in }
+    var addToShelf: ([URL]) -> Void = { _ in }
     var recipes: () -> [Recipe] = { [] }
     var availability: (WheelAction, [SourceFile]) -> Availability = { _, _ in .available }
     /// An answer to the command: "accepted" (it's queued), "finished" or "failed".
@@ -89,6 +90,10 @@ final class CommandCenter {
         switch request.command {
         case "show":
             showWheel(urls, Self.wheel(named: request.value))
+            reply(request.id, "finished")
+            return
+        case "shelf":
+            addToShelf(urls)
             reply(request.id, "finished")
             return
         case "open":
@@ -170,6 +175,7 @@ final class CommandCenter {
         "compress": .compress, "resize": .resize, "remove-background": .removeBackground, "strip-info": .stripMetadata,
         "get-text": .extractText, "searchable": .makeSearchable, "get-audio": .extractAudio, "mute": .mute,
         "normalize": .normalize, "merge": .merge, "split": .split, "zip": .archive, "extract": .extract,
+        "blur": .blurPrivate,
     ]
 
     /// "tools", "actions"; anything else is the format wheel.
@@ -195,7 +201,7 @@ final class CommandCenter {
             "rename": .rename, "size-limit": .sizeLimit, "crop": .crop, "edit": .adjust, "adjust": .adjust,
             "background": .background, "markup": .markup, "watermark": .watermark, "info": .info,
             "organize": .organize, "collage": .collage, "password": .password, "trim": .trim, "media": .trim,
-            "codes": .codes, "qr": .codes,
+            "codes": .codes, "qr": .codes, "visualizer": .visualizer,
         ]
         return names[name.lowercased()]
     }

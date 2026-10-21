@@ -42,10 +42,17 @@ your Mac: nothing is uploaded.
 - **Image editor:** crop to any shape or exact pixels, straighten, adjust
   light and color, 11 filters, remove or replace the background, padding,
   rounded corners and shadows, markup (arrows, text, numbered steps, blur
-  out), and watermarks, on one picture or many at once.
-- **Remove BG:** cuts out people, pets and objects.
-- **Video and audio editor:** trim, speed (pitch kept), turn, mute, fades,
-  volume, even out the loudness; save a copy, a GIF of the part, or a frame.
+  out, and faces or text found and blurred by themselves), and watermarks,
+  on one picture or many at once.
+- **Remove BG:** cuts out people, pets and objects. **Blur Faces & Text**
+  hides them all in one go (switch it on in Settings › Tools).
+- **Video and audio editor:** trim, cut into pieces, crop (1:1, 4:5, 9:16…),
+  speed (pitch kept), turn, mute, fades, volume, even out the loudness,
+  bleep words, mono or one side only; save a copy, a GIF of the part, or a
+  frame.
+- **Visualizer…:** a song, podcast or voice note becomes a video with bars
+  or a wave moving to the sound, over a picture or a gradient: square,
+  wide or tall, to share where only videos go.
 - **Rename…** many files at once: replace text, remove characters, numbers,
   dates, case, patterns with the date taken or the camera, Greek to Latin,
   and more, with a live preview. Works on any file or folder.
@@ -62,8 +69,13 @@ your Mac: nothing is uploaded.
 
 **File actions** (⌃ Control + ⇧ Shift while dragging), for any files and
 folders: **AirDrop**, **Copy** (to paste in Finder), **Move To…**, **Copy
-Path**, **Terminal** (opened in their folder), **Quick Look**, and **ZIP**
-(everything dropped in one .zip).
+Path**, **Terminal** (opened in their folder), **Quick Look**, **Shelf**,
+and **ZIP** (everything dropped in one .zip).
+
+**The shelf** is a small floating window to park files on while you find
+where they go: drop them on the Shelf wedge (or on the shelf itself), then
+drag them off, all at once or one by one. Menu-bar icon › **Shelf** shows
+it.
 
 **And**
 - **Undo** at the top of the menu-bar menu: new files go to the Trash and
@@ -164,6 +176,8 @@ pinwheel run "Instagram" photo.jpg      # one of your custom actions
 pinwheel zip ~/Desktop/Trip             # one .zip of a folder
 pinwheel extract download.rar
 pinwheel convert word report.pdf        # or excel, powerpoint, epub, md…
+pinwheel blur ~/Desktop/Screenshot.png  # faces and text blurred out
+pinwheel shelf ~/Downloads/*.pdf        # parked on the shelf
 pinwheel help
 ```
 
@@ -234,7 +248,7 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 340, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 360, with real conversions). GitHub runs them on every push too. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |

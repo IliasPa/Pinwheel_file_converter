@@ -2,8 +2,9 @@ import AVFoundation
 import Foundation
 
 /// Changes the sound of a file: keeps a part, changes the speed (keeping
-/// the pitch), fades in and out, and makes it louder, quieter or as loud as
-/// streaming services expect. Works on the soundtrack of videos too.
+/// the pitch), fades in and out, makes it louder, quieter or as loud as
+/// streaming services expect, bleeps stretches and mixes the channels.
+/// Works on the soundtrack of videos too.
 enum AudioProcessor {
     /// What came out of `process`, for the progress window.
     struct Outcome {
@@ -60,12 +61,17 @@ enum AudioProcessor {
             note = "Some peaks were too loud and were clipped. Try a smaller boost, or Normalize."
         }
 
-        // 4. Gain and fades, written in the final format.
+        // 4. Gain, fades and bleeps, written in the final format.
         let ext = destination.pathExtension.lowercased()
         let input = samples, gain = gainDB
+        let duration = edit.bleeps.isEmpty ? 0 : try await AVURLAsset(url: source).load(.duration).seconds
+        let bleeps = Bleeps(times: edit.bleepTimes(duration: duration), silent: edit.silentBleeps)
         if let settings = SendableSettings(nativeSettings(for: ext, like: samples)) {
             try await Blocking.run { isCancelled in
-                try finish(input, gainDB: gain, fadeIn: edit.fadeIn, fadeOut: edit.fadeOut, to: destination, settings: settings.value, isCancelled: isCancelled) {
+                try finish(
+                    input, gainDB: gain, fadeIn: edit.fadeIn, fadeOut: edit.fadeOut, bleeps: bleeps, to: destination,
+                    settings: settings.value, isCancelled: isCancelled
+                ) {
                     progress(0.6 + $0 * 0.4)
                 }
             }
@@ -74,7 +80,10 @@ enum AudioProcessor {
             let wav = work.appendingPathComponent("final.wav")
             let settings = SendableSettings(pcmSettings(of: samples, bits: 24, bigEndian: false))!
             try await Blocking.run { isCancelled in
-                try finish(input, gainDB: gain, fadeIn: edit.fadeIn, fadeOut: edit.fadeOut, to: wav, settings: settings.value, isCancelled: isCancelled) {
+                try finish(
+                    input, gainDB: gain, fadeIn: edit.fadeIn, fadeOut: edit.fadeOut, bleeps: bleeps, to: wav,
+                    settings: settings.value, isCancelled: isCancelled
+                ) {
                     progress(0.6 + $0 * 0.2)
                 }
             }
@@ -96,7 +105,7 @@ enum AudioProcessor {
     }
 
     /// The kept part of the first soundtrack, as 32-bit float samples (at
-    /// most 2 channels and 48 kHz).
+    /// most 2 channels and 48 kHz), its channels mixed as the edit asks.
     static func decode(
         _ source: URL, edit: MediaEdit, to destination: URL, progress: @escaping @Sendable (Double) -> Void
     ) async throws -> Measured {
@@ -109,14 +118,17 @@ enum AudioProcessor {
         let format = try await AudioFormat.of(track)
         let box = TrackBox(track: track)  // only read, on that one thread
         return try await Blocking.run { isCancelled in
-            try read(asset, track: box.track, from: start, to: end, format: format, into: destination, isCancelled: isCancelled, progress: progress)
+            try read(
+                asset, track: box.track, from: start, to: end, format: format, channels: edit.channels, into: destination,
+                isCancelled: isCancelled, progress: progress
+            )
         }
     }
 
     /// The decoding loop (it waits on AVFoundation, so it runs on its own thread).
     private static func read(
         _ asset: AVURLAsset, track: AVAssetTrack, from start: Double, to end: Double, format: AudioFormat,
-        into destination: URL, isCancelled: () -> Bool, progress: (Double) -> Void
+        channels: AudioChannels, into destination: URL, isCancelled: () -> Bool, progress: (Double) -> Void
     ) throws -> Measured {
         let reader = try AVAssetReader(asset: asset)
         reader.timeRange = CMTimeRange(
@@ -137,8 +149,10 @@ enum AudioProcessor {
             throw ConversionError.failed(reader.error?.localizedDescription ?? "Couldn't read the sound.")
         }
         let pcm = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: AVAudioChannelCount(format.channels), interleaved: false)!
-        let file = try AVAudioFile(forWriting: destination, settings: pcm.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
-        var meter = LoudnessMeter(sampleRate: format.sampleRate, channels: format.channels)
+        let mixedCount = channels.count(from: format.channels)
+        let mixed = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: AVAudioChannelCount(mixedCount), interleaved: false)!
+        let file = try AVAudioFile(forWriting: destination, settings: mixed.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        var meter = LoudnessMeter(sampleRate: format.sampleRate, channels: mixedCount)
         var peak: Float = 0
         let total = max(end - start, 0.001)
         while let sample = output.copyNextSampleBuffer() {
@@ -151,15 +165,38 @@ enum AudioProcessor {
             buffer.frameLength = frames
             let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(frames), into: buffer.mutableAudioBufferList)
             guard status == noErr else { throw ConversionError.failed("Couldn't read the sound (\(status)).") }
-            meter.add(buffer)
-            peak = max(peak, buffer.peak)
-            try file.write(from: buffer)
+            let written = mix(buffer, into: mixed, channels: channels)
+            meter.add(written)
+            peak = max(peak, written.peak)
+            try file.write(from: written)
             progress(min((sample.presentationTimeStamp.seconds - start) / total, 1))
         }
         if reader.status == .failed {
             throw ConversionError.failed(reader.error?.localizedDescription ?? "Couldn't read the sound.")
         }
         return Measured(loudness: meter.integratedLoudness, peak: peak)
+    }
+
+    /// The channels mixed as asked: both into one (mono), one copied to both
+    /// (stereo), or one side alone.
+    static func mix(_ buffer: AVAudioPCMBuffer, into format: AVAudioFormat, channels: AudioChannels) -> AVAudioPCMBuffer {
+        let inCount = Int(buffer.format.channelCount), outCount = Int(format.channelCount)
+        if channels == .unchanged || (channels == .stereo && inCount == 2) { return buffer }
+        guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameLength),
+              let input = buffer.floatChannelData, let output = out.floatChannelData, inCount > 0 else { return buffer }
+        out.frameLength = buffer.frameLength
+        for frame in 0..<Int(buffer.frameLength) {
+            let left = input[0][frame], right = inCount > 1 ? input[1][frame] : left
+            switch channels {
+            case .mono: output[0][frame] = (left + right) / 2
+            case .left: output[0][frame] = left
+            case .right: output[0][frame] = right
+            case .stereo, .unchanged:
+                output[0][frame] = left
+                if outCount > 1 { output[1][frame] = right }
+            }
+        }
+        return out
     }
 
     /// Plays the file faster or slower through Apple's time-pitch unit,
@@ -203,9 +240,33 @@ enum AudioProcessor {
         player.stop()
     }
 
-    /// Applies the gain (dB) and the fades while writing the final file.
+    /// Stretches of the result (in seconds) covered by a beep or silence.
+    struct Bleeps: Sendable {
+        var times: [(start: Double, end: Double)] = []
+        var silent = false
+        /// How long a bleep takes to come in and go (no clicks).
+        static let ramp = 0.005
+
+        /// How much of the beep is heard at each frame of a buffer (0 none,
+        /// 1 only the beep), and the beep itself.
+        func weights(from position: Int64, count: Int, rate: Double) -> (weights: [Float], tone: [Float])? {
+            guard !times.isEmpty else { return nil }
+            let from = Double(position) / rate, to = Double(position + Int64(count)) / rate
+            guard times.contains(where: { $0.end > from && $0.start < to }) else { return nil }
+            var weights = [Float](repeating: 0, count: count), tone = [Float](repeating: 0, count: count)
+            for index in 0..<count {
+                let time = Double(position + Int64(index)) / rate
+                guard let bleep = times.first(where: { $0.start <= time && time < $0.end }) else { continue }
+                weights[index] = Float(min(1, (time - bleep.start) / Self.ramp, (bleep.end - time) / Self.ramp))
+                if !silent { tone[index] = MediaEdit.bleepLevel * Float(sin(2 * .pi * MediaEdit.bleepFrequency * time)) }
+            }
+            return (weights, tone)
+        }
+    }
+
+    /// Applies the gain (dB), the fades and the bleeps while writing the final file.
     static func finish(
-        _ source: URL, gainDB: Double, fadeIn: Double, fadeOut: Double, to destination: URL,
+        _ source: URL, gainDB: Double, fadeIn: Double, fadeOut: Double, bleeps: Bleeps = Bleeps(), to destination: URL,
         settings: [String: Any], isCancelled: () -> Bool, progress: (Double) -> Void
     ) throws {
         let input = try AVAudioFile(forReading: source)
@@ -229,15 +290,21 @@ enum AudioProcessor {
             try input.read(into: buffer)
             let frames = Int(buffer.frameLength)
             if frames == 0 { break }
+            let bleeped = bleeps.weights(from: position, count: frames, rate: rate)
             for channel in 0..<Int(buffer.format.channelCount) {
                 guard let data = buffer.floatChannelData?[channel] else { continue }
                 for index in 0..<frames {
                     let at = position + AVAudioFramePosition(index)
-                    var factor = gain
-                    if at < fadeInFrames { factor *= Float(at) / Float(fadeInFrames) }
+                    var fade: Float = 1
+                    if at < fadeInFrames { fade *= Float(at) / Float(fadeInFrames) }
                     let fromEnd = total - at
-                    if fromEnd < fadeOutFrames { factor *= Float(fromEnd) / Float(fadeOutFrames) }
-                    data[index] = min(max(data[index] * factor, -1), 1)
+                    if fromEnd < fadeOutFrames { fade *= Float(fromEnd) / Float(fadeOutFrames) }
+                    var value = data[index] * gain
+                    if let bleeped, bleeped.weights[index] > 0 {
+                        let weight = bleeped.weights[index]
+                        value = value * (1 - weight) + bleeped.tone[index] * weight
+                    }
+                    data[index] = min(max(value * fade, -1), 1)
                 }
             }
             try output.write(from: buffer)

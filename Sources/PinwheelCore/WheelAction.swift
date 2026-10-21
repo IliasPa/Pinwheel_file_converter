@@ -252,6 +252,10 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
     case archive
     /// An archive's contents into a folder.
     case extract
+    /// Faces and text in a picture, blurred out.
+    case blurPrivate
+    /// A sound into a video with moving bars (from the Visualizer window).
+    case visualize
 
     /// The general name; Resize shows its chosen size on the wheel instead.
     public var title: String {
@@ -277,6 +281,8 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .sizeLimit: "Size Limit"
         case .archive: "ZIP"
         case .extract: "Extract"
+        case .blurPrivate: "Blur Faces & Text"
+        case .visualize: "Visualizer"
         }
     }
 
@@ -303,6 +309,8 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .sizeLimit: "gauge.with.dots.needle.bottom.50percent"
         case .archive: "doc.zipper"
         case .extract: "tray.and.arrow.up"
+        case .blurPrivate: "eye.slash"
+        case .visualize: "waveform.circle"
         }
     }
 
@@ -336,6 +344,8 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .sizeLimit: "Smaller than the size you chose"
         case .archive: "All of them in one .zip file"
         case .extract: "Its files, in a folder beside it"
+        case .blurPrivate: "Every face and all text, blurred out"
+        case .visualize: "A video of the sound, to share"
         }
     }
 
@@ -361,6 +371,8 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .sizeLimit: "smaller"
         case .archive: "zipped"
         case .extract: "extracted"
+        case .blurPrivate: "blurred"
+        case .visualize: "visualizer"
         }
     }
 }
@@ -380,6 +392,8 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
     case rename
     /// QR codes and barcodes in pictures, read out.
     case codes
+    /// A sound into a video with moving bars.
+    case visualizer
 
     public var title: String {
         switch self {
@@ -396,6 +410,7 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .sizeLimit: "Size Limit…"
         case .rename: "Rename…"
         case .codes: "Read Codes…"
+        case .visualizer: "Visualizer…"
         }
     }
 
@@ -414,6 +429,7 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .sizeLimit: ToolAction.sizeLimit.symbolName
         case .rename: "character.cursor.ibeam"
         case .codes: "qrcode.viewfinder"
+        case .visualizer: ToolAction.visualize.symbolName
         }
     }
 
@@ -431,13 +447,14 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
             case .pdf: "See and edit title, author and more"
             default: "See and edit the details"
             }
-        case .trim: kind == .audio ? "Trim, speed, fades and loudness" : "Trim, speed, turn, sound and GIF"
+        case .trim: kind == .audio ? "Trim, split, speed, fades, bleeps and channels" : "Trim, split, crop, speed, turn, sound and GIF"
         case .password: "Only people with the password can open it"
         case .collage: "Several photos in one: a grid, rows or a contact sheet"
         case .organize: "Reorder, turn or remove pages, from one PDF or several"
         case .sizeLimit: "Under a size you choose, like 10 MB for email"
         case .rename: "Many files at once: replace, number, dates, case…"
         case .codes: "QR codes and barcodes: copy the text or open the link"
+        case .visualizer: "Moving bars over a picture: a video to share"
         }
     }
 }
@@ -445,6 +462,8 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
 /// Finder chores for any files and folders: the file actions wheel.
 public enum FileAction: String, CaseIterable, Codable, Sendable {
     case airDrop, copy, moveTo, copyPath, terminal, quickLook
+    /// A floating shelf to park files on and drag them out later.
+    case shelf
 
     public var title: String {
         switch self {
@@ -454,6 +473,7 @@ public enum FileAction: String, CaseIterable, Codable, Sendable {
         case .copyPath: "Copy Path"
         case .terminal: "Terminal"
         case .quickLook: "Quick Look"
+        case .shelf: "Shelf"
         }
     }
 
@@ -465,6 +485,7 @@ public enum FileAction: String, CaseIterable, Codable, Sendable {
         case .copyPath: "link"
         case .terminal: "terminal"
         case .quickLook: "eye"
+        case .shelf: "tray.full"
         }
     }
 
@@ -476,6 +497,7 @@ public enum FileAction: String, CaseIterable, Codable, Sendable {
         case .copyPath: "Their full paths, to paste as text"
         case .terminal: "A Terminal window in their folder"
         case .quickLook: "A preview, as with the Space bar"
+        case .shelf: "Parks them on a shelf; drag them off later"
         }
     }
 }

@@ -823,4 +823,61 @@ final class StudioModel {
         change { $0.markup = [] }
         selection = nil
     }
+
+    // MARK: - Blurring out faces and text
+
+    private(set) var isFinding = false
+    /// What finding faces or text came to.
+    private(set) var findNote: String?
+
+    /// Finds faces or text in the picture and blurs them out, as Blur Out
+    /// markup (each can then be moved or deleted; Undo takes them all back).
+    func blurOut(faces: Bool, text: Bool) {
+        guard let source, !isFinding else { return }
+        isFinding = true
+        findNote = nil
+        var turn = ImageEdit()
+        turn.mirrored = edit.mirrored
+        turn.quarterTurns = edit.quarterTurns
+        turn.straighten = edit.straighten
+        let request = FindRequest(source: source, turn: turn, faces: faces, text: text)
+        Task {
+            let found = await Self.find(request)
+            isFinding = false
+            guard let regions = found.regions else {
+                findNote = found.error
+                return
+            }
+            guard !regions.isEmpty else {
+                findNote = faces ? "No faces were found." : "No text was found."
+                return
+            }
+            change { $0.markup += PrivacyBlur.annotations(for: regions) }
+            tool = nil
+            let what = faces ? (regions.count == 1 ? "face" : "faces") : (regions.count == 1 ? "line of text" : "lines of text")
+            findNote = "\(regions.count) \(what) blurred out."
+        }
+    }
+
+    private struct FindRequest: @unchecked Sendable {
+        let source: StudioSource
+        let turn: ImageEdit
+        let faces: Bool
+        let text: Bool
+    }
+
+    private struct Found: Sendable {
+        var regions: [RelativeRect]?
+        var error: String?
+    }
+
+    @concurrent
+    private nonisolated static func find(_ request: FindRequest) async -> Found {
+        do {
+            let turned = try StudioRenderer.render(request.source, mask: nil, edit: request.turn)
+            return Found(regions: try PrivacyBlur.regions(in: turned, faces: request.faces, text: request.text))
+        } catch {
+            return Found(error: error.localizedDescription)
+        }
+    }
 }

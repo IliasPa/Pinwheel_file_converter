@@ -182,13 +182,15 @@ public enum JobParameters: Sendable, Equatable, Codable {
     /// Trim, speed, turn and sound, from the video and audio editor (also
     /// the part a GIF is made from).
     case media(MediaEdit)
-    /// Which frame to save, in seconds from the start, turned as shown.
-    case frame(seconds: Double, quarterTurns: Int = 0)
+    /// Which frame to save, in seconds from the start, turned and cropped as shown.
+    case frame(seconds: Double, quarterTurns: Int = 0, crop: RelativeRect? = nil)
     case password(String)
     case collage(CollageSpec)
     case pages(PageArrangement)
     /// The most the result may weigh, in bytes.
     case sizeLimit(bytes: Int64)
+    /// How the Visualizer's video looks.
+    case visualizer(VisualizerSpec)
 }
 
 /// One conversion: usually one file, or several files becoming one PDF.

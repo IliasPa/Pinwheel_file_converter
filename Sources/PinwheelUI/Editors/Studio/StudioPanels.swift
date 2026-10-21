@@ -510,6 +510,28 @@ private struct MarkupPanel: View {
             }
         }
 
+        PanelSection(title: "Blur out by itself") {
+            HStack(spacing: 6) {
+                Button { model.blurOut(faces: true, text: false) } label: {
+                    Label("Faces", systemImage: "person.crop.square").frame(maxWidth: .infinity)
+                }
+                Button { model.blurOut(faces: false, text: true) } label: {
+                    Label("Text", systemImage: "text.viewfinder").frame(maxWidth: .infinity)
+                }
+            }
+            .disabled(model.isFinding)
+            if model.isFinding {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking…")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else if let note = model.findNote {
+                Text(note).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+
         HStack {
             Button("Delete", action: model.deleteSelected)
                 .disabled(model.selection == nil)

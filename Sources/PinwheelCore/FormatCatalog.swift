@@ -57,7 +57,7 @@ public enum FormatCatalog {
             [
                 .tool(.compress), .open(.sizeLimit), .tool(.resize), .tool(.removeBackground), .open(.crop),
                 .open(.adjust), .open(.background), .open(.markup), .open(.watermark), .open(.info), .open(.rename),
-                .tool(.stripMetadata), .tool(.extractText), .open(.codes),
+                .tool(.stripMetadata), .tool(.extractText), .open(.codes), .tool(.blurPrivate),
             ]
         case (.video, .tools):
             [
@@ -65,7 +65,10 @@ public enum FormatCatalog {
                 .open(.trim), .open(.info), .open(.rename),
             ]
         case (.audio, .tools):
-            [.tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.normalize), .open(.trim), .open(.info), .open(.rename)]
+            [
+                .tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.normalize), .open(.trim), .open(.visualizer),
+                .open(.info), .open(.rename),
+            ]
         case (.pdf, .tools):
             [
                 .tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.merge), .tool(.split), .open(.organize),
@@ -86,6 +89,7 @@ public enum FormatCatalog {
         hiddenKey(.image, .open(.background)),
         hiddenKey(.image, .open(.markup)),
         hiddenKey(.image, .open(.codes)),
+        hiddenKey(.image, .tool(.blurPrivate)),
         hiddenKey(.pdf, .tool(.stripMetadata)),
         hiddenKey(.pdf, .tool(.extractText)),
     ]

@@ -4,10 +4,11 @@ import Observation
 import SwiftUI
 import PinwheelCore
 
-/// The video and audio editor: keep a part, change the speed, turn the
-/// picture, mute, fade, make louder or even out the loudness; save the
-/// result, a GIF of the part, or one frame. Each file has its own part; the
-/// other changes can be the same for all of them.
+/// The video and audio editor: keep a part (or cut it into pieces), change
+/// the speed, turn and crop the picture, mute, fade, make louder or even out
+/// the loudness, bleep words, mix the channels; save the result, a GIF of
+/// the part, or one frame. Each file has its own part, pieces, crop and
+/// bleeps; the other changes can be the same for all of them.
 @Observable
 final class MediaEditorModel {
     let files: [SourceFile]
@@ -17,10 +18,25 @@ final class MediaEditorModel {
     private(set) var edits: [MediaEdit]
     /// Speed, turn and sound changes go to every file.
     var sameForAll = true
+    /// Each file's crop: its shape, size and middle (nil: not cropped).
+    private(set) var crops: [CropChoice?]
+    /// How long Bleep Here covers.
+    var bleepLength = 1.0
+
+    struct CropChoice: Equatable {
+        var shape: AspectRatio
+        var scale = 1.0
+        var center = RelativePoint(x: 0.5, y: 0.5)
+    }
+
+    static let cropShapes = [AspectRatio.square, AspectRatio(4, 5), AspectRatio(9, 16), AspectRatio(16, 9), AspectRatio(4, 3)]
+    static let bleepLengths = [0.5, 1, 2, 3]
 
     // The file shown
     private(set) var duration: Double = 0
     private(set) var isVideo = false
+    /// The picture's size as it plays (before Pinwheel's own turn).
+    private(set) var uprightSize: CGSize = .zero
     /// Frames along the timeline, turned like the picture will be.
     private(set) var filmstrip: [CGImage] = []
     @ObservationIgnored private var uprightFilmstrip: [CGImage] = []
@@ -36,7 +52,7 @@ final class MediaEditorModel {
     var gifNeedsFFmpeg: Bool
     var onSave: ((SourceFile, MediaEdit) -> Void)?
     var onGIF: ((SourceFile, MediaEdit) -> Void)?
-    var onFrame: ((SourceFile, Double, Int) -> Void)?
+    var onFrame: ((SourceFile, Double, Int, RelativeRect?) -> Void)?
     var onClose: (() -> Void)?
 
     enum Handle { case start, end, playhead }
@@ -48,6 +64,7 @@ final class MediaEditorModel {
     init(files: [SourceFile], ffmpegAvailable: Bool) {
         self.files = files
         edits = Array(repeating: MediaEdit(), count: files.count)
+        crops = Array(repeating: nil, count: files.count)
         gifNeedsFFmpeg = !ffmpegAvailable
         player.actionAtItemEnd = .pause
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
@@ -74,7 +91,7 @@ final class MediaEditorModel {
         let current = generation
         loadTask?.cancel()
         player.pause()
-        (duration, filmstrip, waveform, loudness, loadError, currentTime, isPlaying) = (0, [], [], nil, nil, 0, false)
+        (duration, filmstrip, waveform, loudness, loadError, currentTime, isPlaying, uprightSize) = (0, [], [], nil, nil, 0, false, .zero)
         uprightFilmstrip = []
         let url = file.url
         isVideo = file.kind == .video
@@ -89,6 +106,11 @@ final class MediaEditorModel {
                 duration = length.isFinite ? length : 0
                 applyPreview()
                 if isVideo {
+                    if let track = try await asset.loadTracks(withMediaType: .video).first {
+                        let box = CGRect(origin: .zero, size: try await track.load(.naturalSize)).applying(try await track.load(.preferredTransform))
+                        guard current == generation else { return }
+                        uprightSize = CGSize(width: abs(box.width), height: abs(box.height))
+                    }
                     let strip = try await Self.filmstrip(of: asset, duration: duration)
                     guard current == generation else { return }
                     uprightFilmstrip = strip.images
@@ -155,10 +177,15 @@ final class MediaEditorModel {
                 edits[other].fadeOut = after.fadeOut
                 edits[other].volume = after.volume
                 edits[other].normalize = after.normalize
+                edits[other].channels = after.channels
+                edits[other].silentBleeps = after.silentBleeps
             }
         }
         if after.normalize && !before.normalize { measure() }
-        if after.quarterTurns != before.quarterTurns { turnFilmstrip() }
+        if after.quarterTurns != before.quarterTurns {
+            turnFilmstrip()
+            applyCrop()  // the same shape, on the turned picture
+        }
         applyPreview()
     }
 
@@ -188,7 +215,78 @@ final class MediaEditorModel {
     }
 
     func reset() {
+        crops[index] = nil
         change { $0 = MediaEdit() }
+    }
+
+    // MARK: - Crop
+
+    /// The picture's size as it will be saved, turned.
+    var shownSize: CGSize {
+        edit.quarterTurns % 2 == 0 ? uprightSize : CGSize(width: uprightSize.height, height: uprightSize.width)
+    }
+
+    var crop: CropChoice? { crops[index] }
+
+    func setCrop(_ shape: AspectRatio?) {
+        crops[index] = shape.map { CropChoice(shape: $0, scale: crops[index]?.scale ?? 1, center: crops[index]?.center ?? RelativePoint(x: 0.5, y: 0.5)) }
+        applyCrop()
+    }
+
+    func setCropScale(_ scale: Double) {
+        crops[index]?.scale = scale
+        applyCrop()
+    }
+
+    /// Moves the box's middle (as a share of the picture); it stops at the edges.
+    func moveCrop(to center: RelativePoint) {
+        crops[index]?.center = center
+        applyCrop()
+    }
+
+    private func applyCrop() {
+        guard shownSize.width > 0 else { return }
+        let rect = crops[index].map { MediaEdit.cropRect(shape: $0.shape, scale: $0.scale, center: $0.center, shownSize: shownSize) }
+        if let rect { crops[index]?.center = RelativePoint(x: rect.x + rect.width / 2, y: rect.y + rect.height / 2) }
+        guard edits[index].crop != rect else { return }
+        edits[index].crop = rect
+    }
+
+    /// The crop's size in pixels, for the footer.
+    var croppedSize: CGSize? {
+        edit.crop.map { CGSize(width: ($0.width * shownSize.width).rounded(), height: ($0.height * shownSize.height).rounded()) }
+    }
+
+    // MARK: - Pieces and bleeps
+
+    /// Cuts the part at the playhead; each piece is saved on its own.
+    func splitHere() {
+        let time = currentTime
+        guard time > start + 0.1, time < end - 0.1, !edit.splits.contains(where: { abs($0 - time) < 0.1 }) else {
+            NSSound.beep()
+            return
+        }
+        change { $0.splits = ($0.splits + [time]).sorted() }
+    }
+
+    func removeSplit(_ time: Double) {
+        change { $0.splits.removeAll { $0 == time } }
+    }
+
+    var pieceCount: Int { edit.pieces(duration: max(duration, 0.1)).count }
+
+    /// Covers `bleepLength` seconds from the playhead with a beep.
+    func bleepHere() {
+        let from = currentTime, to = min(currentTime + bleepLength, duration)
+        guard to - from > 0.05 else {
+            NSSound.beep()
+            return
+        }
+        change { $0.bleeps.append(MediaEdit.Bleep(start: from, end: to)) }
+    }
+
+    func removeBleep(_ bleep: MediaEdit.Bleep) {
+        change { $0.bleeps.removeAll { $0 == bleep } }
     }
 
     var start: Double { edit.range(duration: max(duration, 0.1)).start }
@@ -219,6 +317,11 @@ final class MediaEditorModel {
                 parameters.setVolumeRamp(fromStartVolume: level, toEndVolume: 0, timeRange: CMTimeRange(
                     start: CMTime(seconds: max(end - length, start), preferredTimescale: 600), duration: CMTime(seconds: length, preferredTimescale: 600)
                 ))
+            }
+            // Bleeps play as silence.
+            for bleep in edit.bleeps {
+                parameters.setVolume(0, at: CMTime(seconds: bleep.start, preferredTimescale: 600))
+                parameters.setVolume(level, at: CMTime(seconds: bleep.end, preferredTimescale: 600))
             }
             let mix = AVMutableAudioMix()
             mix.inputParameters = [parameters]
@@ -305,7 +408,9 @@ final class MediaEditorModel {
     }
 
     private func isUnchanged(_ edit: MediaEdit, index: Int) -> Bool {
-        index == self.index && duration > 0 ? edit.isEmpty(duration: duration) : (edit.isTrimOnly && edit.start <= 0 && edit.end == nil)
+        index == self.index && duration > 0
+            ? edit.isEmpty(duration: duration)
+            : (edit.isTrimOnly && edit.start <= 0 && edit.end == nil && edit.splits.isEmpty)
     }
 
     func save() {
@@ -321,7 +426,7 @@ final class MediaEditorModel {
     }
 
     func saveFrame() {
-        onFrame?(file, currentTime, edit.quarterTurns)
+        onFrame?(file, currentTime, edit.quarterTurns, edit.crop)
     }
 
     func cancel() {
@@ -370,6 +475,8 @@ struct MediaEditorView: View {
             if model.isVideo {
                 PlayerSurface(player: model.player, quarterTurns: model.edit.quarterTurns)
                     .padding(16)
+                CropBox(model: model)
+                    .padding(16)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "waveform")
@@ -402,6 +509,13 @@ struct MediaEditorView: View {
             Spacer()
             Button("Start Here", action: model.setStartToPlayhead).help("The part starts at the playhead")
             Button("End Here", action: model.setEndToPlayhead).help("The part ends at the playhead")
+            Button { model.splitHere() } label: { Label("Split Here", systemImage: "scissors") }
+                .keyboardShortcut("s", modifiers: [])
+                .help("Cuts the part at the playhead (S); each piece is saved on its own")
+            Button { model.bleepHere() } label: { Label("Bleep Here", systemImage: "speaker.badge.exclamationmark") }
+                .keyboardShortcut("b", modifiers: [])
+                .help("A beep over \(MediaEditorView.seconds(model.bleepLength)) from the playhead (B)")
+                .disabled(model.edit.mute)
         }
         .controlSize(.small)
     }
@@ -420,7 +534,9 @@ struct MediaEditorView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(model.file.url.lastPathComponent).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
-                Text("Part \(Self.time(model.start, tenths: true))–\(Self.time(model.end, tenths: true)) · result \(Self.time(model.resultLength, tenths: true))")
+                Text("Part \(Self.time(model.start, tenths: true))–\(Self.time(model.end, tenths: true)) · result \(Self.time(model.resultLength, tenths: true))"
+                    + (model.pieceCount > 1 ? " in \(model.pieceCount) pieces" : "")
+                    + (model.croppedSize.map { " · \(Int($0.width)) × \(Int($0.height))" } ?? ""))
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -440,6 +556,11 @@ struct MediaEditorView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    /// "0.5 s", "2 s"
+    static func seconds(_ value: Double) -> String {
+        value.rounded() == value ? "\(Int(value)) s" : String(format: "%g s", value)
     }
 
     /// "1:05" or "1:05.3"
@@ -470,6 +591,23 @@ private struct TimelineStrip: View {
                     .strokeBorder(Color.yellow, lineWidth: 3)
                     .frame(width: max(endX - startX, 6), height: height)
                     .offset(x: startX)
+                // Bleeps along the bottom, cuts as white lines.
+                ForEach(model.edit.bleeps, id: \.self) { bleep in
+                    Rectangle()
+                        .fill(Color.red.opacity(0.85))
+                        .frame(width: max((bleep.end - bleep.start) * scale, 2), height: 7)
+                        .offset(x: bleep.start * scale, y: height - 7)
+                }
+                ForEach(model.edit.splits, id: \.self) { split in
+                    Rectangle()
+                        .fill(.white)
+                        .frame(width: 2, height: height)
+                        .overlay(alignment: .top) {
+                            Image(systemName: "scissors").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                                .shadow(color: .black, radius: 1).offset(y: -12)
+                        }
+                        .offset(x: split * scale - 1)
+                }
                 handle.offset(x: startX - 4)
                 handle.offset(x: endX - 6)
                 Rectangle()
@@ -551,6 +689,35 @@ private struct MediaControls: View {
                             Label("Turn Right", systemImage: "rotate.right").frame(maxWidth: .infinity)
                         }
                     }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 48), spacing: 6)], spacing: 6) {
+                        ChoiceButton(title: "Whole", isOn: model.crop == nil) { model.setCrop(nil) }
+                        ForEach(MediaEditorModel.cropShapes, id: \.self) { shape in
+                            ChoiceButton(title: shape.title, isOn: model.crop?.shape == shape) { model.setCrop(shape) }
+                        }
+                    }
+                    if let crop = model.crop {
+                        HStack {
+                            Text("Size").font(.system(size: 12))
+                            Slider(value: Binding(get: { crop.scale }, set: { model.setCropScale($0) }), in: 0.3...1).controlSize(.small)
+                        }
+                        Text("Drag the box on the video to choose what's kept.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if !model.edit.splits.isEmpty {
+                PanelSection(title: "Pieces") {
+                    ForEach(model.edit.splits, id: \.self) { split in
+                        HStack {
+                            Image(systemName: "scissors").foregroundStyle(.secondary)
+                            Text("Cut at \(MediaEditorView.time(split, tenths: true))").font(.system(size: 12).monospacedDigit())
+                            Spacer()
+                            Button { model.removeSplit(split) } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.secondary)
+                                .help("Don't cut here")
+                        }
+                    }
+                    Text("\(model.pieceCount) pieces, each saved on its own in a folder.").font(.caption).foregroundStyle(.secondary)
                 }
             }
             PanelSection(title: "Speed") {
@@ -573,17 +740,43 @@ private struct MediaControls: View {
                         .disabled(edit.normalize)
                     Toggle("Even out loudness (−16 LUFS)", isOn: Binding(get: { edit.normalize }, set: { on in model.change { $0.normalize = on } }))
                     if edit.normalize { loudnessNote }
+                    Picker("Channels", selection: Binding(get: { edit.channels }, set: { channels in model.change { $0.channels = channels } })) {
+                        ForEach(AudioChannels.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    .help("Mono mixes both sides; one side only helps when a voice was recorded on one side")
                 }
                 .disabled(edit.mute)
             }
+            PanelSection(title: "Bleeps") {
+                Picker("Each bleep lasts", selection: Binding(get: { model.bleepLength }, set: { model.bleepLength = $0 })) {
+                    ForEach(MediaEditorModel.bleepLengths, id: \.self) { Text(MediaEditorView.seconds($0)).tag($0) }
+                }
+                ForEach(edit.bleeps, id: \.self) { bleep in
+                    HStack {
+                        Image(systemName: "speaker.badge.exclamationmark").foregroundStyle(.red)
+                        Text("\(MediaEditorView.time(bleep.start, tenths: true))–\(MediaEditorView.time(bleep.end, tenths: true))")
+                            .font(.system(size: 12).monospacedDigit())
+                        Spacer()
+                        Button { model.removeBleep(bleep) } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .help("Remove this bleep")
+                    }
+                }
+                Toggle("Silence instead of a beep", isOn: Binding(get: { edit.silentBleeps }, set: { on in model.change { $0.silentBleeps = on } }))
+                Text(edit.bleeps.isEmpty ? "Play to the word, then Bleep Here (B) covers it." : "The preview plays them as silence.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(edit.mute)
             if model.files.count > 1 {
                 Toggle("Same changes for all \(model.files.count) files", isOn: Binding(get: { model.sameForAll }, set: { model.sameForAll = $0 }))
-                Text("Each file keeps its own part; speed, turn and sound are shared.")
+                Text("Each file keeps its own part, pieces, crop and bleeps; speed, turn and sound are shared.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Button("Reset", action: model.reset)
-            Text("Drag the yellow handles to choose the part to keep. Space plays it.")
+            Text("Drag the yellow handles to choose the part to keep. Space plays it; S cuts it at the playhead, B bleeps.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -618,6 +811,46 @@ private struct MediaControls: View {
             }
             Slider(value: Binding(get: { value }, set: { set(unit == "dB" ? $0.rounded() : ($0 * 10).rounded() / 10) }), in: range)
                 .controlSize(.small)
+        }
+    }
+}
+
+/// The crop over the video: what's left out is dimmed; drag to move the box.
+private struct CropBox: View {
+    var model: MediaEditorModel
+    @GestureState private var dragStart: RelativePoint?
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let crop = model.edit.crop, let choice = model.crop, model.shownSize.width > 0 {
+                let picture = StudioCanvas.fit(model.shownSize, in: CGRect(origin: .zero, size: geometry.size))
+                let box = CGRect(
+                    x: picture.minX + crop.x * picture.width, y: picture.minY + crop.y * picture.height,
+                    width: crop.width * picture.width, height: crop.height * picture.height
+                )
+                ZStack(alignment: .topLeading) {
+                    Path { path in
+                        path.addRect(picture)
+                        path.addRect(box)
+                    }
+                    .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
+                    Rectangle()
+                        .strokeBorder(Color.white, lineWidth: 2)
+                        .frame(width: box.width, height: box.height)
+                        .offset(x: box.minX, y: box.minY)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture()
+                                .updating($dragStart) { _, start, _ in if start == nil { start = choice.center } }
+                                .onChanged { value in
+                                    let from = dragStart ?? choice.center
+                                    model.moveCrop(to: RelativePoint(
+                                        x: from.x + value.translation.width / picture.width, y: from.y + value.translation.height / picture.height
+                                    ))
+                                }
+                        )
+                }
+            }
         }
     }
 }

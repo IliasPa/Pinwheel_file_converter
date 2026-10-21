@@ -44,6 +44,7 @@ enum OutputPlanner {
             }
         case .tool(let tool):
             plan.suffix = tool.nameSuffix(options: options)
+            if tool == .editMedia, request.mediaEdit?.splits.isEmpty == false { plan.suffix = "split" }
             if tool == .sizeLimit, let bytes = request.sizeLimit {
                 plan.suffix = "under \(SizeLimit.title(bytes: bytes))"
             }
@@ -112,6 +113,8 @@ enum OutputPlanner {
         case (.image, _):
             if let format = file.format, [.png, .jpeg, .heic, .tiff, .gif].contains(format) { return (format, ext) }
             return (.png, OutputFormat.png.fileExtension)
+        case (_, .visualize):
+            return (.mp4, OutputFormat.mp4.fileExtension)
         case (.video, .compress), (.video, .sizeLimit):
             return (.mp4, OutputFormat.mp4.fileExtension)
         case (.video, .extractAudio), (.audio, .compress), (.audio, .sizeLimit):
@@ -119,6 +122,9 @@ enum OutputPlanner {
         case (.video, .saveFrame):
             return (.jpeg, OutputFormat.jpeg.fileExtension)
         case (.video, .editMedia), (.audio, .editMedia), (.audio, .normalize):
+            if tool == .editMedia, request?.mediaEdit?.splits.isEmpty == false {
+                return (nil, nil)  // a folder with a file for each piece
+            }
             if tool == .editMedia, request?.mediaEdit?.isTrimOnly ?? true {
                 return trimOutput(for: file, options: options)
             }
