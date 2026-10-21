@@ -284,6 +284,27 @@ final class ClipboardStore {
         }
     }
 
+    // MARK: - Space
+
+    /// What the kept copies take on disk.
+    var totalBytes: Int { items.reduce(0) { $0 + $1.byteCount } }
+
+    /// A copy's usual size: from the history once it has a few, or else a
+    /// typical mix (mostly text, now and then a screenshot).
+    var typicalBytes: Int {
+        items.count >= 10 ? totalBytes / items.count : 120_000
+    }
+
+    /// "about 24 MB" for this many copies.
+    func estimate(copies: Int) -> String {
+        "about " + Self.size(copies * typicalBytes)
+    }
+
+    /// "3.2 MB"
+    static func size(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
     /// The apps things were copied in, the most recent first.
     var apps: [(id: String, name: String)] {
         var seen: Set<String> = []

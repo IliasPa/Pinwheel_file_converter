@@ -64,7 +64,7 @@ final class SettingsStore {
         case wheelKeys, keepWheelOpen, hiddenActions, terminalApp
         case webpQuality, avifQuality
         case textRecognition
-        case clipboardEnabled, clipboardShortcut, clipboardLimit
+        case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -155,6 +155,8 @@ final class SettingsStore {
         }
     }
     static let clipboardLimits = [50, 100, 200, 500, 1000]
+    /// Choosing a copy pastes it where you're typing (else it's only copied).
+    var clipboardPastes: Bool { didSet { save(clipboardPastes, .clipboardPastes) } }
     /// The clipboard history follows its settings at once.
     @ObservationIgnored var onClipboardChange: () -> Void = {}
 
@@ -206,6 +208,7 @@ final class SettingsStore {
             .clipboardEnabled: true,
             .clipboardShortcut: KeyShortcut.clipboard.stored,
             .clipboardLimit: 200,
+            .clipboardPastes: true,
         ]
     }
 
@@ -259,6 +262,7 @@ final class SettingsStore {
         clipboardEnabled = defaults.bool(forKey: Key.clipboardEnabled.rawValue)
         clipboardShortcut = KeyShortcut(stored: defaults.dictionary(forKey: Key.clipboardShortcut.rawValue)) ?? .clipboard
         clipboardLimit = defaults.integer(forKey: Key.clipboardLimit.rawValue)
+        clipboardPastes = defaults.bool(forKey: Key.clipboardPastes.rawValue)
         placeNewTools()
     }
 
@@ -420,6 +424,7 @@ final class SettingsStore {
         clipboardEnabled = fresh.clipboardEnabled
         clipboardShortcut = fresh.clipboardShortcut
         clipboardLimit = fresh.clipboardLimit
+        clipboardPastes = fresh.clipboardPastes
     }
 
     /// The last watermark saved from the image editor, offered again next time.

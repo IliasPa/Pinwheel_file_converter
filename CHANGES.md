@@ -3,6 +3,24 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7.1 (beta) — 2026-10-22
+
+**New**
+- **Choosing a copy pastes it where you're typing.** Click one (or press
+  Return) and the history closes and pastes it into the app you were in,
+  as ⌘V would. Prefer to paste yourself? Settings › Clipboard › When you
+  choose a copy › Just copy it. Pasting uses the Accessibility permission
+  Pinwheel already has; without it, choosing a copy only copies it.
+- **How much room the history takes:** each choice of how many copies to
+  keep says about how much space that is (worked out from your own copies:
+  screenshots take far more room than text), and the page shows what the
+  history uses now.
+
+**Fixed**
+- Blur Faces/Text and Read Codes could stall when the Mac was very busy
+  (and the tests on GitHub did): Vision now works on a thread of its own,
+  and reading text that fails because the Mac is busy is tried again.
+
 ## v1.7 (beta) — 2026-10-21
 
 A clipboard history.

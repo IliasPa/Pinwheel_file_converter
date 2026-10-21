@@ -79,9 +79,10 @@ it.
 
 **Clipboard history** (beta): press **⌥⌘V** in any app to see what you
 copied, sorted by kind (text, links, images, files) and by the app it came
-from, with a search field. Click one (or press Return) and it's on the
-clipboard, ready to paste. A **heart** keeps a copy as a favorite for good.
-The keys can be changed in Settings › Clipboard.
+from, with a search field. Click one (or press Return) and it's pasted
+where you were typing (or just copied, if you prefer). A **heart** keeps a
+copy as a favorite for good. The keys, and how many copies to keep (with
+the room they take), are in Settings › Clipboard.
 
 **And**
 - **Undo** at the top of the menu-bar menu: new files go to the Trash and
@@ -147,7 +148,7 @@ Applications with the new one; your settings stay.
 | Use other keys | Settings › Wheel › Keys (and whether the wheel stays open) |
 | Choose from Finder | Right-click files › **Services** › **Pinwheel Tools**, then click a wedge |
 | Take it back | Menu-bar icon › **Undo …** |
-| Get back something you copied | **⌥⌘V**, then click it (or type to search, ↑↓ and Return) |
+| Paste something you copied before | **⌥⌘V**, then click it (or type to search, ↑↓ and Return) |
 | See the original while editing a photo | Hold **Space** (or the Compare button) |
 
 Tools whose names end in "…" open a window where you choose the details

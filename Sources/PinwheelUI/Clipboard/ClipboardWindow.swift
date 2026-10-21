@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Observation
 import SwiftUI
 
@@ -9,6 +10,10 @@ final class ClipboardController {
     let model: ClipboardPanelModel
     /// Settings › Clipboard.
     var onOpenSettings: () -> Void = {}
+    /// Presses ⌘V in the app in front (swapped out in tests).
+    var paste: () -> Void = { ClipboardController.pressCommandV() }
+    /// Whether Pinwheel may press keys (the Accessibility permission).
+    var mayPress: () -> Bool = { AXIsProcessTrusted() }
     private let settings: SettingsStore
     private let pasteboard: NSPasteboard
     private let hotKey = GlobalHotKey()
@@ -75,14 +80,34 @@ final class ClipboardController {
         store.add(contents, appID: app?.bundleIdentifier, appName: app?.localizedName)
     }
 
-    /// On the clipboard, ready to paste; the window closes.
+    /// On the clipboard and, unless Settings says just copy, pasted where
+    /// the cursor was: the window closes and ⌘V goes to the app in front.
     func copy(_ item: ClipItem) {
         store.copy(item, to: pasteboard)
         seenChangeCount = pasteboard.changeCount  // not a new copy
-        model.justCopied = item.id
+        guard settings.clipboardPastes, mayPress() else {
+            model.justCopied = item.id
+            Task {
+                try? await Task.sleep(for: .milliseconds(180))
+                hide()
+            }
+            return
+        }
+        hide()
         Task {
-            try? await Task.sleep(for: .milliseconds(180))
-            hide()
+            // The app in front gets its keyboard back first.
+            try? await Task.sleep(for: .milliseconds(60))
+            paste()
+        }
+    }
+
+    /// ⌘V, as if typed (whatever else is held down).
+    static func pressCommandV() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        for isDown in [true, false] {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: isDown)
+            event?.flags = .maskCommand
+            event?.post(tap: .cgAnnotatedSessionEventTap)
         }
     }
 
@@ -95,6 +120,7 @@ final class ClipboardController {
     func show() {
         checkClipboard()
         model.prepare()
+        model.pastes = settings.clipboardPastes && mayPress()
         // In the upper middle of the screen with the pointer, like Spotlight.
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
         if let visible = screen?.visibleFrame {
@@ -170,6 +196,8 @@ final class ClipboardPanelModel {
     var justCopied: ClipItem.ID?
     /// Why the shortcut couldn't be set up, for Settings (nil when it works).
     var shortcutProblem: String?
+    /// Choosing a copy pastes it too (else it's only copied).
+    var pastes = true
 
     var onCopy: (ClipItem) -> Void = { _ in }
     var onClose: () -> Void = {}
@@ -360,7 +388,7 @@ struct ClipboardView: View {
 
     private func footer(_ count: Int) -> some View {
         HStack(spacing: 10) {
-            Text("Click or ↩ copies · ↑↓ · ⌘⌫ removes · Esc closes")
+            Text("Click or ↩ \(model.pastes ? "pastes" : "copies") · ↑↓ · ⌘⌫ removes · Esc closes")
             Spacer()
             Text(count == model.store.items.count ? "\(count) copies" : "\(count) of \(model.store.items.count)").monospacedDigit()
             Button(action: model.onOpenSettings) { Image(systemName: "gearshape") }

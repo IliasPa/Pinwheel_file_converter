@@ -177,6 +177,9 @@ struct KeyShortcutTests {
         #expect(again.clipboardShortcut.title == "⌃⌘C" && again.clipboardLimit == 500)
         again.resetToDefaults()
         #expect(again.clipboardShortcut == .clipboard && again.clipboardLimit == 200 && again.clipboardEnabled)
+        #expect(again.clipboardPastes)
+        again.clipboardPastes = false
+        #expect(!SettingsStore(defaults: defaults).clipboardPastes)
 
         func found(_ text: String) -> [SettingsPane] { SettingsPane.allCases.filter { $0.matches(text) } }
         #expect(found("clipboard") == [.clipboard] && found("pasta") == [.clipboard])
@@ -190,12 +193,16 @@ struct KeyShortcutTests {
 // MARK: - Watching and copying
 
 struct ClipboardControllerTests {
-    @Test func keepsCopiesAndCopiesBack() throws {
+    @Test func keepsCopiesAndCopiesBack() async throws {
         let scratch = try Scratch()
         let settings = SettingsStore(defaults: freshDefaults())
         settings.clipboardShortcut = KeyShortcut(keyCode: UInt16(kVK_F18), modifiers: [.control, .option, .command], key: "F18")
         let board = testPasteboard()
         let controller = ClipboardController(settings: settings, store: ClipboardStore(folder: scratch.url), pasteboard: board)
+        // Never press keys for real: they'd go to whatever app is in front.
+        var pasted = 0
+        controller.paste = { pasted += 1 }
+        controller.mayPress = { true }
         controller.apply()
         defer {
             settings.clipboardEnabled = false
@@ -210,11 +217,24 @@ struct ClipboardControllerTests {
         controller.checkClipboard()  // nothing new
         #expect(controller.store.items.map(\.preview) == ["second", "first"])
 
-        // Copying from the history: on the clipboard, at the top, not kept twice.
+        // Copying from the history: on the clipboard, at the top, not kept
+        // twice, and pasted (⌘V) a moment later, once the window is gone.
         controller.copy(controller.store.items[1])
         #expect(board.string(forType: .string) == "first")
         controller.checkClipboard()
         #expect(controller.store.items.map(\.preview) == ["first", "second"])
+        #expect(pasted == 0, "not before the app in front has its keyboard back")
+        for _ in 0..<40 where pasted == 0 { try await Task.sleep(for: .milliseconds(25)) }
+        #expect(pasted == 1)
+
+        // "Just copy it", or no permission to press keys: copied, not pasted.
+        settings.clipboardPastes = false
+        controller.copy(controller.store.items[1])
+        settings.clipboardPastes = true
+        controller.mayPress = { false }
+        controller.copy(controller.store.items[1])
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(pasted == 1 && board.string(forType: .string) == "first")
 
         // Off: nothing is kept.
         settings.clipboardEnabled = false
@@ -250,5 +270,25 @@ struct ClipboardControllerTests {
         #expect(store.items.map(\.preview) == ["beta", "alpha"] && model.selection == store.items[0].id)
         model.kind = .image
         #expect(model.visible.isEmpty && model.selection == nil)
+    }
+}
+
+// MARK: - Space
+
+struct ClipboardSpaceTests {
+    @Test func howMuchRoomTheCopiesTake() throws {
+        let scratch = try Scratch()
+        let store = ClipboardStore(folder: scratch.url)
+        // Before there are enough copies: a typical mix.
+        #expect(store.totalBytes == 0 && store.estimate(copies: 200) == "about 24 MB")
+        let board = testPasteboard()
+        for number in 0..<10 {
+            put([text(String(repeating: "\(number)", count: 1000))], on: board)
+            try keep(store, from: board)
+        }
+        // Then from the copies themselves: 1 KB of text each.
+        #expect(store.totalBytes == 10_000 && store.typicalBytes == 1000)
+        #expect(store.estimate(copies: 1000) == "about 1 MB")
+        #expect(ClipboardStore.size(3_200_000) == "3.2 MB")
     }
 }

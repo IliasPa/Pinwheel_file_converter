@@ -454,15 +454,27 @@ struct SettingsView: View {
             if let problem = clipboard?.model.shortcutProblem, settings.clipboardEnabled {
                 Label(problem, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
             }
+            Picker("When you choose a copy", selection: $settings.clipboardPastes) {
+                Text("Paste it where you're typing").tag(true)
+                Text("Just copy it").tag(false)
+            }
+            .disabled(!settings.clipboardEnabled)
+            if settings.clipboardPastes && settings.clipboardEnabled && !permission.isTrusted {
+                Text("Pasting needs the Accessibility permission (General); until then, choosing a copy only copies it.")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
             Picker("Keep the last", selection: $settings.clipboardLimit) {
-                ForEach(SettingsStore.clipboardLimits, id: \.self) { Text("\($0) copies").tag($0) }
+                ForEach(SettingsStore.clipboardLimits, id: \.self) { limit in
+                    Text("\(limit) copies · \(clipboard?.store.estimate(copies: limit) ?? "")").tag(limit)
+                }
             }
             .disabled(!settings.clipboardEnabled)
             HStack {
                 Button("Show Clipboard History") { clipboard?.show() }
                     .disabled(!settings.clipboardEnabled || clipboard == nil)
                 Spacer()
-                Text(count == 1 ? "1 copy kept" : "\(count) copies kept").foregroundStyle(.secondary).monospacedDigit()
+                Text(clipboardUsage(count: count)).foregroundStyle(.secondary).monospacedDigit()
                 Button("Clear History…") { state.confirmClearClipboard = true }
                     .disabled(count == 0)
             }
@@ -477,8 +489,14 @@ struct SettingsView: View {
                     .foregroundStyle(Color.accentColor)
             }
         } footer: {
-            Footnote("Press \(settings.clipboardShortcut.title) in any app to see what you copied, by app and by kind (text, links, images, files). Click one, or press Return, and it's on the clipboard, ready to paste. A heart keeps a copy for good; the rest go after the number above. Kept only on this Mac; passwords and anything else apps mark as private are never kept.")
+            Footnote("Press \(settings.clipboardShortcut.title) in any app to see what you copied, by app and by kind (text, links, images, files). Click one, or press Return, and it's pasted where you were typing (or just copied). A heart keeps a copy for good; the rest go after the number above. The sizes are worked out from your copies so far: screenshots take far more room than text. Kept only on this Mac; passwords and anything else apps mark as private are never kept.")
         }
+    }
+
+    /// "12 copies · 3.2 MB"
+    private func clipboardUsage(count: Int) -> String {
+        let copies = count == 1 ? "1 copy" : "\(count) copies"
+        return count == 0 ? "No copies kept" : "\(copies) · \(ClipboardStore.size(clipboard?.store.totalBytes ?? 0))"
     }
 
     // MARK: - Wheel
