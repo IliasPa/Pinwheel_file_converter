@@ -108,7 +108,9 @@ struct WorkerTests {
         task.cancel()
         let stopped = Date()
         await #expect(throws: CancellationError.self) { try await task.value }
-        #expect(Date().timeIntervalSince(stopped) < 5)
+        // Quick, next to the half a minute or more the whole job takes (a
+        // busy 3-core Mac running all the tests needs a few seconds).
+        #expect(Date().timeIntervalSince(stopped) < 10)
         #expect(!FileManager.default.fileExists(atPath: job.destination.path))
     }
 

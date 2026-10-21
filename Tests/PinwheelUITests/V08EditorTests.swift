@@ -148,12 +148,13 @@ struct SkippedNoticeTests {
         #expect(notice.title == "Nothing saved for plain.png")
         #expect(notice.body.contains("subject"))
 
-        // A quick success needs no notification; a long one does.
+        // A quick success needs no notification; a long one does (timed from
+        // the job's start, not the clock: a busy Mac may take a while).
         queue.enqueue(files: [SourceFile(url: try scratch.image("photo.png"))], action: .convert(.jpeg))
         try await waitUntil { queue.isIdle }
         let success = [try #require(queue.jobs.last)]
-        #expect(Notifier.content(for: success) == nil)
-        #expect(Notifier.content(for: success, now: Date().addingTimeInterval(60))?.title == "photo.png is ready")
+        #expect(Notifier.content(for: success, now: success[0].created.addingTimeInterval(2)) == nil)
+        #expect(Notifier.content(for: success, now: success[0].created.addingTimeInterval(60))?.title == "photo.png is ready")
     }
 }
 

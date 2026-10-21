@@ -86,7 +86,11 @@ struct PDFConverterTests {
     @Test func pdfWheelIsFullyAvailable() {
         let pdf = SourceFile(url: URL(fileURLWithPath: "/tmp/a.pdf"))
         for action in FormatCatalog.actions(for: [pdf], mode: .convert) {
-            #expect(ConversionEngine.availability(of: action, for: [pdf], ffmpegAvailable: false) == .available)
+            // Pages only where Pages is installed (it isn't on GitHub's Macs).
+            let expected: Availability = ConversionEngine.app(for: action, file: pdf).map { app in
+                app.locate() == nil ? .unavailable("Needs \(app.name), free on the App Store") : .available
+            } ?? .available
+            #expect(ConversionEngine.availability(of: action, for: [pdf], ffmpegAvailable: false) == expected, "\(action)")
         }
     }
 }
