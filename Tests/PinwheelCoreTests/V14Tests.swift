@@ -205,22 +205,23 @@ struct V14PictureTests {
         #expect(page.bounds(for: .mediaBox).size == CGSize(width: 120, height: 80))
 
         // Tools work on drawings as on any picture.
-        let codes = try CodeReader.codes(in: svg)
+        let codes = try await CodeReader.read(svg)
         #expect(codes.isEmpty)
     }
 
-    @Test func qrCodesAreRead() throws {
+    @Test func qrCodesAreRead() async throws {
         let folder = try TempFolder()
         let url = folder.file("code.png")
         try qrPicture("https://example.com/pinwheel", to: url)
-        let codes = try CodeReader.codes(in: url)
+        let codes = try await CodeReader.read(url)
         #expect(codes == [ReadCode(text: "https://example.com/pinwheel", kind: "QR code")])
         #expect(codes.first?.link == URL(string: "https://example.com/pinwheel"))
         #expect(ReadCode(text: "Just words", kind: "QR code").link == nil)
 
         let plain = folder.file("plain.png")
         try Fixtures.makeImage(at: plain)
-        #expect(try CodeReader.codes(in: plain).isEmpty)
+        let none = try await CodeReader.read(plain)
+        #expect(none.isEmpty)
     }
 
     /// A big, sharp QR code with a white margin, as a PNG.

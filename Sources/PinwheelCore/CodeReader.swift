@@ -26,11 +26,16 @@ public struct ReadCode: Sendable, Equatable, Identifiable {
 
 /// Reads QR codes and barcodes with Apple's Vision, on this Mac.
 public enum CodeReader {
+    /// From async code: Vision gets a thread of its own (see `PrivacyBlur.find`).
+    public static func read(_ url: URL) async throws -> [ReadCode] {
+        try await Blocking.run { _ in try codes(in: url) }
+    }
+
     public static func codes(in url: URL) throws -> [ReadCode] {
         let src = try ImageConverter.open(url)
         let image = try ImageConverter.orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src), maxPixelSize: 4096)
         let request = VNDetectBarcodesRequest()
-        try VNImageRequestHandler(cgImage: image).perform([request])
+        try VisionTurns.perform([request], on: image)
         var codes: [ReadCode] = []
         for observation in request.results ?? [] {
             guard let text = observation.payloadStringValue, !text.isEmpty else { continue }

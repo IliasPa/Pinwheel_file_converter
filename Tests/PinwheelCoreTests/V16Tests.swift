@@ -300,7 +300,7 @@ struct V16BlurTests {
         CGImageDestinationAddImage(destination, ctx.makeImage()!, nil)
         CGImageDestinationFinalize(destination)
 
-        let regions = try PrivacyBlur.regions(in: ctx.makeImage()!, faces: false)
+        let regions = try await PrivacyBlur.find(in: ctx.makeImage()!, faces: false)
         let text = try #require(regions.first)
         #expect(regions.count == 1 && text.y < 0.4 && text.y + text.height > 0.25 && text.x < 0.12, "\(regions)")
 

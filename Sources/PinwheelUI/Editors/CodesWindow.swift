@@ -25,10 +25,10 @@ final class CodesModel {
 
     /// Reads every picture, off the main thread.
     func read() async {
-        let files = files
-        let read = await Task.detached {
-            files.map { url -> (URL, [ReadCode]?) in (url, try? CodeReader.codes(in: url)) }
-        }.value
+        var read: [(URL, [ReadCode]?)] = []
+        for url in files {
+            read.append((url, try? await CodeReader.read(url)))
+        }
         results = read.map { url, codes in
             Found(file: url, codes: codes ?? [], problem: codes == nil ? "Couldn't read this picture." : nil)
         }

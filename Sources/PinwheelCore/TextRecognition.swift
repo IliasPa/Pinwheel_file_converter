@@ -86,7 +86,7 @@ enum TextRecognizer {
         request.usesLanguageCorrection = true
         request.automaticallyDetectsLanguage = true
         do {
-            try VisionTurns.take { try VNImageRequestHandler(cgImage: image).perform([request]) }
+            try VisionTurns.perform([request], on: image)
         } catch {
             throw ConversionError.failed("Couldn't read the text: \(error.localizedDescription)")
         }

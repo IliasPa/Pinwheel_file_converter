@@ -15,7 +15,7 @@ public enum PrivacyBlur {
         let requests: [VNRequest] = (faces ? [faceRequest] : []) + (text ? [textRequest] : [])
         guard !requests.isEmpty else { return [] }
         do {
-            try VNImageRequestHandler(cgImage: image).perform(requests)
+            try VisionTurns.perform(requests, on: image)
         } catch {
             throw ConversionError.failed("Couldn't look for faces and text: \(error.localizedDescription)")
         }
@@ -32,6 +32,18 @@ public enum PrivacyBlur {
             guard !clamped.isNull, clamped.width > 0, clamped.height > 0 else { return nil }
             return RelativeRect(x: clamped.minX, y: 1 - clamped.maxY, width: clamped.width, height: clamped.height)
         }
+    }
+
+    /// The same, from async code: Vision blocks its thread until it's done
+    /// (and needs the system's shared threads meanwhile), so it gets one of
+    /// its own instead of one of those.
+    public static func find(in image: CGImage, faces: Bool = true, text: Bool = true) async throws -> [RelativeRect] {
+        let picture = SendablePicture(image: image)
+        return try await Blocking.run { _ in try regions(in: picture.image, faces: faces, text: text) }
+    }
+
+    private struct SendablePicture: @unchecked Sendable {
+        let image: CGImage
     }
 
     /// Blur Out markup over each region.

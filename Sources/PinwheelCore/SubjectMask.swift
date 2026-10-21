@@ -42,6 +42,23 @@ enum VisionTurns {
         defer { lock.unlock() }
         return try work()
     }
+
+    /// Runs the requests on the picture, in turn. Reading text sometimes
+    /// fails when the Mac is busy (several processes reading at once); it's
+    /// tried again after a moment, twice, before giving up.
+    static func perform(_ requests: [VNRequest], on image: CGImage) throws {
+        var attempt = 0
+        while true {
+            do {
+                try take { try VNImageRequestHandler(cgImage: image).perform(requests) }
+                return
+            } catch {
+                attempt += 1
+                guard attempt < 3 else { throw error }
+                Thread.sleep(forTimeInterval: 0.3 * Double(attempt))
+            }
+        }
+    }
 }
 
 /// For pictures without a subject Vision recognizes (logos, icons, drawings

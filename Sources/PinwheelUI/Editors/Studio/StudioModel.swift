@@ -871,11 +871,13 @@ final class StudioModel {
         var error: String?
     }
 
-    @concurrent
+    /// On a thread of its own: Vision blocks its thread until it's done.
     private nonisolated static func find(_ request: FindRequest) async -> Found {
         do {
-            let turned = try StudioRenderer.render(request.source, mask: nil, edit: request.turn)
-            return Found(regions: try PrivacyBlur.regions(in: turned, faces: request.faces, text: request.text))
+            return Found(regions: try await Blocking.run { _ in
+                let turned = try StudioRenderer.render(request.source, mask: nil, edit: request.turn)
+                return try PrivacyBlur.regions(in: turned, faces: request.faces, text: request.text)
+            })
         } catch {
             return Found(error: error.localizedDescription)
         }
