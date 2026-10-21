@@ -190,7 +190,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "ffmpeg isn't installed"
         alert.informativeText = """
             Pinwheel uses the free tool ffmpeg for MP3 files, GIFs made from videos, \
-            and MKV, WebM or OGG files. Everything else works without it.
+            and MKV, WebM, AVI or OGG files. Everything else works without it.
 
             To install it:
             1. Open Terminal (Applications › Utilities).

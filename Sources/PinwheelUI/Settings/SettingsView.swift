@@ -7,6 +7,9 @@ import PinwheelCore
 /// SwiftUI's @State is a macro whose plugin only ships with Xcode.)
 @Observable
 final class SettingsViewState {
+    var pane: SettingsPane? = .general
+    /// What's typed in the sidebar's search field.
+    var search = ""
     var confirmReset = false
     let preview = WheelModel.sample()
     @ObservationIgnored let soundPreview = HoverFeedback()
@@ -18,6 +21,87 @@ final class SettingsViewState {
     /// The custom action being made or changed.
     var recipeDraft: RecipeDraft?
     let languageDownload = LanguageDownload()
+    /// The box of the compatibility table under the pointer.
+    var tableSpot: CompatibilityPane.Spot?
+}
+
+/// The pages of the Settings window, in the sidebar's order.
+enum SettingsPane: String, CaseIterable, Identifiable {
+    case general, wheel, conversions, compatibility, tools, textRecognition, finderAndShortcuts, advanced
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .wheel: "Wheel"
+        case .conversions: "Conversions"
+        case .compatibility: "Compatibility"
+        case .tools: "Tools"
+        case .textRecognition: "Text Recognition"
+        case .finderAndShortcuts: "Finder & Shortcuts"
+        case .advanced: "Advanced"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .general: "gearshape"
+        case .wheel: "camera.aperture"
+        case .conversions: "arrow.triangle.2.circlepath"
+        case .compatibility: "tablecells"
+        case .tools: "wrench.and.screwdriver"
+        case .textRecognition: "text.viewfinder"
+        case .finderAndShortcuts: "contextualmenu.and.cursorarrow"
+        case .advanced: "gearshape.2"
+        }
+    }
+
+    /// The tile behind the sidebar icon, as in System Settings.
+    var color: Color {
+        switch self {
+        case .general, .advanced: .gray
+        case .wheel: Brand.indigo
+        case .conversions: Brand.blue
+        case .compatibility: Brand.teal
+        case .tools: .orange
+        case .textRecognition: .purple
+        case .finderAndShortcuts: .green
+        }
+    }
+
+    /// Words that find the page from the sidebar's search field, besides its title.
+    private var keywords: [String] {
+        let formats = OutputFormat.allCases.map(\.title) + ["jpg"]
+        switch self {
+        case .general:
+            return ["permission", "accessibility", "progress window", "show in finder", "notify", "notification",
+                    "trash", "original", "save", "folder", "downloads", "login", "startup"]
+        case .wheel:
+            return ["glass", "appearance", "frosted", "crystal", "preview", "show on desktop", "sound", "click", "volume",
+                    "vibration", "haptic", "trackpad"]
+        case .conversions:
+            return formats + ["formats", "shift", "quality", "collage", "combined", "smaller pdf", "dpi", "resolution",
+                              "frame rate", "width", "length"]
+        case .compatibility:
+            return formats + Compatibility.sources.map(\.title) + ["table", "formats", "supported", "from"]
+        case .tools:
+            return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title)
+                + ["option", "quality", "bit rate", "video size", "custom actions"]
+        case .textRecognition:
+            return ["ocr", "get text", "searchable", "tesseract", "greek", "language", "apple"]
+        case .finderAndShortcuts:
+            return ["services", "right-click", "quick action", "command", "terminal", "shell", "pinwheel"]
+        case .advanced:
+            return ["same time", "files at once", "speed", "ffmpeg", "pngquant", "homebrew", "brew", "reset", "defaults"]
+        }
+    }
+
+    func matches(_ search: String) -> Bool {
+        let words = search.lowercased().split(separator: " ").map(String.init)
+        let haystack = ([title] + keywords).joined(separator: " ").lowercased()
+        return words.allSatisfy(haystack.contains)
+    }
 }
 
 /// Gets a language file for Tesseract (Greek) from the Tesseract project.
@@ -58,27 +142,15 @@ struct SettingsView: View {
     var onShowFFmpegHelp: () -> Void
 
     var body: some View {
-        Form {
-            permissionSection
-            appearance
-            feedback
-            afterConverting
-            saving
-            images
-            media
-            toolsWheel
-            textRecognition
-            finderAndShortcuts
-            system
-            Section {
-                HStack {
-                    Spacer()
-                    Button("Reset to Defaults") { settings.resetToDefaults() }
-                }
-            }
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            sidebar
+        } detail: {
+            let pane = state.pane ?? .general
+            page(pane)
+                .formStyle(.grouped)
+                .navigationTitle(pane.title)
         }
-        .formStyle(.grouped)
-        .frame(minWidth: 540, idealWidth: 580, minHeight: 480, idealHeight: 780)
+        .frame(minWidth: 760, idealWidth: 820, minHeight: 480, idealHeight: 680)
         .onAppear {
             launch.refresh()
             permission.refresh()
@@ -99,7 +171,80 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Sidebar
+
+    private var sidebar: some View {
+        let panes = SettingsPane.allCases.filter { $0.matches(state.search) }
+        return List(panes, selection: $state.pane) { pane in
+            HStack {
+                Label {
+                    Text(pane.title)
+                } icon: {
+                    Image(systemName: pane.symbolName)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(pane.color.gradient))
+                }
+                if pane == .general && !permission.isTrusted {
+                    Spacer()
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .symbolRenderingMode(.multicolor)
+                        .help("Accessibility permission needed")
+                }
+            }
+        }
+        // In a window of our own the column width isn't passed on to the
+        // split view (it stays at 140 points), so the list asks for room itself.
+        .frame(minWidth: 200)
+        .navigationSplitViewColumnWidth(210)
+        .overlay {
+            if panes.isEmpty {
+                Text("No results").foregroundStyle(.secondary)
+            }
+        }
+        .searchable(text: $state.search, placement: .sidebar, prompt: "Search")
+        .toolbar(removing: .sidebarToggle)
+    }
+
+    @ViewBuilder
+    private func page(_ pane: SettingsPane) -> some View {
+        switch pane {
+        case .general:
+            Form {
+                permissionSection
+                afterConverting
+                saving
+                startup
+            }
+        case .wheel:
+            Form {
+                appearance
+                feedback
+            }
+        case .conversions:
+            ConversionsPane(settings: settings)
+        case .compatibility:
+            CompatibilityPane(settings: settings, state: state)
+        case .tools:
+            Form {
+                compressAndResize
+                toolsWheel
+            }
+        case .textRecognition:
+            Form { textRecognition }
+        case .finderAndShortcuts:
+            Form { finderAndShortcuts }
+        case .advanced:
+            Form {
+                performance
+                helperTools
+                reset
+            }
+        }
+    }
+
+    // MARK: - General
 
     /// Status, explanation and steps for the Accessibility permission, all in
     /// one place. It updates by itself the moment the switch is flipped.
@@ -154,6 +299,64 @@ struct SettingsView: View {
         }
     }
 
+    private var afterConverting: some View {
+        Section {
+            Toggle("Show the progress window", isOn: $settings.showProgressWindow)
+            Toggle("Show the new files in Finder", isOn: $settings.revealInFinder)
+            Toggle("Notify me when a long conversion finishes, or something isn't saved", isOn: $settings.notifyWhenDone)
+            Toggle("Move the original to the Trash", isOn: $settings.moveOriginalToTrash)
+        } header: {
+            Text("After converting")
+        } footer: {
+            Footnote("You're notified when a conversion took 10 seconds or more, and whenever a file couldn't be saved or there was nothing to do (with the reason). The original goes to the Trash only after the new file is saved; you can put it back from the Trash.")
+        }
+    }
+
+    private var saving: some View {
+        Section {
+            Picker("Save new files", selection: $settings.saveLocation) {
+                ForEach(SaveLocationChoice.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            if settings.saveLocation == .custom {
+                LabeledContent("Folder") {
+                    HStack {
+                        Text(settings.customFolderPath.isEmpty ? "None chosen" : settings.customFolderPath)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Button("Choose…", action: chooseFolder)
+                    }
+                }
+            }
+        } header: {
+            Text("Saving")
+        } footer: {
+            Footnote("If that place can't be written to (a disk image, a read-only shared drive), files go to Downloads instead and the progress window says so.")
+        }
+    }
+
+    private var startup: some View {
+        Section("Startup") {
+            Toggle("Open Pinwheel when you log in", isOn: Binding(
+                get: { launch.isEnabled || launch.needsApproval },
+                set: { launch.setEnabled($0) }
+            ))
+            if launch.needsApproval {
+                HStack {
+                    Text("macOS needs you to allow Pinwheel in Login Items.")
+                        .font(.caption)
+                    Spacer()
+                    Button("Open Login Items") { launch.openLoginItemsSettings() }
+                }
+            }
+            if let error = launch.lastError {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        }
+    }
+
+    // MARK: - Wheel
+
     private var appearance: some View {
         Section("Appearance") {
             VStack(alignment: .leading, spacing: 10) {
@@ -206,94 +409,35 @@ struct SettingsView: View {
         } header: {
             Text("Wheel feedback")
         } footer: {
-            footnote("Plays when the pointer moves onto a format. Vibration needs a Force Touch trackpad and is felt only while your finger is on it.")
+            Footnote("Plays when the pointer moves onto a format. Vibration needs a Force Touch trackpad and is felt only while your finger is on it.")
         }
     }
 
-    private var afterConverting: some View {
-        Section {
-            Toggle("Show the progress window", isOn: $settings.showProgressWindow)
-            Toggle("Show the new files in Finder", isOn: $settings.revealInFinder)
-            Toggle("Notify me when a long conversion finishes, or something isn't saved", isOn: $settings.notifyWhenDone)
-            Toggle("Move the original to the Trash", isOn: $settings.moveOriginalToTrash)
-        } header: {
-            Text("After converting")
-        } footer: {
-            footnote("You're notified when a conversion took 10 seconds or more, and whenever a file couldn't be saved or there was nothing to do (with the reason). The original goes to the Trash only after the new file is saved; you can put it back from the Trash.")
-        }
-    }
+    // MARK: - Tools
 
-    private var saving: some View {
+    /// How Compress and Resize work (also in custom actions and Size Limit's first try).
+    private var compressAndResize: some View {
         Section {
-            Picker("Save new files", selection: $settings.saveLocation) {
-                ForEach(SaveLocationChoice.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            if settings.saveLocation == .custom {
-                LabeledContent("Folder") {
-                    HStack {
-                        Text(settings.customFolderPath.isEmpty ? "None chosen" : settings.customFolderPath)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Button("Choose…", action: chooseFolder)
-                    }
-                }
-            }
-        } header: {
-            Text("Saving")
-        } footer: {
-            footnote("If that place can't be written to (a disk image, a read-only shared drive), files go to Downloads instead and the progress window says so.")
-        }
-    }
-
-    private var images: some View {
-        Section {
-            percentSlider("JPEG quality", value: $settings.jpegQuality, range: 0.5...1)
-            percentSlider("HEIC quality", value: $settings.heicQuality, range: 0.5...1)
-            percentSlider("Compress quality", value: $settings.compressQuality, range: 0.3...0.9)
+            PercentSlider("Picture quality", value: $settings.compressQuality, range: 0.3...0.9)
             Picker("Resize", selection: $settings.resize) {
                 ForEach(ResizeOption.allCases, id: \.self) { Text($0.title).tag($0) }
             }
-            Toggle("Several images on PDF make one combined PDF", isOn: $settings.combineImagesIntoOnePDF)
-            Picker("PDF pages to images", selection: $settings.pdfDPI) {
-                Text("72 DPI (screen)").tag(72)
-                Text("150 DPI (standard)").tag(150)
-                Text("300 DPI (print)").tag(300)
-            }
-        } header: {
-            Text("Images and PDFs")
-        } footer: {
-            footnote(settings.pngquantURL == nil
-                     ? "Compress keeps JPEG, HEIC and PNG in their format. For much smaller PNGs, install pngquant: brew install pngquant"
-                     : "Compress keeps JPEG, HEIC and PNG in their format (PNGs are shrunk with pngquant). A combined PDF has one page per image, in name order.")
-        }
-    }
-
-    private var media: some View {
-        Section {
-            Picker("Video compress quality", selection: $settings.videoQuality) {
+            Picker("Video quality", selection: $settings.videoQuality) {
                 ForEach(VideoQuality.allCases, id: \.self) { Text($0.title).tag($0) }
             }
-            Picker("Video compress size", selection: $settings.videoMaxSize) {
+            Picker("Video size", selection: $settings.videoMaxSize) {
                 ForEach(VideoMaxSize.allCases, id: \.self) { Text($0.title).tag($0) }
             }
-            Picker("Audio compress bit rate", selection: $settings.audioBitRate) {
+            Picker("Audio bit rate", selection: $settings.audioBitRate) {
                 ForEach([96, 128, 160, 192, 256], id: \.self) { Text("\($0) kbps").tag($0) }
             }
-            Picker("GIF width", selection: $settings.gifWidth) {
-                ForEach([320, 480, 640, 800, 1080], id: \.self) { Text("\($0) pixels").tag($0) }
-            }
-            Picker("GIF frame rate", selection: $settings.gifFPS) {
-                ForEach([10, 12, 15, 20, 24], id: \.self) { Text("\($0) frames per second").tag($0) }
-            }
-            Picker("GIF length", selection: $settings.gifMaxSeconds) {
-                ForEach([5, 10, 15, 30, 60], id: \.self) { Text("First \($0) seconds").tag($0) }
-                Text("Whole video").tag(0)
-            }
         } header: {
-            Text("Video and audio")
+            Text("Compress and Resize")
         } footer: {
-            footnote("Compress never aims above the original's bit rate, and a result that isn't smaller is thrown away. GIFs grow fast: a long one can be hundreds of megabytes.")
+            Footnote((settings.pngquantURL == nil
+                      ? "Compress keeps JPEG, HEIC and PNG in their format. For much smaller PNGs, install pngquant: brew install pngquant. "
+                      : "Compress keeps JPEG, HEIC and PNG in their format (PNGs are shrunk with pngquant). ")
+                     + "Videos and audio never get a higher bit rate than the original's, and a result that isn't smaller is thrown away. Smaller PDF uses the picture quality too.")
         }
     }
 
@@ -356,9 +500,11 @@ struct SettingsView: View {
         } header: {
             Text("Tools wheel (⌥ Option + ⇧ Shift)")
         } footer: {
-            footnote("The wheel holds up to \(FormatCatalog.maxWedges) tools, so switch one off to make room for another. Tools with “…” open a window to choose the details first. Custom actions do several steps one after the other, e.g. crop 4:5, fit 1080 px, add a watermark and save as JPEG.")
+            Footnote("The wheel holds up to \(FormatCatalog.maxWedges) tools, so switch one off to make room for another. Tools with “…” open a window to choose the details first. Custom actions do several steps one after the other, e.g. crop 4:5, fit 1080 px, add a watermark and save as JPEG.")
         }
     }
+
+    // MARK: - Text recognition
 
     /// Which engine reads text, and Tesseract's Greek.
     private var textRecognition: some View {
@@ -408,11 +554,13 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("Text recognition (Get Text, Searchable)")
+            Text("Get Text and Searchable")
         } footer: {
-            footnote("Apple’s text recognition is built in and reads English and many other languages, but not Greek. Tesseract (free, from Homebrew) reads Greek too, once its Greek file is downloaded. Automatic uses Tesseract when it can read Greek, and Apple’s otherwise. Everything happens on this Mac.")
+            Footnote("Apple’s text recognition is built in and reads English and many other languages, but not Greek. Tesseract (free, from Homebrew) reads Greek too, once its Greek file is downloaded. Automatic uses Tesseract when it can read Greek, and Apple’s otherwise. Everything happens on this Mac.")
         }
     }
+
+    // MARK: - Finder and Shortcuts
 
     /// Pinwheel without dragging: Finder's right-click menu and the command.
     private var finderAndShortcuts: some View {
@@ -458,40 +606,48 @@ struct SettingsView: View {
             }
             .padding(.vertical, 2)
         } header: {
-            Text("Finder and Shortcuts")
+            Text("Without dragging")
         } footer: {
-            footnote("Jobs started from Finder or Shortcuts show in the progress window and can be undone from the menu bar, like any other.")
+            Footnote("Jobs started from Finder or Shortcuts show in the progress window and can be undone from the menu bar, like any other.")
         }
     }
 
-    private var system: some View {
+    // MARK: - Advanced
+
+    private var performance: some View {
         Section {
-            Toggle("Open Pinwheel when you log in", isOn: Binding(
-                get: { launch.isEnabled || launch.needsApproval },
-                set: { launch.setEnabled($0) }
-            ))
-            if launch.needsApproval {
-                HStack {
-                    Text("macOS needs you to allow Pinwheel in Login Items.")
-                        .font(.caption)
-                    Spacer()
-                    Button("Open Login Items") { launch.openLoginItemsSettings() }
-                }
-            }
-            if let error = launch.lastError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            }
             Picker("Convert at the same time", selection: $settings.maxConcurrentJobs) {
                 Text("Automatic").tag(0)
                 ForEach([1, 2, 3, 4, 6, 8], id: \.self) { Text($0 == 1 ? "1 file" : "\($0) files").tag($0) }
             }
+        } header: {
+            Text("Speed")
+        } footer: {
+            Footnote("Automatic converts up to \(ConcurrencyLimit.automatic.total) files at the same time on this Mac, and 2 videos (the Mac's video engines are the limit there).")
+        }
+    }
+
+    private var helperTools: some View {
+        Section {
             toolStatus("ffmpeg", url: settings.ffmpegURL, missingAction: onShowFFmpegHelp)
             TextField("Custom ffmpeg location", text: $settings.ffmpegPath, prompt: Text("Automatic"))
             toolStatus("pngquant", url: settings.pngquantURL, missingAction: nil)
         } header: {
-            Text("System")
+            Text("Helper tools")
         } footer: {
-            footnote("Automatic converts up to \(ConcurrencyLimit.automatic.total) files at the same time on this Mac, and 2 videos (the Mac's video engines are the limit there).")
+            Footnote("Free extras from Homebrew. ffmpeg makes MP3s and GIFs of videos, and reads MKV, WebM and AVI; pngquant makes much smaller PNGs. Tesseract is in Text Recognition.")
+        }
+    }
+
+    private var reset: some View {
+        Section {
+            HStack {
+                Text("Puts every setting back as it was, apart from custom actions and rename presets.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Reset to Defaults") { settings.resetToDefaults() }
+            }
         }
     }
 
@@ -544,12 +700,6 @@ struct SettingsView: View {
         }
     }
 
-    private func footnote(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-    }
-
     private func step(_ number: Int, _ text: LocalizedStringKey) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("\(number)")
@@ -560,18 +710,56 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+}
 
-    private func percentSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        LabeledContent(title) {
+/// The small gray text under a section.
+struct Footnote: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// A 0…1 setting as a slider, with its value in percent.
+struct PercentSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    /// Set under the switch it belongs to.
+    var indented = false
+
+    init(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, indented: Bool = false) {
+        self.title = title
+        _value = value
+        self.range = range
+        self.indented = indented
+    }
+
+    var body: some View {
+        LabeledContent {
             HStack {
-                Slider(value: value, in: range, step: 0.05)
+                Slider(value: $value, in: range, step: 0.05)
                     .frame(width: 200)
-                Text("\(Int((value.wrappedValue * 100).rounded()))%")
+                Text("\(Int((value * 100).rounded()))%")
                     .monospacedDigit()
                     .frame(width: 40, alignment: .trailing)
             }
+        } label: {
+            Text(title).padding(.leading, indented ? SettingsLayout.indent : 0)
         }
     }
+}
+
+enum SettingsLayout {
+    /// How far a setting sits in under the switch it belongs to.
+    static let indent: CGFloat = 28
 }
 
 /// A live wheel over a colorful picture, so the glass can be seen changing.
@@ -659,11 +847,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         state = view.state
         self.onClose = onClose
         let hosting = NSHostingController(rootView: view)
+        // The page's title and the sidebar's search go in the window's toolbar.
+        hosting.sceneBridgingOptions = [.title, .toolbars]
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Pinwheel Settings"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        // SwiftUI passes on later pages' titles; the first one is set here.
+        window.title = view.state.pane?.title ?? "Pinwheel Settings"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 580, height: 780))
+        window.setContentSize(NSSize(width: 820, height: 680))
         window.center()
         super.init(window: window)
         window.delegate = self

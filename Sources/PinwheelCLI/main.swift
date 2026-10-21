@@ -98,7 +98,7 @@ func listCustomActions() {
     let data = defaults?.data(forKey: "recipes") ?? Data()
     let recipes = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
     guard !recipes.isEmpty else {
-        print("No custom actions yet. Make them in Pinwheel's Settings › Tools wheel.")
+        print("No custom actions yet. Make them in Pinwheel's Settings › Tools.")
         return
     }
     for recipe in recipes {

@@ -51,12 +51,19 @@ public enum FormatCatalog {
         hiddenKey(.pdf, .tool(.extractText)),
     ]
 
-    /// How a hidden tool is remembered: "image:tool.stripMetadata".
+    /// Everything Settings lists for a kind's wheel: its wedges, plus
+    /// Collage for pictures (it shows only when several are dropped).
+    public static func choices(for kind: FileKind, mode: WheelMode) -> [WheelAction] {
+        actions(for: kind, mode: mode) + (kind == .image && mode == .convert ? [.open(.collage)] : [])
+    }
+
+    /// How a hidden tool or format is remembered: "image:tool.stripMetadata".
+    /// Each wheel has its own set, since Compress is on both PDF wheels.
     public static func hiddenKey(_ kind: FileKind, _ action: WheelAction) -> String {
         "\(kind.rawValue):\(action.id)"
     }
 
-    /// Wedges valid for *every* file, minus hidden tools, at most `maxWedges`;
+    /// Wedges valid for *every* file, minus hidden ones, at most `maxWedges`;
     /// custom actions (`recipes`) come after the tools. Files Pinwheel can't
     /// convert (folders, text files…) can still be renamed, so that's all
     /// their tools wheel has. Converting a file to the format it already has
@@ -82,7 +89,7 @@ public enum FormatCatalog {
                 result.removeAll { $0 == .convert(only) }
             }
             // Several pictures can also become one.
-            if files.count > 1 && kinds.allSatisfy({ $0 == .image }) {
+            if files.count > 1 && kinds.allSatisfy({ $0 == .image }) && !hidden.contains(hiddenKey(.image, .open(.collage))) {
                 result.append(.open(.collage))
             }
         } else {

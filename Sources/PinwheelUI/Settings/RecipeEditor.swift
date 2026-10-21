@@ -254,13 +254,13 @@ private struct StepOptions: View {
                 Text(String(format: "%+.0f dB", decibels)).monospacedDigit().foregroundStyle(.secondary)
             }
         case .compress:
-            note("With the quality set in Settings › Images and PDFs or Video and audio.")
+            note("With the quality set in Settings › Tools.")
         case .removeLocation:
             note("Keeps the camera and date; removes only where it was taken.")
         case .extractText:
             note("Makes a text file, so it comes last.")
         case .makeSearchable:
-            note("Scanned pages get their text (Settings › Text recognition chooses how it's read).")
+            note("Scanned pages get their text (Settings › Text Recognition chooses how it's read).")
         case .extractAudio:
             note("The steps after this one work on the sound.")
         default:

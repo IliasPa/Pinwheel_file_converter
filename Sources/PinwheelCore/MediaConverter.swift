@@ -71,7 +71,7 @@ enum MediaConverter {
         if format == .gif, let limit = options.gifMaxSeconds {
             arguments = ["-t", "\(limit)"] + arguments
             if let full = duration, full > Double(limit) + 0.5 {
-                note = "Only the first \(limit) seconds (you can change this in Settings)."
+                note = "Only the first \(limit) seconds (you can change this in Settings › Conversions)."
             }
             duration = duration.map { min($0, Double(limit)) }
         }

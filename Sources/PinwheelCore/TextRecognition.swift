@@ -199,7 +199,7 @@ enum TextRecognizer {
         if let missing = lines.first(where: { $0.hasPrefix("Failed loading language") }),
            let code = languages.first(where: { missing.contains("'\($0)'") }) {
             let name = TextRecognition.languageNames[code] ?? code
-            return "Tesseract doesn't have the \(name) language file. Add it in Pinwheel's Settings › Text recognition."
+            return "Tesseract doesn't have the \(name) language file. Add it in Pinwheel's Settings › Text Recognition."
         }
         let reason = lines.last { !$0.contains("grc") && !$0.contains("TESSDATA_PREFIX") } ?? "it stopped with an error"
         return "Tesseract couldn't read the text: \(reason)"

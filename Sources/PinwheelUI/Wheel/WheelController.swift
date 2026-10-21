@@ -54,7 +54,7 @@ final class WheelController {
 
     private func load(_ mode: WheelMode) {
         model.load(
-            files: files, mode: mode, options: settings.conversionOptions, hidden: settings.hiddenTools,
+            files: files, mode: mode, options: settings.conversionOptions, hidden: settings.hidden(in: mode),
             recipes: settings.recipes, availability: availability
         )
     }

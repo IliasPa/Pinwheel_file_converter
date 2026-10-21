@@ -16,6 +16,8 @@ happens on your Mac: nothing is uploaded.
 - Videos (MOV, MP4, M4V; MKV, WebM, AVI with ffmpeg) → MP4, MOV, GIF, M4A, MP3.
 - Audio (MP3, M4A, WAV, AIFF, FLAC, OGG…) → MP3, M4A, WAV, AIFF, FLAC.
 - PDFs → PNG, JPEG, HEIC or TIFF (one picture per page), or a smaller PDF.
+- Settings › Compatibility has the whole table, and Settings › Conversions
+  chooses which formats each kind of file gets.
 
 **Tools** (⌥ Option + ⇧ Shift while dragging)
 - **Compress**, and **Size Limit…**: under 10 MB for an email, 25 MB for
@@ -76,7 +78,7 @@ Shift, and drop.
 - **ffmpeg:** MP3, GIFs from videos, and MKV, WebM, AVI or OGG files.
 - **pngquant:** much smaller PNGs with Compress.
 - **tesseract:** reading Greek text. Then click **Download Greek** in
-  Settings › Text recognition.
+  Settings › Text Recognition.
 
 Without them everything else works; wedges that need them are grayed out
 and say why.
@@ -100,10 +102,21 @@ first. The progress window shows each file, the size before and after, and
 anything worth knowing; long jobs and anything that couldn't be saved also
 get a notification.
 
-**Settings** (menu-bar icon › Settings…): the wheel's glass look and sound,
-where new files go, qualities and sizes, which tools are on the wheel,
-**custom actions**, text recognition, and how to use Pinwheel from Finder
-and Shortcuts.
+**Settings** (menu-bar icon › Settings…) has a page for each part, listed
+in a sidebar with a search field:
+- **General:** the permission, what happens after converting, where new
+  files go, opening at login.
+- **Wheel:** the glass look, the click sound and trackpad vibration.
+- **Conversions:** which formats each kind of file gets on the ⇧ Shift
+  wheel, with each format's settings (JPEG and HEIC quality, GIF size and
+  length, PDF page resolution…).
+- **Compatibility:** a table of every kind of file against every format:
+  ✓ it converts, – it's the same format.
+- **Tools:** Compress and Resize, which tools are on the ⌥ Option wheel,
+  and **custom actions**.
+- **Text Recognition**, **Finder & Shortcuts** (and the `pinwheel`
+  command), and **Advanced** (how many files at once, ffmpeg, Reset to
+  Defaults).
 
 **The `pinwheel` command** lives inside the app. In Terminal:
 
@@ -152,7 +165,7 @@ the bottom. If not, switch it on in System Settings › Keyboard › Keyboard
 Shortcuts › Services › Files and Folders.
 
 **Get Text reads Greek wrong.** Apple's text recognition doesn't read Greek:
-install Tesseract and click **Download Greek** in Settings › Text recognition.
+install Tesseract and click **Download Greek** in Settings › Text Recognition.
 
 ## Ideas and bugs
 

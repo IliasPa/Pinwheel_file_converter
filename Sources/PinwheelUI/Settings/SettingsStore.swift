@@ -45,7 +45,7 @@ final class SettingsStore {
         case jpegQuality, heicQuality, compressQuality, resize, combineImagesIntoOnePDF, pdfDPI
         case videoQuality, videoMaxSize, audioBitRate, gifWidth, gifFPS, gifMaxSeconds
         case maxConcurrentJobs, ffmpegPath
-        case hiddenTools, knownTools
+        case hiddenTools, knownTools, hiddenFormats
         case textRecognition
     }
 
@@ -93,9 +93,11 @@ final class SettingsStore {
     /// Empty means "find ffmpeg automatically".
     var ffmpegPath: String { didSet { save(ffmpegPath, .ffmpegPath) } }
 
-    // Tools wheel
+    // The wheels
     /// Tools left off the Option+Shift wheel ("image:tool.stripMetadata").
     var hiddenTools: Set<String> { didSet { save(Array(hiddenTools).sorted(), .hiddenTools) } }
+    /// Formats left off the Shift wheel ("image:convert.tiff").
+    var hiddenFormats: Set<String> { didSet { save(Array(hiddenFormats).sorted(), .hiddenFormats) } }
     /// Custom actions, each on its kind's tools wheel.
     var recipes: [Recipe] { didSet { saveJSON(recipes, Self.recipesKey) } }
     /// Rename rules saved under a name.
@@ -137,6 +139,7 @@ final class SettingsStore {
             .maxConcurrentJobs: 0,
             .ffmpegPath: "",
             .hiddenTools: Array(FormatCatalog.defaultHidden).sorted(),
+            .hiddenFormats: [String](),
             .textRecognition: TextRecognitionChoice.automatic.rawValue,
         ]
     }
@@ -172,6 +175,7 @@ final class SettingsStore {
         maxConcurrentJobs = defaults.integer(forKey: Key.maxConcurrentJobs.rawValue)
         ffmpegPath = string(.ffmpegPath)
         hiddenTools = Set(defaults.stringArray(forKey: Key.hiddenTools.rawValue) ?? [])
+        hiddenFormats = Set(defaults.stringArray(forKey: Key.hiddenFormats.rawValue) ?? [])
         recipes = Self.loadJSON(defaults, Self.recipesKey) ?? []
         renamePresets = Self.loadJSON(defaults, Self.renamePresetsKey) ?? []
         textRecognition = TextRecognitionChoice(rawValue: string(.textRecognition)) ?? .automatic
@@ -319,6 +323,7 @@ final class SettingsStore {
         maxConcurrentJobs = fresh.maxConcurrentJobs
         ffmpegPath = fresh.ffmpegPath
         hiddenTools = fresh.hiddenTools
+        hiddenFormats = fresh.hiddenFormats
         textRecognition = fresh.textRecognition
     }
 
@@ -375,11 +380,11 @@ final class SettingsStore {
         hiddenTools.remove(FormatCatalog.hiddenKey(recipe.kind, .recipe(recipe)))
     }
 
-    /// Tools and custom actions on a kind's wheel.
-    func shownCount(for kind: FileKind) -> Int {
-        let tools = FormatCatalog.actions(for: kind, mode: .tools)
-        let custom = recipes.filter { $0.kind == kind }.map(WheelAction.recipe)
-        return (tools + custom).filter { isOnWheel($0, for: kind) }.count
+    /// Wedges on a kind's wheel: formats, or tools and custom actions.
+    func shownCount(for kind: FileKind, in mode: WheelMode = .tools) -> Int {
+        let wedges = FormatCatalog.choices(for: kind, mode: mode)
+        let custom = mode == .tools ? recipes.filter { $0.kind == kind }.map(WheelAction.recipe) : []
+        return (wedges + custom).filter { isOnWheel($0, for: kind, in: mode) }.count
     }
 
     private func saveJSON<T: Encodable>(_ value: T, _ key: String) {
@@ -390,14 +395,25 @@ final class SettingsStore {
         defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
     }
 
-    /// Whether a tool is on the wheel for this kind of file.
-    func isOnWheel(_ action: WheelAction, for kind: FileKind) -> Bool {
-        !hiddenTools.contains(FormatCatalog.hiddenKey(kind, action))
+    /// What's left off a wheel. Each wheel has its own: Compress off the
+    /// PDF tools wheel leaves Smaller PDF on the PDF format wheel.
+    func hidden(in mode: WheelMode) -> Set<String> {
+        mode == .tools ? hiddenTools : hiddenFormats
     }
 
-    func setOnWheel(_ action: WheelAction, for kind: FileKind, _ shown: Bool) {
+    /// Whether a tool (or, in `.convert`, a format) is on the wheel for this kind of file.
+    func isOnWheel(_ action: WheelAction, for kind: FileKind, in mode: WheelMode = .tools) -> Bool {
+        !hidden(in: mode).contains(FormatCatalog.hiddenKey(kind, action))
+    }
+
+    func setOnWheel(_ action: WheelAction, for kind: FileKind, in mode: WheelMode = .tools, _ shown: Bool) {
         let key = FormatCatalog.hiddenKey(kind, action)
-        if shown { hiddenTools.remove(key) } else { hiddenTools.insert(key) }
+        switch (mode, shown) {
+        case (.tools, true): hiddenTools.remove(key)
+        case (.tools, false): hiddenTools.insert(key)
+        case (.convert, true): hiddenFormats.remove(key)
+        case (.convert, false): hiddenFormats.insert(key)
+        }
     }
 
     private func save(_ value: Any, _ key: Key) {

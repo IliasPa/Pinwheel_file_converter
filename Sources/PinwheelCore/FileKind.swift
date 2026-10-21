@@ -82,6 +82,8 @@ public struct SourceFile: Sendable, Hashable, Codable {
 
     static func avFoundationCanRead(_ url: URL) -> Bool {
         guard let type = FileKind.contentType(of: url), !type.isDynamic else { return false }
+        // AVI is on AVFoundation's list, but it can't open one (H.264 or MPEG-4 inside).
+        guard !type.conforms(to: .avi) else { return false }
         return avTypes.contains { type == $0 || type.conforms(to: $0) }
     }
 }

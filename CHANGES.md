@@ -3,6 +3,46 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.2 — 2026-10-20
+
+Settings, rearranged: a page for each part, a table of what converts to
+what, and a choice of formats for each kind of file.
+
+**New**
+- **Settings has a sidebar** with a page for each part (General, Wheel,
+  Conversions, Compatibility, Tools, Text Recognition, Finder & Shortcuts,
+  Advanced) and a search field that finds the page for a word ("jpeg",
+  "greek", "ffmpeg"). General shows a warning while the Accessibility
+  permission is missing.
+- **Settings › Conversions:** for pictures, videos, audio and PDFs, switch
+  each format on or off the ⇧ Shift wheel (Collage too), with that
+  format's settings right under it: JPEG and HEIC quality, one combined
+  PDF, GIF width, frame rate and length, PDF page resolution.
+- **Settings › Compatibility:** every kind of file Pinwheel reads (22,
+  from PNG to OGG) against every format it writes (13): ✓ when it
+  converts, – when it's the same format. Ticks for formats switched off
+  are gray, and orange when they need ffmpeg and it isn't installed.
+  Pointing at a box says what it means. The table is worked out from the
+  wheels themselves, so it can't fall behind them.
+
+**Fixed**
+- Switching Compress off the PDF tools wheel also took **Smaller PDF** off
+  the PDF format wheel: both wheels shared one list of hidden wedges.
+  Each wheel now has its own.
+- An **M4A** file was offered M4A on its own wheel (and made a copy of
+  itself): macOS calls .m4a files a kind of MPEG-4 audio that Pinwheel
+  didn't match.
+- **AVI** wedges looked usable without ffmpeg and then failed: macOS lists
+  AVI as a movie type but can't open one. AVI files now go straight to
+  ffmpeg, and without it their wedges are gray and say "Needs ffmpeg".
+
+**Moved**
+- Compress and Resize settings are in **Tools**, with the tools wheel.
+- The format qualities (JPEG, HEIC, GIF, PDF pages) are in
+  **Conversions**, under their format.
+- Opening at login is in **General**; files at the same time, ffmpeg and
+  **Reset to Defaults** are in **Advanced**.
+
 ## v1.1 — 2026-10-19
 
 **New**

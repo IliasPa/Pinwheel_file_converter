@@ -79,8 +79,12 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
     /// The format a file already has, when it's one Pinwheel writes.
     public static func matching(_ url: URL) -> OutputFormat? {
         guard let type = FileKind.contentType(of: url) else { return nil }
+        // .m4a files are "com.apple.m4a-audio", a kind of MPEG-4 audio.
+        if type == m4aFileType { return .m4a }
         return allCases.first { $0.utType == type }
     }
+
+    private static let m4aFileType = UTType("com.apple.m4a-audio")
 }
 
 /// Jobs offered on the Option+Shift wheel, plus the jobs the editor
