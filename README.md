@@ -106,7 +106,8 @@ get a notification.
 in a sidebar with a search field:
 - **General:** the permission, what happens after converting, where new
   files go, opening at login.
-- **Wheel:** the glass look, the click sound and trackpad vibration.
+- **Wheel:** the glass look, the click sound and the trackpad vibration
+  (off, low or high).
 - **Conversions:** which formats each kind of file gets on the ⇧ Shift
   wheel, with each format's settings (JPEG and HEIC quality, GIF size and
   length, PDF page resolution…).

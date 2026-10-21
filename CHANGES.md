@@ -3,6 +3,32 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.3 — 2026-10-21
+
+**Fixed**
+- **Liquid Glass now looks like Liquid Glass on the desktop.** macOS draws
+  the glass of a window that isn't the active one frosted, and the wheel's
+  window never is (Finder is busy dragging), so every glass level looked
+  frosted, even Crystal. The wheel and the progress window now tell macOS
+  they look active, without taking the keyboard from Finder: the glass is
+  clear and bends what's behind it at the edges. Found by capturing the
+  glass side by side in active and inactive windows on macOS 27.
+
+**Changed**
+- **The glass wheel has nothing behind it** (glass levels 2 to 5): each
+  wedge is a blade of Liquid Glass with its icon and label, and the middle
+  is a glass circle. The chosen blade slides out, glass and all. The thin
+  lines between wedges are gone; the gaps between blades do that now.
+- **Crystal** (level 5) leaves out the circle in the middle too: just its
+  words. Frosted (level 1) keeps its classic disc.
+- **Settings › Compatibility:** MP3 comes before M4A, as in the rows, so
+  the dashes run straight down.
+
+**New**
+- **Trackpad vibration: Off, Low or High** (Settings › Wheel). Low is a
+  light tap, High the firm one from before; choosing one plays it. If
+  vibration was on, it's now High; if it was off, Off.
+
 ## v1.2 — 2026-10-20
 
 Settings, rearranged: a page for each part, a table of what converts to

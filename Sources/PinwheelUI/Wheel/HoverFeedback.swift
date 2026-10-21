@@ -13,10 +13,13 @@ final class HoverFeedback {
         if settings.hoverSound {
             playSound(named: settings.hoverSoundName, volume: settings.hoverSoundVolume)
         }
-        if settings.hapticFeedback {
-            // Only Force Touch trackpads can do this, and only while touched.
-            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
-        }
+        vibrate(settings.vibration)
+    }
+
+    /// Only Force Touch trackpads can do this, and only while touched.
+    func vibrate(_ vibration: Vibration) {
+        guard let pattern = vibration.pattern else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
     }
 
     /// Several copies take turns, so fast moves across wedges each get a click.
@@ -31,5 +34,17 @@ final class HoverFeedback {
         sound.stop()
         sound.volume = Float(volume)
         sound.play()
+    }
+}
+
+extension Vibration {
+    /// Low is the light tap of something snapping into place; High the firm
+    /// one of a step in a pressure click.
+    var pattern: NSHapticFeedbackManager.FeedbackPattern? {
+        switch self {
+        case .off: nil
+        case .low: .alignment
+        case .high: .levelChange
+        }
     }
 }

@@ -114,15 +114,9 @@ final class ProgressController {
 /// Floating panel (its glass or frosted background is drawn by the SwiftUI
 /// view). It can take clicks (for the buttons) without pulling Pinwheel or
 /// the panel to the front.
-final class ProgressPanel: NSPanel {
+final class ProgressPanel: GlassPanel {
     init(size: NSSize) {
-        super.init(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: GlassWindow.styleMask,
-            backing: .buffered,
-            defer: false
-        )
-        GlassWindow.prepare(self, size: size)
+        super.init(size: size, defer: false)
         isFloatingPanel = true
         level = .floating
         hasShadow = true

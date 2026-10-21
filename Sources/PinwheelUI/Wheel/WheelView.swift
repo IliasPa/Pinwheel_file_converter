@@ -30,13 +30,12 @@ struct WheelView: View {
         .animation(.easeInOut(duration: 0.25), value: settings.glassLevel)
     }
 
-    /// Liquid Glass: the wheel is one piece of glass, and the icons, labels
-    /// and thin dividers are its content. Only the chosen wedge is colored.
+    /// Liquid Glass with nothing behind it: each wedge is a blade of glass
+    /// with its icon and label, and the hub a glass circle (Crystal leaves
+    /// the circle out: just its words). Only the chosen wedge is colored.
     private var glassWheel: some View {
-        let level = settings.glassLevel
-        return WheelContent(model: model, style: .glass(dividers: level.showsDividers, halo: level.labelHalo))
+        WheelContent(model: model, glass: settings.glassLevel)
             .frame(width: Self.diameter, height: Self.diameter)
-            .glassSurface(level, cornerRadius: Self.diameter / 2, blending: blending)
             // Glass only grows in; the window itself does the fading.
             .scaleEffect(model.isPresented ? 1 : (model.confirmed ? 1.06 : 0.8))
             .animation(.spring(response: 0.34, dampingFraction: 0.74), value: model.isPresented)
@@ -52,7 +51,7 @@ struct WheelView: View {
             FrostedBackdrop(cornerRadius: Self.diameter / 2, blending: blending)
             Circle()
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
-            WheelContent(model: model, style: .frosted)
+            WheelContent(model: model, glass: nil)
                 .scaleEffect(model.isPresented ? 1 : (model.confirmed ? 1.08 : 0.7))
                 .rotationEffect(.degrees(model.isPresented || model.confirmed ? 0 : -14))
                 .opacity(model.isPresented ? 1 : 0)
@@ -61,39 +60,23 @@ struct WheelView: View {
     }
 }
 
-/// Wedges (or dividers), labels and the hub.
+/// Wedges, labels and the hub.
 private struct WheelContent: View {
-    enum Style: Equatable {
-        case frosted
-        case glass(dividers: Bool, halo: Bool)
-    }
-
     var model: WheelModel
-    var style: Style
-
-    private var halo: Bool {
-        if case .glass(_, let halo) = style { return halo }
-        return false
-    }
+    /// The Liquid Glass level, or nil for the classic frosted look.
+    var glass: GlassLevel?
 
     var body: some View {
         let layout = WheelView.layout(count: model.items.count)
         ZStack {
-            if case .glass(true, _) = style, layout.count > 1 {
-                Dividers(layout: layout)
-                    .stroke(Color.primary.opacity(0.16), style: StrokeStyle(lineWidth: 1, lineCap: .round))
-            }
             ZStack {
                 ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
-                    WedgeCell(
-                        item: item, index: index, layout: layout,
-                        isHovered: model.hovered == .wedge(index), frosted: style == .frosted, halo: halo
-                    )
+                    WedgeCell(item: item, index: index, layout: layout, isHovered: model.hovered == .wedge(index), glass: glass)
                 }
             }
             .id(model.mode)  // cross-fade when switching between formats and tools
             .transition(.opacity.combined(with: .scale(scale: 0.94)))
-            HubView(model: model, frosted: style == .frosted, halo: halo)
+            HubView(model: model, glass: glass)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: model.mode)
     }
@@ -117,35 +100,16 @@ nonisolated struct WedgeShape: Shape {
     }
 }
 
-/// Thin lines between the wedges and around the hub (glass levels).
-private nonisolated struct Dividers: Shape {
-    let layout: WheelLayout
-
-    func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        var path = Path()
-        for index in 0..<layout.count {
-            let angle = layout.startAngle(of: index)
-            let from = layout.innerRadius + 6
-            let to = layout.outerRadius - 12
-            path.move(to: CGPoint(x: center.x + from * sin(angle), y: center.y - from * cos(angle)))
-            path.addLine(to: CGPoint(x: center.x + to * sin(angle), y: center.y - to * cos(angle)))
-        }
-        let hub = layout.innerRadius - 4
-        path.addEllipse(in: CGRect(x: center.x - hub, y: center.y - hub, width: hub * 2, height: hub * 2))
-        return path
-    }
-}
-
 private struct WedgeCell: View {
     let item: WheelItem
     let index: Int
     let layout: WheelLayout
     let isHovered: Bool
-    let frosted: Bool
-    let halo: Bool
+    let glass: GlassLevel?
 
     private var isHighlighted: Bool { isHovered && item.isEnabled }
+    private var frosted: Bool { glass == nil }
+    private var halo: Bool { glass?.labelHalo ?? false }
 
     var body: some View {
         let direction = layout.direction(of: index)
@@ -162,7 +126,7 @@ private struct WedgeCell: View {
                     }
                     .shadow(color: Brand.indigo.opacity(isHighlighted ? 0.45 : 0), radius: 10, y: 3)
             } else {
-                // On glass, only the chosen wedge is colored.
+                // Only the chosen blade is colored.
                 shape
                     .fill(Brand.gradient)
                     .opacity(isHighlighted ? 0.88 : (isHovered ? 0.12 : 0))
@@ -184,6 +148,8 @@ private struct WedgeCell: View {
             .opacity(item.isEnabled ? 1 : 0.35)
             .offset(x: direction.dx * labelRadius, y: -direction.dy * labelRadius)
         }
+        .glassPiece(glass, in: shape)
+        // After the glass, so a chosen blade slides out glass and all.
         .offset(x: direction.dx * pop, y: -direction.dy * pop)
         .animation(.spring(response: 0.26, dampingFraction: 0.68), value: isHighlighted)
     }
@@ -198,8 +164,12 @@ private struct WedgeCell: View {
 /// The circle in the middle: what's being dragged, or what the hovered wedge does.
 private struct HubView: View {
     var model: WheelModel
-    let frosted: Bool
-    let halo: Bool
+    let glass: GlassLevel?
+
+    private var frosted: Bool { glass == nil }
+    private var halo: Bool { glass?.labelHalo ?? false }
+    /// A glass circle on every Liquid Glass level but Crystal, which shows just the words.
+    private var circle: GlassLevel? { glass?.hasHubCircle == true ? glass : nil }
 
     private enum Content: Hashable {
         case idle, nothing, cancel, switchMode, item(String)
@@ -220,7 +190,7 @@ private struct HubView: View {
                     .fill(Color.primary.opacity(content == .cancel ? 0.12 : 0.05))
                 Circle()
                     .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
-            } else if content == .cancel || content == .switchMode {
+            } else if circle != nil && (content == .cancel || content == .switchMode) {
                 Circle().fill(Color.primary.opacity(0.08))
             }
             label
@@ -230,6 +200,7 @@ private struct HubView: View {
                 .transition(.opacity)
         }
         .frame(width: (WheelView.innerRadius - 4) * 2, height: (WheelView.innerRadius - 4) * 2)
+        .glassPiece(circle, in: Circle())
         .animation(.easeOut(duration: 0.12), value: content)
     }
 

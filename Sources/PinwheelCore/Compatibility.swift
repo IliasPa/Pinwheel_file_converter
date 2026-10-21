@@ -49,8 +49,9 @@ public enum Compatibility {
         Source("FLAC", "flac"), Source("OGG", "ogg", detail: "Ogg Vorbis and Opus"),
     ]
 
-    /// The columns: every format Pinwheel writes.
-    public static let targets = OutputFormat.allCases
+    /// The columns: every format Pinwheel writes, audio in the rows' order
+    /// (MP3 first), so the dashes run straight down.
+    public static let targets: [OutputFormat] = [.png, .jpeg, .heic, .tiff, .gif, .pdf, .mp4, .mov, .mp3, .m4a, .wav, .aiff, .flac]
 
     public static let rows: [Row] = sources.map { source in
         Row(source: source, cells: targets.map { cell(from: source.sample, to: $0) })

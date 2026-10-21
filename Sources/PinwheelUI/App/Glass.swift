@@ -30,7 +30,7 @@ enum GlassLevel: Int, CaseIterable, Identifiable {
         case .tinted: "Liquid Glass with a hint of Pinwheel's indigo."
         case .liquid: "Apple's standard Liquid Glass."
         case .clear: "See-through glass with a light shade, so labels stay easy to read."
-        case .crystal: "Fully see-through glass: nothing but glass and icons."
+        case .crystal: "Fully see-through glass blades, and just the words in the middle."
         }
     }
 
@@ -58,8 +58,8 @@ enum GlassLevel: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Crystal leaves out the thin dividers between wedges.
-    var showsDividers: Bool { self != .crystal }
+    /// Crystal leaves out the glass circle in the middle of the wheel: just its words.
+    var hasHubCircle: Bool { self != .crystal }
 
     /// The clearest glass lets bright backgrounds (a white document) shine
     /// straight through, so labels get a soft halo to stay readable.
@@ -121,13 +121,23 @@ extension View {
         cornerRadius: CGFloat,
         blending: NSVisualEffectView.BlendingMode = .behindWindow
     ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if let glass = level.glass {
+        if level.glass != nil {
+            glassPiece(level, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            self.background(FrostedBackdrop(cornerRadius: cornerRadius, blending: blending))
+        }
+    }
+
+    /// Makes this view the content of a piece of Liquid Glass in `shape`
+    /// (a wedge of the wheel, its hub). Frosted, or no level, leaves it as it is.
+    @ViewBuilder
+    func glassPiece(_ level: GlassLevel?, in shape: some Shape) -> some View {
+        if let level, let glass = level.glass {
             self
                 .glassEffect(glass, in: shape)
                 .background(shape.fill(level.backing))
         } else {
-            self.background(FrostedBackdrop(cornerRadius: cornerRadius, blending: blending))
+            self
         }
     }
 }

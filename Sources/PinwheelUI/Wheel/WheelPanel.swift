@@ -2,15 +2,9 @@ import AppKit
 
 /// A see-through panel that floats above everything (including full-screen
 /// apps) without ever stealing focus from Finder.
-final class WheelPanel: NSPanel {
+final class WheelPanel: GlassPanel {
     init(size: CGFloat) {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: size, height: size),
-            styleMask: GlassWindow.styleMask,
-            backing: .buffered,
-            defer: true
-        )
-        GlassWindow.prepare(self, size: NSSize(width: size, height: size))
+        super.init(size: NSSize(width: size, height: size), defer: true)
         isFloatingPanel = true
         level = .popUpMenu
         hasShadow = false  // the SwiftUI view draws its own soft shadow
@@ -22,6 +16,31 @@ final class WheelPanel: NSPanel {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
+
+/// Pinwheel's floating windows (the wheel and the progress window), whose
+/// Liquid Glass always looks like the active window's.
+///
+/// macOS draws the glass of a window that isn't the key window frosted: a
+/// soft blur instead of clear glass that bends what's behind it. These panels
+/// are hardly ever key (the wheel shows while Finder is dragging), so they
+/// tell AppKit they look active, without taking the keyboard from anyone.
+/// Those are AppKit's own questions, not public ones: if a later macOS stops
+/// asking them, the glass just goes back to frosted. (Tested side by side on
+/// macOS 27 in v1.3: overriding either one gives clear glass.)
+class GlassPanel: NSPanel {
+    init(size: NSSize, defer: Bool) {
+        super.init(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: GlassWindow.styleMask,
+            backing: .buffered,
+            defer: `defer`
+        )
+        GlassWindow.prepare(self, size: size)
+    }
+
+    @objc func _hasActiveAppearance() -> Bool { true }
+    @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
 }
 
 /// Settings shared by Pinwheel's floating windows (the wheel and the

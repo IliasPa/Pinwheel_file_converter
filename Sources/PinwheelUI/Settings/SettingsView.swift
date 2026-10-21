@@ -79,7 +79,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
                     "trash", "original", "save", "folder", "downloads", "login", "startup"]
         case .wheel:
             return ["glass", "appearance", "frosted", "crystal", "preview", "show on desktop", "sound", "click", "volume",
-                    "vibration", "haptic", "trackpad"]
+                    "vibration", "haptic", "trackpad", "tap"]
         case .conversions:
             return formats + ["formats", "shift", "quality", "collage", "combined", "smaller pdf", "dpi", "resolution",
                               "frame rate", "width", "length"]
@@ -405,11 +405,15 @@ struct SettingsView: View {
                 }
             }
             .disabled(!settings.hoverSound)
-            Toggle("Trackpad vibration", isOn: $settings.hapticFeedback)
+            Picker("Trackpad vibration", selection: $settings.vibration) {
+                ForEach(Vibration.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: settings.vibration) { state.soundPreview.vibrate(settings.vibration) }
         } header: {
             Text("Wheel feedback")
         } footer: {
-            Footnote("Plays when the pointer moves onto a format. Vibration needs a Force Touch trackpad and is felt only while your finger is on it.")
+            Footnote("Plays when the pointer moves onto a format. Low is a light tap, High a firm one. Vibration needs a Force Touch trackpad and is felt only while your finger is on it.")
         }
     }
 

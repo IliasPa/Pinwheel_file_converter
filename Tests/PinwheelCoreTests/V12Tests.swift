@@ -20,7 +20,18 @@ struct CompatibilityTests {
         let kinds = Compatibility.sources.map(\.kind)
         let groups = kinds.indices.filter { $0 == 0 || kinds[$0 - 1] != kinds[$0] }.map { kinds[$0] }
         #expect(groups == [.image, .pdf, .video, .audio])
-        #expect(Compatibility.targets == OutputFormat.allCases)
+    }
+
+    @Test func everyFormatIsAColumnWithMP3BeforeM4A() throws {
+        let targets = Compatibility.targets
+        #expect(targets.count == OutputFormat.allCases.count && Set(targets) == Set(OutputFormat.allCases))
+        #expect(try #require(targets.firstIndex(of: .mp3)) < #require(targets.firstIndex(of: .m4a)))
+        // Each kind's own formats line up with its rows, so the dashes run down the middle.
+        var dashColumns: [Int] = []
+        for row in Compatibility.rows {
+            if let column = row.cells.firstIndex(of: .same) { dashColumns.append(column) }
+        }
+        #expect(dashColumns == dashColumns.sorted())
     }
 
     @Test func aFormatAgainstItselfIsADash() {

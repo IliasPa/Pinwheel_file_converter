@@ -15,6 +15,19 @@ enum SaveLocationChoice: String, CaseIterable {
     }
 }
 
+/// How firmly the trackpad taps when the pointer moves onto a wedge.
+enum Vibration: String, CaseIterable {
+    case off, low, high
+
+    var title: String {
+        switch self {
+        case .off: "Off"
+        case .low: "Low"
+        case .high: "High"
+        }
+    }
+}
+
 /// Which engine reads text in pictures and scanned pages.
 enum TextRecognitionChoice: String, CaseIterable {
     case automatic, apple, tesseract
@@ -39,7 +52,9 @@ struct RenamePreset: Codable, Equatable, Identifiable {
 @Observable
 final class SettingsStore {
     private enum Key: String {
-        case glassLevel, hapticFeedback, hoverSound, hoverSoundName, hoverSoundVolume
+        case glassLevel, vibration, hoverSound, hoverSoundName, hoverSoundVolume
+        /// Before 1.3: vibration on or off.
+        case hapticFeedback
         case showProgressWindow, revealInFinder, moveOriginalToTrash, notifyWhenDone
         case saveLocation, customFolderPath
         case jpegQuality, heicQuality, compressQuality, resize, combineImagesIntoOnePDF, pdfDPI
@@ -53,7 +68,7 @@ final class SettingsStore {
 
     // Appearance and feedback
     var glassLevel: GlassLevel { didSet { save(glassLevel.rawValue, .glassLevel) } }
-    var hapticFeedback: Bool { didSet { save(hapticFeedback, .hapticFeedback) } }
+    var vibration: Vibration { didSet { save(vibration.rawValue, .vibration) } }
     var hoverSound: Bool { didSet { save(hoverSound, .hoverSound) } }
     var hoverSoundName: String { didSet { save(hoverSoundName, .hoverSoundName) } }
     /// 0...1
@@ -114,7 +129,7 @@ final class SettingsStore {
         let factory = Self.factory
         return [
             .glassLevel: GlassLevel.defaultLevel.rawValue,
-            .hapticFeedback: true,
+            .vibration: Vibration.high.rawValue,
             .hoverSound: true,
             .hoverSoundName: "Tink",
             .hoverSoundVolume: 0.5,
@@ -150,7 +165,12 @@ final class SettingsStore {
         func string(_ key: Key) -> String { defaults.string(forKey: key.rawValue) ?? "" }
 
         glassLevel = GlassLevel(rawValue: defaults.integer(forKey: Key.glassLevel.rawValue)) ?? .defaultLevel
-        hapticFeedback = defaults.bool(forKey: Key.hapticFeedback.rawValue)
+        if let wasOn = defaults.object(forKey: Key.hapticFeedback.rawValue) as? Bool {
+            // The old switch: on felt like today's High.
+            defaults.set((wasOn ? Vibration.high : .off).rawValue, forKey: Key.vibration.rawValue)
+            defaults.removeObject(forKey: Key.hapticFeedback.rawValue)
+        }
+        vibration = Vibration(rawValue: string(.vibration)) ?? .high
         hoverSound = defaults.bool(forKey: Key.hoverSound.rawValue)
         hoverSoundName = string(.hoverSoundName)
         hoverSoundVolume = defaults.double(forKey: Key.hoverSoundVolume.rawValue)
@@ -298,7 +318,7 @@ final class SettingsStore {
         }
         let fresh = SettingsStore(defaults: defaults)
         glassLevel = fresh.glassLevel
-        hapticFeedback = fresh.hapticFeedback
+        vibration = fresh.vibration
         hoverSound = fresh.hoverSound
         hoverSoundName = fresh.hoverSoundName
         hoverSoundVolume = fresh.hoverSoundVolume
