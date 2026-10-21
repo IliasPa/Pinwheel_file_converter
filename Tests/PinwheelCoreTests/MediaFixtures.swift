@@ -215,6 +215,7 @@ func runRequest(
     if findTools {
         options.ffmpegURL = options.ffmpegURL ?? FFmpeg.locate()
         options.pngquantURL = options.pngquantURL ?? ExternalTool.pngquant.locate()
+        options.cwebpURL = options.cwebpURL ?? ExternalTool.cwebp.locate()
     }
     return try await ConversionEngine.run(request, options: options, naming: OutputNaming(), progress: progress)
 }

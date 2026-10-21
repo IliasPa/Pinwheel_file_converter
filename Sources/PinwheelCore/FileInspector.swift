@@ -17,6 +17,8 @@ public enum FileInspector {
             await mediaDetails(file, ffmpegURL: ffmpegURL, into: &details)
         case .pdf:
             pdfDetails(file, into: &details)
+        case .archive:
+            details.readOnlyReason = "Archives have no details to edit."
         case nil:
             details.readOnlyReason = "Pinwheel can't read this kind of file."
         }

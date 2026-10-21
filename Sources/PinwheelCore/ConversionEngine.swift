@@ -23,9 +23,11 @@ public enum ConversionEngine {
         switch (file.kind, action) {
         case (_, .open):
             false  // the window says what it can do; Info works without ffmpeg
-        case (_, .recipe):
-            false  // each step is checked on its own (see `availability`)
-        case (.video, .convert(.gif)), (.video, .convert(.mp3)), (.audio, .convert(.mp3)):
+        case (_, .recipe), (_, .file):
+            false  // each step is checked on its own (see `availability`); file actions need nothing
+        case (.video, .convert(.gif)):
+            true
+        case (.video, .convert(let format)) where format.needsFFmpeg, (.audio, .convert(let format)) where format.needsFFmpeg:
             true
         case (.video, .tool(let tool)), (.audio, .tool(let tool)):
             ToolConverter.usesFFmpeg(tool, for: file)
@@ -37,7 +39,14 @@ public enum ConversionEngine {
     }
 
     /// Whether a wedge can be used right now (it's grayed out otherwise).
-    public static func availability(of action: WheelAction, for files: [SourceFile], ffmpegAvailable: Bool) -> Availability {
+    public static func availability(
+        of action: WheelAction, for files: [SourceFile], ffmpegAvailable: Bool, cwebpAvailable: Bool = true
+    ) -> Availability {
+        if case .file = action { return .available }  // any files and folders
+        if action == .tool(.archive) { return files.isEmpty ? .unavailable("Nothing to put in it") : .available }
+        if action == .convert(.webp) && !cwebpAvailable {
+            return .unavailable("Needs cwebp (\(ExternalTool.cwebp.installCommand))")
+        }
         if action == .tool(.merge) && files.count < 2 {
             return .unavailable("Drop two or more PDFs to merge them")
         }
@@ -107,12 +116,16 @@ public enum ConversionEngine {
         options: ConversionOptions,
         naming: OutputNaming = .shared
     ) throws -> PlannedJob {
-        guard !request.files.isEmpty, request.files.allSatisfy({ $0.kind != nil }) else {
+        // A ZIP takes anything, folders too; everything else needs files Pinwheel knows.
+        guard !request.files.isEmpty, request.action == .tool(.archive) || request.files.allSatisfy({ $0.kind != nil }) else {
             throw ConversionError.unsupported(request.files.first?.url.lastPathComponent ?? "This file")
         }
         if case .open(let editor) = request.action {
             // Editors open a window, which then starts a `.tool` job.
             throw ConversionError.unsupported("\(editor.title) as a job")
+        }
+        if case .file(let action) = request.action {
+            throw ConversionError.unsupported("\(action.title) as a job")
         }
         let plan = OutputPlanner.plan(request, options: options)
         let destination = naming.reserve(
@@ -136,6 +149,12 @@ public enum ConversionEngine {
             switch (file.kind, request.action) {
             case (.image, .convert) where request.isCombinedPDF:
                 try ImageConverter.combineIntoPDF(request.files.map(\.url), destination: destination, progress: progress)
+            case (.image, .convert(.webp)):
+                progress(0.1)
+                try await ImageConverter.writeWebP(file.url, destination: destination, options: options)
+            case (.image, .convert(.icns)):
+                progress(0.1)
+                try await IconWriter.writeICNS(file.url, destination: destination)
             case (.image, .convert(let format)):
                 progress(0.1)
                 try ImageConverter.convert(file.url, to: format, destination: destination, options: options)
@@ -145,6 +164,9 @@ public enum ConversionEngine {
                 notes.append(try await MediaConverter.convert(
                     file, to: format, destination: destination, options: options, part: request.mediaEdit, progress: progress
                 ))
+            case (.archive, .convert(let format)):
+                progress(0.05)
+                try await ArchiveTools.convert(file.url, to: format, destination: destination)
             case (_, .tool(let tool)):
                 notes.append(try await ToolConverter.run(tool, request: request, plan: plan, destination: destination, options: options, progress: progress))
             case (_, .recipe(let recipe)):
@@ -156,6 +178,8 @@ public enum ConversionEngine {
                 notes.append(result.note)
             case (_, .open(let editor)):
                 throw ConversionError.unsupported("\(editor.title) as a job")
+            case (_, .file(let action)):
+                throw ConversionError.unsupported("\(action.title) as a job")
             case (nil, _):
                 throw ConversionError.unsupported(file.url.lastPathComponent)
             }

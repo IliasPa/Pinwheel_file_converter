@@ -61,6 +61,8 @@ final class SettingsStore {
         case videoQuality, videoMaxSize, audioBitRate, gifWidth, gifFPS, gifMaxSeconds
         case maxConcurrentJobs, ffmpegPath
         case hiddenTools, knownTools, hiddenFormats
+        case wheelKeys, keepWheelOpen, hiddenActions, terminalApp
+        case webpQuality, avifQuality
         case textRecognition
     }
 
@@ -87,6 +89,8 @@ final class SettingsStore {
     // Images and PDFs
     var jpegQuality: Double { didSet { save(jpegQuality, .jpegQuality) } }
     var heicQuality: Double { didSet { save(heicQuality, .heicQuality) } }
+    var webpQuality: Double { didSet { save(webpQuality, .webpQuality) } }
+    var avifQuality: Double { didSet { save(avifQuality, .avifQuality) } }
     var compressQuality: Double { didSet { save(compressQuality, .compressQuality) } }
     var resize: ResizeOption { didSet { save(resize.rawValue, .resize) } }
     var combineImagesIntoOnePDF: Bool { didSet { save(combineImagesIntoOnePDF, .combineImagesIntoOnePDF) } }
@@ -113,6 +117,14 @@ final class SettingsStore {
     var hiddenTools: Set<String> { didSet { save(Array(hiddenTools).sorted(), .hiddenTools) } }
     /// Formats left off the Shift wheel ("image:convert.tiff").
     var hiddenFormats: Set<String> { didSet { save(Array(hiddenFormats).sorted(), .hiddenFormats) } }
+    /// File actions left off their wheel ("file.airDrop").
+    var hiddenActions: Set<String> { didSet { save(Array(hiddenActions).sorted(), .hiddenActions) } }
+    /// The keys that open each wheel while dragging.
+    var wheelKeys: WheelKeys { didSet { save(Self.stored(wheelKeys), .wheelKeys) } }
+    /// The wheel stays open after the keys are let go, until a drop or Esc.
+    var keepWheelOpen: Bool { didSet { save(keepWheelOpen, .keepWheelOpen) } }
+    /// The app the "Terminal" file action opens (a bundle identifier).
+    var terminalApp: String { didSet { save(terminalApp, .terminalApp) } }
     /// Custom actions, each on its kind's tools wheel.
     var recipes: [Recipe] { didSet { saveJSON(recipes, Self.recipesKey) } }
     /// Rename rules saved under a name.
@@ -141,6 +153,8 @@ final class SettingsStore {
             .customFolderPath: "",
             .jpegQuality: factory.jpegQuality,
             .heicQuality: factory.heicQuality,
+            .webpQuality: factory.webpQuality,
+            .avifQuality: factory.avifQuality,
             .compressQuality: factory.compressQuality,
             .resize: factory.resize.rawValue,
             .combineImagesIntoOnePDF: factory.combineImagesIntoOnePDF,
@@ -155,6 +169,10 @@ final class SettingsStore {
             .ffmpegPath: "",
             .hiddenTools: Array(FormatCatalog.defaultHidden).sorted(),
             .hiddenFormats: [String](),
+            .hiddenActions: [String](),
+            .wheelKeys: stored(.standard),
+            .keepWheelOpen: false,
+            .terminalApp: TerminalApp.terminal.rawValue,
             .textRecognition: TextRecognitionChoice.automatic.rawValue,
         ]
     }
@@ -182,6 +200,8 @@ final class SettingsStore {
         customFolderPath = string(.customFolderPath)
         jpegQuality = defaults.double(forKey: Key.jpegQuality.rawValue)
         heicQuality = defaults.double(forKey: Key.heicQuality.rawValue)
+        webpQuality = defaults.double(forKey: Key.webpQuality.rawValue)
+        avifQuality = defaults.double(forKey: Key.avifQuality.rawValue)
         compressQuality = defaults.double(forKey: Key.compressQuality.rawValue)
         resize = ResizeOption(rawValue: string(.resize)) ?? .half
         combineImagesIntoOnePDF = defaults.bool(forKey: Key.combineImagesIntoOnePDF.rawValue)
@@ -196,6 +216,10 @@ final class SettingsStore {
         ffmpegPath = string(.ffmpegPath)
         hiddenTools = Set(defaults.stringArray(forKey: Key.hiddenTools.rawValue) ?? [])
         hiddenFormats = Set(defaults.stringArray(forKey: Key.hiddenFormats.rawValue) ?? [])
+        hiddenActions = Set(defaults.stringArray(forKey: Key.hiddenActions.rawValue) ?? [])
+        wheelKeys = Self.wheelKeys(from: defaults.dictionary(forKey: Key.wheelKeys.rawValue))
+        keepWheelOpen = defaults.bool(forKey: Key.keepWheelOpen.rawValue)
+        terminalApp = string(.terminalApp)
         recipes = Self.loadJSON(defaults, Self.recipesKey) ?? []
         renamePresets = Self.loadJSON(defaults, Self.renamePresetsKey) ?? []
         textRecognition = TextRecognitionChoice(rawValue: string(.textRecognition)) ?? .automatic
@@ -251,6 +275,7 @@ final class SettingsStore {
     /// The ffmpeg to use: the custom path if it works, else the usual places.
     var ffmpegURL: URL? { FFmpeg.locate(customPath: ffmpegPath) }
     var pngquantURL: URL? { ExternalTool.pngquant.locate() }
+    var cwebpURL: URL? { ExternalTool.cwebp.locate() }
     var tesseractURL: URL? { ExternalTool.tesseract.locate() }
 
     /// Tesseract's languages: in its own folder, plus any Pinwheel downloaded.
@@ -291,6 +316,8 @@ final class SettingsStore {
         var options = ConversionOptions()
         options.jpegQuality = jpegQuality
         options.heicQuality = heicQuality
+        options.webpQuality = webpQuality
+        options.avifQuality = avifQuality
         options.compressQuality = compressQuality
         options.resize = resize
         options.combineImagesIntoOnePDF = combineImagesIntoOnePDF
@@ -308,6 +335,7 @@ final class SettingsStore {
         }
         options.ffmpegURL = ffmpegURL
         options.pngquantURL = pngquantURL
+        options.cwebpURL = cwebpURL
         options.textRecognition = resolvedTextRecognition
         return options
     }
@@ -330,6 +358,8 @@ final class SettingsStore {
         customFolderPath = fresh.customFolderPath
         jpegQuality = fresh.jpegQuality
         heicQuality = fresh.heicQuality
+        webpQuality = fresh.webpQuality
+        avifQuality = fresh.avifQuality
         compressQuality = fresh.compressQuality
         resize = fresh.resize
         combineImagesIntoOnePDF = fresh.combineImagesIntoOnePDF
@@ -344,6 +374,10 @@ final class SettingsStore {
         ffmpegPath = fresh.ffmpegPath
         hiddenTools = fresh.hiddenTools
         hiddenFormats = fresh.hiddenFormats
+        hiddenActions = fresh.hiddenActions
+        wheelKeys = fresh.wheelKeys
+        keepWheelOpen = fresh.keepWheelOpen
+        terminalApp = fresh.terminalApp
         textRecognition = fresh.textRecognition
     }
 
@@ -400,7 +434,7 @@ final class SettingsStore {
         hiddenTools.remove(FormatCatalog.hiddenKey(recipe.kind, .recipe(recipe)))
     }
 
-    /// Wedges on a kind's wheel: formats, or tools and custom actions.
+    /// Wedges on a kind's wheel: formats, tools and custom actions, or file actions.
     func shownCount(for kind: FileKind, in mode: WheelMode = .tools) -> Int {
         let wedges = FormatCatalog.choices(for: kind, mode: mode)
         let custom = mode == .tools ? recipes.filter { $0.kind == kind }.map(WheelAction.recipe) : []
@@ -418,22 +452,46 @@ final class SettingsStore {
     /// What's left off a wheel. Each wheel has its own: Compress off the
     /// PDF tools wheel leaves Smaller PDF on the PDF format wheel.
     func hidden(in mode: WheelMode) -> Set<String> {
-        mode == .tools ? hiddenTools : hiddenFormats
+        switch mode {
+        case .convert: hiddenFormats
+        case .tools: hiddenTools
+        case .actions: hiddenActions
+        }
     }
 
-    /// Whether a tool (or, in `.convert`, a format) is on the wheel for this kind of file.
+    /// Whether a tool (or, in `.convert`, a format) is on the wheel for this
+    /// kind of file. File actions are the same for every kind.
     func isOnWheel(_ action: WheelAction, for kind: FileKind, in mode: WheelMode = .tools) -> Bool {
-        !hidden(in: mode).contains(FormatCatalog.hiddenKey(kind, action))
+        !hidden(in: mode).contains(Self.key(action, kind, mode))
     }
 
     func setOnWheel(_ action: WheelAction, for kind: FileKind, in mode: WheelMode = .tools, _ shown: Bool) {
-        let key = FormatCatalog.hiddenKey(kind, action)
+        let key = Self.key(action, kind, mode)
         switch (mode, shown) {
         case (.tools, true): hiddenTools.remove(key)
         case (.tools, false): hiddenTools.insert(key)
         case (.convert, true): hiddenFormats.remove(key)
         case (.convert, false): hiddenFormats.insert(key)
+        case (.actions, true): hiddenActions.remove(key)
+        case (.actions, false): hiddenActions.insert(key)
         }
+    }
+
+    private static func key(_ action: WheelAction, _ kind: FileKind, _ mode: WheelMode) -> String {
+        mode == .actions ? FormatCatalog.actionKey(action) : FormatCatalog.hiddenKey(kind, action)
+    }
+
+    /// Wheel keys as saved: ["convert": 4, "tools": 6…].
+    private static func stored(_ keys: WheelKeys) -> [String: Int] {
+        Dictionary(uniqueKeysWithValues: WheelMode.allCases.map { ($0.rawValue, keys[$0].rawValue) })
+    }
+
+    private static func wheelKeys(from saved: [String: Any]?) -> WheelKeys {
+        var keys = WheelKeys.standard
+        for mode in WheelMode.allCases {
+            if let raw = saved?[mode.rawValue] as? Int, raw != 0 { keys[mode] = ModifierKeys(rawValue: raw) }
+        }
+        return keys
     }
 
     private func save(_ value: Any, _ key: Key) {

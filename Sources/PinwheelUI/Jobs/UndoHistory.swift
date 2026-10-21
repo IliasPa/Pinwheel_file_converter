@@ -62,6 +62,11 @@ final class UndoHistory {
         record(Entry(title: Self.title("Rename", count: moves.count), date: now, renamed: moves))
     }
 
+    /// Files moved to another folder (the file actions' Move To…): undone like a rename.
+    func recordMove(_ moves: [Renamer.Move], now: Date = Date()) {
+        record(Entry(title: Self.title("Move", count: moves.count), date: now, renamed: moves))
+    }
+
     static func title(_ action: String, count: Int) -> String {
         count == 1 ? action : "\(action) (\(count) files)"
     }

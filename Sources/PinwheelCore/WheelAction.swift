@@ -6,6 +6,10 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
     case png, jpeg, heic, tiff, gif, pdf
     case mp4, mov
     case m4a, mp3, wav, aiff, flac
+    case webp, avif, bmp, ico, icns
+    case mkv, webm, avi, wmv
+    case ogg, opus, wma
+    case zip, tar, tgz = "tar.gz", sevenZip = "7z"
 
     public var fileExtension: String {
         switch self {
@@ -29,14 +33,41 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
         case .wav: .wav
         case .aiff: .aiff
         case .flac: UTType("org.xiph.flac") ?? UTType(filenameExtension: "flac") ?? .audio
+        case .webp: .webP
+        case .avif: UTType("public.avif") ?? .image
+        case .bmp: .bmp
+        case .ico: .ico
+        case .icns: .icns
+        case .avi: .avi
+        case .zip: .zip
+        default: UTType(filenameExtension: fileExtension) ?? .data
         }
     }
 
     public var title: String {
         switch self {
         case .m4a: "M4A"
+        case .webp: "WebP"
+        case .webm: "WebM"
+        case .opus: "Opus"
         default: rawValue.uppercased()
         }
+    }
+
+    /// What kind of file the result is.
+    public var kind: FileKind {
+        switch self {
+        case .png, .jpeg, .heic, .tiff, .gif, .webp, .avif, .bmp, .ico, .icns: .image
+        case .pdf: .pdf
+        case .mp4, .mov, .mkv, .webm, .avi, .wmv: .video
+        case .m4a, .mp3, .wav, .aiff, .flac, .ogg, .opus, .wma: .audio
+        case .zip, .tar, .tgz, .sevenZip: .archive
+        }
+    }
+
+    /// Made by ffmpeg whatever the file (macOS can't write these).
+    public var needsFFmpeg: Bool {
+        [.mp3, .mkv, .webm, .avi, .wmv, .ogg, .opus, .wma].contains(self)
     }
 
     public var symbolName: String {
@@ -54,6 +85,22 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
         case .wav: "waveform.path"
         case .aiff: "waveform.circle"
         case .flac: "hifispeaker"
+        case .webp: "globe"
+        case .avif: "photo.on.rectangle"
+        case .bmp: "squareshape.split.3x3"
+        case .ico: "app"
+        case .icns: "app.dashed"
+        case .mkv: "film.stack"
+        case .webm: "play.rectangle"
+        case .avi: "video.circle"
+        case .wmv: "tv"
+        case .ogg: "music.quarternote.3"
+        case .opus: "mic"
+        case .wma: "music.note.list"
+        case .zip: "doc.zipper"
+        case .tar: "archivebox"
+        case .tgz: "shippingbox"
+        case .sevenZip: "cube.box"
         }
     }
 
@@ -73,15 +120,42 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
         case .wav: "Uncompressed, universal"
         case .aiff: "Uncompressed, Apple"
         case .flac: "Lossless and compressed"
+        case .webp: "Small files for websites"
+        case .avif: "The smallest files, sharp details"
+        case .bmp: "Uncompressed, for older apps"
+        case .ico: "Windows icon, 16 to 256 pixels"
+        case .icns: "Mac icon, 16 to 1024 pixels"
+        case .mkv: "Keeps every track; plays in VLC and IINA"
+        case .webm: "For websites: VP9 picture, Opus sound"
+        case .avi: "For older players and TVs"
+        case .wmv: "For Windows Media Player"
+        case .ogg: "Ogg Vorbis, an open format"
+        case .opus: "The best sound for its size"
+        case .wma: "Windows Media Audio"
+        case .zip: "Opens on any computer"
+        case .tar: "Unix archive, not compressed"
+        case .tgz: "Compressed Unix archive"
+        case .sevenZip: "The smallest archives"
         }
     }
 
     /// The format a file already has, when it's one Pinwheel writes.
     public static func matching(_ url: URL) -> OutputFormat? {
+        // Told by name where the type can't tell: Opus is Ogg audio too,
+        // and archives (".tar.gz" is two extensions).
+        let name = url.lastPathComponent.lowercased()
+        if name.hasSuffix(".tar.gz") || name.hasSuffix(".tgz") { return .tgz }
+        switch url.pathExtension.lowercased() {
+        case "opus": return .opus
+        case "zip": return .zip
+        case "tar": return .tar
+        case "7z": return .sevenZip
+        default: break
+        }
         guard let type = FileKind.contentType(of: url) else { return nil }
         // .m4a files are "com.apple.m4a-audio", a kind of MPEG-4 audio.
         if type == m4aFileType { return .m4a }
-        return allCases.first { $0.utType == type }
+        return allCases.first { $0.kind != .archive && $0.utType == type }
     }
 
     private static let m4aFileType = UTType("com.apple.m4a-audio")
@@ -110,6 +184,10 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
     case collage
     case organize
     case sizeLimit
+    /// Files and folders into one .zip (the file actions wheel).
+    case archive
+    /// An archive's contents into a folder.
+    case extract
 
     /// The general name; Resize shows its chosen size on the wheel instead.
     public var title: String {
@@ -133,6 +211,8 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .collage: "Collage"
         case .organize: "Organize Pages"
         case .sizeLimit: "Size Limit"
+        case .archive: "ZIP"
+        case .extract: "Extract"
         }
     }
 
@@ -157,6 +237,8 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .collage: "square.grid.2x2"
         case .organize: "rectangle.grid.2x2"
         case .sizeLimit: "gauge.with.dots.needle.bottom.50percent"
+        case .archive: "doc.zipper"
+        case .extract: "tray.and.arrow.up"
         }
     }
 
@@ -168,7 +250,7 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
             case .video: "Smaller HEVC video"
             case .audio: "Smaller AAC audio file"
             case .pdf: "Shrinks the images inside"
-            case nil: "Smaller files"
+            case .archive, nil: "Smaller files"
             }
         case .resize: options.resize.detail
         case .stripMetadata: "Removes location, camera and other hidden info"
@@ -188,6 +270,8 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .collage: "Several photos in one picture"
         case .organize: "The pages in your order"
         case .sizeLimit: "Smaller than the size you chose"
+        case .archive: "All of them in one .zip file"
+        case .extract: "Its files, in a folder beside it"
         }
     }
 
@@ -211,6 +295,8 @@ public enum ToolAction: String, CaseIterable, Codable, Sendable {
         case .collage: "collage"
         case .organize: "organized"
         case .sizeLimit: "smaller"
+        case .archive: "zipped"
+        case .extract: "extracted"
         }
     }
 }
@@ -228,6 +314,8 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
     case sizeLimit
     /// Many files renamed at once, by rules.
     case rename
+    /// QR codes and barcodes in pictures, read out.
+    case codes
 
     public var title: String {
         switch self {
@@ -243,6 +331,7 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .organize: "Organize…"
         case .sizeLimit: "Size Limit…"
         case .rename: "Rename…"
+        case .codes: "Read Codes…"
         }
     }
 
@@ -260,6 +349,7 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .organize: "rectangle.grid.2x2"
         case .sizeLimit: ToolAction.sizeLimit.symbolName
         case .rename: "character.cursor.ibeam"
+        case .codes: "qrcode.viewfinder"
         }
     }
 
@@ -275,7 +365,7 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
             case .image: "See and edit title, camera, date, place…"
             case .video, .audio: "See and edit title, artist and more"
             case .pdf: "See and edit title, author and more"
-            case nil: "See and edit the details"
+            case .archive, nil: "See and edit the details"
             }
         case .trim: kind == .audio ? "Trim, speed, fades and loudness" : "Trim, speed, turn, sound and GIF"
         case .password: "Only people with the password can open it"
@@ -283,6 +373,45 @@ public enum Editor: String, CaseIterable, Codable, Sendable {
         case .organize: "Reorder, turn or remove pages, from one PDF or several"
         case .sizeLimit: "Under a size you choose, like 10 MB for email"
         case .rename: "Many files at once: replace, number, dates, case…"
+        case .codes: "QR codes and barcodes: copy the text or open the link"
+        }
+    }
+}
+
+/// Finder chores for any files and folders: the file actions wheel.
+public enum FileAction: String, CaseIterable, Codable, Sendable {
+    case airDrop, copy, moveTo, copyPath, terminal, quickLook
+
+    public var title: String {
+        switch self {
+        case .airDrop: "AirDrop"
+        case .copy: "Copy"
+        case .moveTo: "Move To…"
+        case .copyPath: "Copy Path"
+        case .terminal: "Terminal"
+        case .quickLook: "Quick Look"
+        }
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .airDrop: "dot.radiowaves.left.and.right"
+        case .copy: "doc.on.doc"
+        case .moveTo: "folder"
+        case .copyPath: "link"
+        case .terminal: "terminal"
+        case .quickLook: "eye"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .airDrop: "Send them to a nearby iPhone, iPad or Mac"
+        case .copy: "Then paste them in any Finder window"
+        case .moveTo: "Choose a folder to move them to"
+        case .copyPath: "Their full paths, to paste as text"
+        case .terminal: "A Terminal window in their folder"
+        case .quickLook: "A preview, as with the Space bar"
         }
     }
 }
@@ -295,6 +424,8 @@ public enum WheelAction: Hashable, Codable, Sendable {
     case open(Editor)
     /// A custom action from Settings: several steps, one after the other.
     case recipe(Recipe)
+    /// A Finder chore, done right away (no job).
+    case file(FileAction)
 
     public var id: String {
         switch self {
@@ -302,6 +433,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .tool(let tool): "tool.\(tool.rawValue)"
         case .open(let editor): "open.\(editor.rawValue)"
         case .recipe(let recipe): "recipe.\(recipe.id.uuidString)"
+        case .file(let action): "file.\(action.rawValue)"
         }
     }
 
@@ -315,6 +447,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .tool(let tool): tool.title
         case .open(let editor): editor.title
         case .recipe(let recipe): recipe.name
+        case .file(let action): action.title
         }
     }
 
@@ -325,6 +458,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .tool(let tool): tool.symbolName
         case .open(let editor): editor.symbolName
         case .recipe(let recipe): recipe.symbol
+        case .file(let action): action.symbolName
         }
     }
 
@@ -334,6 +468,7 @@ public enum WheelAction: Hashable, Codable, Sendable {
         case .tool(let tool): tool.detail(for: kind, options: options)
         case .open(let editor): editor.detail(for: kind)
         case .recipe(let recipe): recipe.summary
+        case .file(let action): action.detail
         }
     }
 }

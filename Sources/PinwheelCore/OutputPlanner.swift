@@ -45,12 +45,21 @@ enum OutputPlanner {
             if tool == .sizeLimit, let bytes = request.sizeLimit {
                 plan.suffix = "under \(SizeLimit.title(bytes: bytes))"
             }
+            if tool == .archive && request.files.count > 1 {
+                plan.baseName = "Archive"
+                plan.suffix = "\(request.files.count) items"
+            } else if tool == .extract || file.kind == .archive {
+                plan.baseName = ArchiveTools.baseName(of: file.url)
+            }
             (plan.format, plan.fileExtension) = toolOutput(tool, for: file, request: request, options: options)
         case .recipe(let recipe):
             plan.suffix = recipe.fileNameSuffix
             (plan.format, plan.fileExtension) = recipeOutput(recipe, for: file, options: options)
-        case .open:
-            break  // opens a window; never a job (ConversionEngine.prepare refuses it)
+        case .open, .file:
+            break  // opens a window, or done right away; never a job (ConversionEngine.prepare refuses it)
+        }
+        if file.kind == .archive, case .convert = request.action {
+            plan.baseName = ArchiveTools.baseName(of: file.url)
         }
         return plan
     }
@@ -68,6 +77,10 @@ enum OutputPlanner {
     ) -> (OutputFormat?, String?) {
         let ext = file.url.pathExtension.lowercased()
         switch (file.kind, tool) {
+        case (_, .archive):
+            return (.zip, OutputFormat.zip.fileExtension)
+        case (_, .extract):
+            return (nil, nil)  // a folder
         case (.image, .compress):
             // JPEG, HEIC and PNG stay what they are. Formats that can't get
             // smaller themselves (TIFF, BMP, camera RAW…) become HEIC.
@@ -133,7 +146,7 @@ enum OutputPlanner {
                 let request = ConversionRequest(file: current, action: action, parameters: parameters)
                 let (format, ext) = toolOutput(tool, for: current, request: request, options: stepOptions)
                 result = (format ?? result.0, ext)
-            case .open, .recipe:
+            case .open, .recipe, .file:
                 break
             }
             guard let ext = result.1 else { return result }  // a folder: nothing comes after it

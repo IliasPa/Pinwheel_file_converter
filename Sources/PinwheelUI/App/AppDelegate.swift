@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let history = UndoHistory()
     private let services = ServicesProvider()
     private let commands = CommandCenter()
+    private let fileActions = FileActions()
     private lazy var wheel = WheelController(settings: settings)
     private lazy var progress = ProgressController(queue: jobs, settings: settings)
     private lazy var notifier = Notifier()
@@ -57,20 +58,31 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             // After a mouse-up, wait a moment so a drop on the wheel can land first.
             self?.wheel.hide(after: dragEnded ? 0.35 : 0)
         }
+        dragMonitor.keys = { settings.wheelKeys }
+        dragMonitor.keepsOpen = { settings.keepWheelOpen }
         dragMonitor.start()
 
-        wheel.availability = { action, files in
-            ConversionEngine.availability(of: action, for: files, ffmpegAvailable: settings.ffmpegURL != nil)
+        let availability: (WheelAction, [SourceFile]) -> Availability = { action, files in
+            ConversionEngine.availability(
+                of: action, for: files, ffmpegAvailable: settings.ffmpegURL != nil, cwebpAvailable: settings.cwebpURL != nil
+            )
         }
+        wheel.availability = availability
+        wheel.onDismiss = { [weak self] in self?.dragMonitor.dismiss() }
         wheel.onDrop = { [weak self] files, action in
             guard let self else { return }
-            if case .open(let editor) = action {
+            switch action {
+            case .open(let editor):
                 // "Crop…", "Info…" and friends ask first, in a window.
                 self.editors.open(editor, files: files)
-            } else {
+            case .file(let fileAction):
+                self.fileActions.perform(fileAction, on: files.map(\.url))
+            default:
                 self.jobs.enqueue(files: files, action: action)
             }
         }
+        fileActions.terminalApp = { settings.terminalApp }
+        fileActions.onMoved = { [weak self] moves in self?.history.recordMove(moves) }
         editors.enqueue = { [weak self] files, action, parameters in
             self?.jobs.enqueue(files: files, action: action, parameters: parameters)
         }
@@ -102,9 +114,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.editors.open(editor, files: files)
         }
         commands.recipes = { settings.recipes }
-        commands.availability = { action, files in
-            ConversionEngine.availability(of: action, for: files, ffmpegAvailable: settings.ffmpegURL != nil)
-        }
+        commands.availability = availability
         commands.start()
         jobs.optionsProvider = { settings.conversionOptions }
         jobs.concurrency = { settings.concurrencyLimit }

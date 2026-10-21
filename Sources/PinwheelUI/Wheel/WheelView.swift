@@ -142,7 +142,7 @@ private struct WedgeCell: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .frame(width: 66)
+            .frame(width: labelWidth)
             .foregroundStyle(isHighlighted ? Color.white : Color.primary)
             .labelHalo(halo && !isHighlighted)
             .opacity(item.isEnabled ? 1 : 0.35)
@@ -152,6 +152,13 @@ private struct WedgeCell: View {
         // After the glass, so a chosen blade slides out glass and all.
         .offset(x: direction.dx * pop, y: -direction.dy * pop)
         .animation(.spring(response: 0.26, dampingFraction: 0.68), value: isHighlighted)
+    }
+
+    /// As wide as a wedge allows: with 12 formats, neighbours sit closer.
+    private var labelWidth: CGFloat {
+        guard layout.count > 1 else { return 66 }
+        let chord = 2 * (layout.innerRadius + layout.outerRadius) / 2 * sin(layout.step / 2)
+        return min(66, chord - 4)
     }
 
     private var frostedFill: AnyShapeStyle {
@@ -212,11 +219,7 @@ private struct HubView: View {
         case .cancel:
             stack(symbol: "xmark", title: "Cancel", detail: nil)
         case .switchMode:
-            stack(
-                symbol: model.mode == .convert ? "wrench.and.screwdriver" : "arrow.triangle.2.circlepath",
-                title: model.mode == .convert ? "Tools" : "Formats",
-                detail: "Click to switch"
-            )
+            stack(symbol: model.mode.next.wheelSymbol, title: model.mode.next.wheelTitle, detail: "Click to switch")
         case .item:
             if let item = model.hoveredItem {
                 stack(symbol: nil, title: item.title, detail: item.unavailableReason ?? item.detail)
@@ -226,8 +229,8 @@ private struct HubView: View {
                 symbol: model.summarySymbol,
                 title: model.summary,
                 detail: model.isClickMode
-                    ? (model.mode == .tools ? "Tools · click here for formats" : "Click here for tools")
-                    : (model.mode == .tools ? "Tools" : nil)
+                    ? (model.mode == .convert ? "" : "\(model.mode.wheelTitle) · ") + "Click here for \(model.mode.next.wheelTitle.lowercased())"
+                    : (model.mode == .convert ? nil : model.mode.wheelTitle)
             )
         }
     }

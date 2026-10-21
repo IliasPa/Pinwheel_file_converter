@@ -2,12 +2,16 @@ import Foundation
 import Testing
 @testable import PinwheelCore
 
-// MARK: - The compatibility table
+// MARK: - The compatibility tables
 
 struct CompatibilityTests {
     private func cell(_ from: String, _ to: OutputFormat) throws -> Compatibility.Cell {
-        let row = try #require(Compatibility.rows.first { $0.source.title == from })
-        return row.cells[try #require(Compatibility.targets.firstIndex(of: to))]
+        for section in Compatibility.sections {
+            guard let row = section.rows.first(where: { $0.source.title == from }) else { continue }
+            guard let column = section.targets.firstIndex(of: to) else { return .no }
+            return row.cells[column]
+        }
+        throw CancellationError()
     }
 
     @Test func everyRowIsAKindOfFilePinwheelReads() {
@@ -15,73 +19,93 @@ struct CompatibilityTests {
             #expect(source.sample.kind != nil, "\(source.title)")
         }
         #expect(Set(Compatibility.sources.map(\.id)).count == Compatibility.sources.count)
-        // Grouped by kind, in the columns' order (images, PDF, video, audio),
-        // so the dashes run down the middle.
-        let kinds = Compatibility.sources.map(\.kind)
-        let groups = kinds.indices.filter { $0 == 0 || kinds[$0 - 1] != kinds[$0] }.map { kinds[$0] }
-        #expect(groups == [.image, .pdf, .video, .audio])
+        // One table per kind, every row in its kind's table.
+        #expect(Compatibility.sections.map(\.kind) == [.image, .pdf, .video, .audio, .archive])
+        #expect(Compatibility.sections.flatMap(\.rows).count == Compatibility.sources.count)
+        for section in Compatibility.sections {
+            #expect(section.rows.allSatisfy { $0.source.kind == section.kind && $0.cells.count == section.targets.count })
+        }
     }
 
-    @Test func everyFormatIsAColumnWithMP3BeforeM4A() throws {
-        let targets = Compatibility.targets
-        #expect(targets.count == OutputFormat.allCases.count && Set(targets) == Set(OutputFormat.allCases))
-        #expect(try #require(targets.firstIndex(of: .mp3)) < #require(targets.firstIndex(of: .m4a)))
-        // Each kind's own formats line up with its rows, so the dashes run down the middle.
-        var dashColumns: [Int] = []
-        for row in Compatibility.rows {
-            if let column = row.cells.firstIndex(of: .same) { dashColumns.append(column) }
+    @Test func columnsKeepOneOrderWithMP3BeforeM4A() throws {
+        #expect(Set(Compatibility.order) == Set(OutputFormat.allCases) && Compatibility.order.count == OutputFormat.allCases.count)
+        #expect(try #require(Compatibility.order.firstIndex(of: .mp3)) < #require(Compatibility.order.firstIndex(of: .m4a)))
+        for section in Compatibility.sections {
+            #expect(section.targets == Compatibility.order.filter(section.targets.contains), "\(section.kind)")
         }
-        #expect(dashColumns == dashColumns.sorted())
+        // Each kind's own formats line up with its rows, so the dashes run down the middle.
+        for section in Compatibility.sections {
+            let dashColumns = section.rows.compactMap { $0.cells.firstIndex(of: .same) }
+            #expect(dashColumns == dashColumns.sorted(), "\(section.kind)")
+        }
     }
 
     @Test func aFormatAgainstItselfIsADash() {
         var dashes: [String] = []
-        for row in Compatibility.rows {
-            for (column, target) in Compatibility.targets.enumerated() where row.cells[column] == .same {
-                dashes.append("\(row.source.title) \(target.title)")
+        for section in Compatibility.sections {
+            for row in section.rows {
+                for (column, target) in section.targets.enumerated() where row.cells[column] == .same {
+                    dashes.append("\(row.source.title) \(target.title)")
+                }
             }
         }
         #expect(dashes.sorted() == [
-            "AIFF AIFF", "FLAC FLAC", "GIF GIF", "HEIC HEIC", "JPEG JPEG", "M4A M4A", "MOV MOV", "MP3 MP3", "MP4 MP4",
-            "PDF PDF", "PNG PNG", "TIFF TIFF", "WAV WAV",
+            "7Z 7Z", "AIFF AIFF", "AVI AVI", "AVIF AVIF", "BMP BMP", "FLAC FLAC", "GIF GIF", "HEIC HEIC", "JPEG JPEG", "M4A M4A",
+            "MKV MKV", "MOV MOV", "MP3 MP3", "MP4 MP4", "OGG OGG", "Opus Opus", "PDF PDF", "PNG PNG", "TAR TAR",
+            "TAR.GZ TAR.GZ", "TIFF TIFF", "WAV WAV", "WMA WMA", "WMV WMV", "WebM WebM", "WebP WebP", "ZIP ZIP",
         ])
     }
 
     @Test func ticksAreWhatTheFormatWheelOffers() {
-        for row in Compatibility.rows {
-            let wheel = FormatCatalog.actions(for: [row.source.sample], mode: .convert)
-            for (column, target) in Compatibility.targets.enumerated() {
-                let converts = if case .converts = row.cells[column] { true } else { false }
-                #expect(converts == wheel.contains(.convert(target)), "\(row.source.title) → \(target.title)")
+        for section in Compatibility.sections {
+            for row in section.rows {
+                let wheel = FormatCatalog.actions(for: [row.source.sample], mode: .convert)
+                for (column, target) in section.targets.enumerated() {
+                    let converts = if case .converts = row.cells[column] { true } else { false }
+                    #expect(converts == wheel.contains(.convert(target)), "\(row.source.title) → \(target.title)")
+                }
+                // Nothing the wheel offers is missing from the table.
+                for case .convert(let format) in wheel {
+                    #expect(section.targets.contains(format), "\(row.source.title) → \(format.title) has no column")
+                }
             }
         }
     }
 
     @Test func wellKnownBoxes() throws {
-        #expect(try cell("HEIC", .jpeg) == .converts(needsFFmpeg: false))
-        #expect(try cell("RAW", .png) == .converts(needsFFmpeg: false))
-        #expect(try cell("WebP", .pdf) == .converts(needsFFmpeg: false))
-        #expect(try cell("PDF", .png) == .converts(needsFFmpeg: false))
-        #expect(try cell("MOV", .m4a) == .converts(needsFFmpeg: false))
-        #expect(try cell("MOV", .gif) == .converts(needsFFmpeg: true))
-        #expect(try cell("WAV", .mp3) == .converts(needsFFmpeg: true))
-        #expect(try cell("MKV", .mp4) == .converts(needsFFmpeg: true))  // macOS can't read MKV…
-        #expect(try cell("AVI", .mov) == .converts(needsFFmpeg: true))  // …nor AVI
+        #expect(try cell("HEIC", .jpeg) == .converts(needs: nil))
+        #expect(try cell("RAW", .png) == .converts(needs: nil))
+        #expect(try cell("WebP", .pdf) == .converts(needs: nil))
+        #expect(try cell("SVG", .png) == .converts(needs: nil))
+        #expect(try cell("PNG", .avif) == .converts(needs: nil))
+        #expect(try cell("PNG", .webp) == .converts(needs: .cwebp))
+        #expect(try cell("PDF", .png) == .converts(needs: nil))
+        #expect(try cell("MOV", .m4a) == .converts(needs: nil))
+        #expect(try cell("MOV", .gif) == .converts(needs: .ffmpeg))
+        #expect(try cell("MOV", .webm) == .converts(needs: .ffmpeg))
+        #expect(try cell("WAV", .mp3) == .converts(needs: .ffmpeg))
+        #expect(try cell("WAV", .opus) == .converts(needs: .ffmpeg))
+        #expect(try cell("MKV", .mp4) == .converts(needs: .ffmpeg))  // macOS can't read MKV…
+        #expect(try cell("AVI", .mov) == .converts(needs: .ffmpeg))  // …nor AVI
+        #expect(try cell("RAR", .zip) == .converts(needs: nil))
+        #expect(try cell("ZIP", .sevenZip) == .converts(needs: nil))
         #expect(try cell("PDF", .gif) == .no)
         #expect(try cell("PNG", .mp4) == .no)
         #expect(try cell("MP3", .mov) == .no)
         #expect(try cell("WAV", .gif) == .no)
     }
 
-    @Test func ffmpegForEveryFileOfAKind() {
-        #expect(Compatibility.needsFFmpeg(.convert(.mp3), for: .audio))
-        #expect(Compatibility.needsFFmpeg(.convert(.mp3), for: .video))
-        #expect(Compatibility.needsFFmpeg(.convert(.gif), for: .video))
-        #expect(!Compatibility.needsFFmpeg(.convert(.gif), for: .image))
-        #expect(!Compatibility.needsFFmpeg(.convert(.m4a), for: .video))
-        #expect(!Compatibility.needsFFmpeg(.convert(.flac), for: .audio))
-        #expect(!Compatibility.needsFFmpeg(.tool(.compress), for: .pdf))
-        #expect(!Compatibility.needsFFmpeg(.open(.collage), for: .image))
+    @Test func extraToolsForEveryFileOfAKind() {
+        #expect(Compatibility.tool(for: .convert(.mp3), kind: .audio) == .ffmpeg)
+        #expect(Compatibility.tool(for: .convert(.mp3), kind: .video) == .ffmpeg)
+        #expect(Compatibility.tool(for: .convert(.gif), kind: .video) == .ffmpeg)
+        #expect(Compatibility.tool(for: .convert(.webp), kind: .image) == .cwebp)
+        #expect(Compatibility.tool(for: .convert(.gif), kind: .image) == nil)
+        #expect(Compatibility.tool(for: .convert(.m4a), kind: .video) == nil)
+        #expect(Compatibility.tool(for: .convert(.flac), kind: .audio) == nil)
+        #expect(Compatibility.tool(for: .tool(.compress), kind: .pdf) == nil)
+        #expect(Compatibility.tool(for: .open(.collage), kind: .image) == nil)
+        #expect(Compatibility.tool(for: .tool(.extract), kind: .archive) == nil)
     }
 }
 
@@ -102,7 +126,8 @@ struct V12FormatWheelTests {
         let m4a = try await runConversion(wav, .convert(.m4a))
         let file = SourceFile(url: m4a)
         #expect(file.format == .m4a)
-        #expect(FormatCatalog.actions(for: [file], mode: .convert) == [.convert(.mp3), .convert(.wav), .convert(.aiff), .convert(.flac)])
+        #expect(FormatCatalog.actions(for: [file], mode: .convert)
+                == [.convert(.mp3), .convert(.wav), .convert(.aiff), .convert(.flac), .convert(.ogg), .convert(.opus), .convert(.wma)])
     }
 
     @Test func aviGoesThroughFFmpeg() {
@@ -129,7 +154,7 @@ struct V12FormatWheelTests {
     @Test func switchedOffFormatsLeaveTheWheel() {
         let hidden: Set = [FormatCatalog.hiddenKey(.image, .convert(.tiff)), FormatCatalog.hiddenKey(.image, .open(.collage))]
         #expect(FormatCatalog.actions(for: files("a.png"), mode: .convert, hidden: hidden)
-                == [.convert(.jpeg), .convert(.heic), .convert(.gif), .convert(.pdf)])
+                == [.convert(.jpeg), .convert(.heic), .convert(.webp), .convert(.avif), .convert(.gif), .convert(.bmp), .convert(.ico), .convert(.icns), .convert(.pdf)])
         // Collage too, which shows only for several pictures.
         #expect(FormatCatalog.actions(for: files("a.png", "b.jpg"), mode: .convert).last == .open(.collage))
         #expect(!FormatCatalog.actions(for: files("a.png", "b.jpg"), mode: .convert, hidden: hidden).contains(.open(.collage)))

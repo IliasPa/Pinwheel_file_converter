@@ -130,6 +130,10 @@ public struct ConversionOptions: Sendable, Equatable, Codable {
     public var jpegQuality: Double = 0.85
     /// 0...1 quality for HEIC output.
     public var heicQuality: Double = 0.80
+    /// 0...1 quality for WebP output.
+    public var webpQuality: Double = 0.80
+    /// 0...1 quality for AVIF output.
+    public var avifQuality: Double = 0.70
     /// 0...1 quality used by Compress for images (and pictures inside PDFs).
     public var compressQuality: Double = 0.60
     /// Compress results that save less than this share are thrown away.
@@ -158,6 +162,8 @@ public struct ConversionOptions: Sendable, Equatable, Codable {
     public var ffmpegURL: URL?
     /// Where pngquant is (for compressing PNGs), or nil.
     public var pngquantURL: URL?
+    /// Where cwebp is (for WebP pictures), or nil.
+    public var cwebpURL: URL?
     /// How text is read in pictures and scanned pages (Get Text, Searchable).
     public var textRecognition = TextRecognition()
 
@@ -209,9 +215,9 @@ public struct ConversionRequest: Sendable, Equatable, Codable {
         action == .tool(.merge) && files.count > 1
     }
 
-    /// All the files make one result (a merged PDF, a collage, organized pages).
+    /// All the files make one result (a merged PDF, a collage, organized pages, a ZIP).
     public var isCombined: Bool {
-        isMerge || action == .tool(.collage) || action == .tool(.organize)
+        isMerge || action == .tool(.collage) || action == .tool(.organize) || action == .tool(.archive)
     }
 
     /// Whether the result stands in for the original, so "Move the original
@@ -219,7 +225,7 @@ public struct ConversionRequest: Sendable, Equatable, Codable {
     /// taken *from* files that are still wanted (and may still be open).
     public var replacesOriginal: Bool {
         switch action {
-        case .tool(.extractText), .tool(.saveFrame), .tool(.collage): false
+        case .tool(.extractText), .tool(.saveFrame), .tool(.collage), .tool(.archive), .tool(.extract): false
         case .convert(.gif): mediaEdit == nil  // a GIF of a part is taken from the video
         case .recipe(let recipe): recipe.replacesOriginal
         default: true

@@ -78,22 +78,23 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             return ["permission", "accessibility", "progress window", "show in finder", "notify", "notification",
                     "trash", "original", "save", "folder", "downloads", "login", "startup"]
         case .wheel:
-            return ["glass", "appearance", "frosted", "crystal", "preview", "show on desktop", "sound", "click", "volume",
-                    "vibration", "haptic", "trackpad", "tap"]
+            return ["keys", "shortcut", "modifier", "shift", "option", "control", "command", "keyboard", "arrow", "let go",
+                    "keep open", "glass", "appearance", "frosted", "crystal", "preview", "show on desktop", "sound", "click",
+                    "volume", "vibration", "haptic", "trackpad", "tap"]
         case .conversions:
             return formats + ["formats", "shift", "quality", "collage", "combined", "smaller pdf", "dpi", "resolution",
                               "frame rate", "width", "length"]
         case .compatibility:
             return formats + Compatibility.sources.map(\.title) + ["table", "formats", "supported", "from"]
         case .tools:
-            return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title)
-                + ["option", "quality", "bit rate", "video size", "custom actions"]
+            return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title) + FileAction.allCases.map(\.title)
+                + ["quality", "bit rate", "video size", "custom actions", "file actions", "path", "iterm", "zip", "qr", "barcode"]
         case .textRecognition:
             return ["ocr", "get text", "searchable", "tesseract", "greek", "language", "apple"]
         case .finderAndShortcuts:
             return ["services", "right-click", "quick action", "command", "terminal", "shell", "pinwheel"]
         case .advanced:
-            return ["same time", "files at once", "speed", "ffmpeg", "pngquant", "homebrew", "brew", "reset", "defaults"]
+            return ["same time", "files at once", "speed", "ffmpeg", "pngquant", "cwebp", "webp", "homebrew", "brew", "reset", "defaults"]
         }
     }
 
@@ -219,6 +220,7 @@ struct SettingsView: View {
             }
         case .wheel:
             Form {
+                keysSection
                 appearance
                 feedback
             }
@@ -230,6 +232,7 @@ struct SettingsView: View {
             Form {
                 compressAndResize
                 toolsWheel
+                fileActionsWheel
             }
         case .textRecognition:
             Form { textRecognition }
@@ -259,7 +262,7 @@ struct SettingsView: View {
                     Text(permission.isTrusted ? "Accessibility is on" : "Accessibility permission needed")
                         .font(.headline)
                     Text(permission.isTrusted
-                         ? "Hold ⇧ Shift while dragging files and the wheel appears."
+                         ? "Hold \(settings.wheelKeys[.convert].title) while dragging files and the wheel appears."
                          : "Without it, the wheel can't appear.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -356,6 +359,58 @@ struct SettingsView: View {
     }
 
     // MARK: - Wheel
+
+    /// The keys that open each wheel, and whether it stays open after them.
+    private var keysSection: some View {
+        let clashes = settings.wheelKeys.clashes
+        return Section {
+            ForEach(WheelMode.allCases, id: \.self) { mode in
+                LabeledContent {
+                    HStack(spacing: 4) {
+                        ForEach(ModifierKeys.each, id: \.rawValue) { key in
+                            keyToggle(key, for: mode)
+                        }
+                    }
+                } label: {
+                    Label("\(mode.wheelTitle) wheel", systemImage: mode.wheelSymbol)
+                    if clashes.contains(mode) {
+                        Text("Same keys as another wheel").foregroundStyle(.orange)
+                    }
+                }
+            }
+            Picker("When you let go of the keys", selection: $settings.keepWheelOpen) {
+                Text("Close the wheel").tag(false)
+                Text("Keep it open until you drop").tag(true)
+            }
+        } header: {
+            Text("Keys")
+        } footer: {
+            Footnote("Hold a wheel's keys while dragging files; each wheel opens with exactly its keys. With the wheel open: ← → choose, Return applies, Tab switches wheels, Esc closes it.")
+        }
+    }
+
+    /// One key of a wheel's combination, as a keycap: filled when it's part
+    /// of it (a wheel keeps at least one).
+    private func keyToggle(_ key: ModifierKeys, for mode: WheelMode) -> some View {
+        let keys = settings.wheelKeys[mode]
+        let isOn = keys.contains(key)
+        return Button {
+            var updated = keys
+            if isOn { updated.remove(key) } else { updated.insert(key) }
+            if !updated.isEmpty { settings.wheelKeys[mode] = updated }
+        } label: {
+            Text(key.symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(isOn ? Color.white : Color.primary)
+                .frame(width: 32, height: 24)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(isOn ? Color.accentColor : Color.primary.opacity(0.08)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(key.name)
+        .accessibilityLabel(key.name)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
 
     private var appearance: some View {
         Section("Appearance") {
@@ -482,14 +537,16 @@ struct SettingsView: View {
                                 .help("Delete this custom action")
                         }
                     }
-                    HStack {
-                        Button("New Custom Action…") {
-                            let recipe = Recipe(name: "", kind: kind)
-                            state.recipeDraft = RecipeDraft(recipe, isNew: true, lastWatermark: settings.lastWatermark)
+                    if !RecipeStep.templates(for: kind).isEmpty {
+                        HStack {
+                            Button("New Custom Action…") {
+                                let recipe = Recipe(name: "", kind: kind)
+                                state.recipeDraft = RecipeDraft(recipe, isNew: true, lastWatermark: settings.lastWatermark)
+                            }
+                            Text("Several steps in one wedge, in the order you choose.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        Text("Several steps in one wedge, in the order you choose.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                 } label: {
                     HStack {
@@ -502,9 +559,31 @@ struct SettingsView: View {
                 }
             }
         } header: {
-            Text("Tools wheel (⌥ Option + ⇧ Shift)")
+            Text("Tools wheel (\(settings.wheelKeys[.tools].title))")
         } footer: {
             Footnote("The wheel holds up to \(FormatCatalog.maxWedges) tools, so switch one off to make room for another. Tools with “…” open a window to choose the details first. Custom actions do several steps one after the other, e.g. crop 4:5, fit 1080 px, add a watermark and save as JPEG.")
+        }
+    }
+
+    /// The file actions wheel: the same for any files and folders.
+    private var fileActionsWheel: some View {
+        let shown = settings.shownCount(for: .image, in: .actions)
+        return Section {
+            ForEach(FormatCatalog.fileActions, id: \.self) { action in
+                let isOn = settings.isOnWheel(action, for: .image, in: .actions)
+                Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: .image, in: .actions, $0) })) {
+                    Label(action.title(in: .actions), systemImage: action.symbolName(in: .actions))
+                    Text(action.detail(for: nil))
+                }
+                .disabled(isOn && shown == 1)
+            }
+            Picker("Terminal opens in", selection: $settings.terminalApp) {
+                ForEach(TerminalApp.installed, id: \.self) { Text($0.title).tag($0.rawValue) }
+            }
+        } header: {
+            Text("File actions wheel (\(settings.wheelKeys[.actions].title))")
+        } footer: {
+            Footnote("For any files and folders, also ones Pinwheel can't convert. Move To… can be undone from the menu bar; ZIP makes one .zip of everything dropped, without the Mac's hidden extras.")
         }
     }
 
@@ -633,13 +712,14 @@ struct SettingsView: View {
 
     private var helperTools: some View {
         Section {
-            toolStatus("ffmpeg", url: settings.ffmpegURL, missingAction: onShowFFmpegHelp)
+            toolStatus(.ffmpeg, url: settings.ffmpegURL, missingAction: onShowFFmpegHelp)
             TextField("Custom ffmpeg location", text: $settings.ffmpegPath, prompt: Text("Automatic"))
-            toolStatus("pngquant", url: settings.pngquantURL, missingAction: nil)
+            toolStatus(.pngquant, url: settings.pngquantURL, missingAction: nil)
+            toolStatus(.cwebp, url: settings.cwebpURL, missingAction: nil)
         } header: {
             Text("Helper tools")
         } footer: {
-            Footnote("Free extras from Homebrew. ffmpeg makes MP3s and GIFs of videos, and reads MKV, WebM and AVI; pngquant makes much smaller PNGs. Tesseract is in Text Recognition.")
+            Footnote("Free extras from Homebrew. ffmpeg makes MP3, OGG, Opus and WMA, MKV, WebM, AVI and WMV, and GIFs of videos, and reads files macOS can't; pngquant makes much smaller PNGs; cwebp makes WebP pictures. Tesseract is in Text Recognition.")
         }
     }
 
@@ -685,8 +765,8 @@ struct SettingsView: View {
         }
     }
 
-    private func toolStatus(_ name: String, url: URL?, missingAction: (() -> Void)?) -> some View {
-        LabeledContent(name) {
+    private func toolStatus(_ tool: ExternalTool, url: URL?, missingAction: (() -> Void)?) -> some View {
+        LabeledContent(tool.rawValue) {
             HStack {
                 if let url {
                     Label(url.path, systemImage: "checkmark.circle.fill")
@@ -694,7 +774,7 @@ struct SettingsView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 } else {
-                    Label("Not installed (brew install \(name))", systemImage: "exclamationmark.triangle.fill")
+                    Label("Not installed (\(tool.installCommand))", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     if let missingAction {
                         Button("How to Install…", action: missingAction)

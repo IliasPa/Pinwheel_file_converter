@@ -75,11 +75,38 @@ enum MediaConverter {
             }
             duration = duration.map { min($0, Double(limit)) }
         }
-        try await FFmpeg.convert(
-            ffmpeg: ffmpeg, input: file.url, output: destination,
-            arguments: arguments, duration: duration, progress: progress
-        )
+        do {
+            try await FFmpeg.convert(
+                ffmpeg: ffmpeg, input: file.url, output: destination,
+                arguments: arguments, duration: duration, progress: progress
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // MKV first copies the streams as they are, and ffmpegs without
+            // libvorbis or libopus have their own (simpler) encoders.
+            guard let second = secondTry(for: format) else { throw error }
+            try? FileManager.default.removeItem(at: destination)
+            try await FFmpeg.convert(
+                ffmpeg: ffmpeg, input: file.url, output: destination,
+                arguments: second, duration: duration, progress: progress
+            )
+        }
         return note
+    }
+
+    /// What to try when the first ffmpeg arguments fail, if anything.
+    static func secondTry(for format: OutputFormat) -> [String]? {
+        switch format {
+        case .mkv:
+            ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k"]
+        case .ogg:
+            ["-vn", "-c:a", "vorbis", "-strict", "experimental", "-ac", "2", "-b:a", "192k"]
+        case .opus:
+            ["-vn", "-c:a", "opus", "-strict", "experimental", "-ar", "48000", "-b:a", "128k"]
+        default:
+            nil
+        }
     }
 
     /// A GIF of the chosen part: fast seek to it, then retime and turn.
@@ -237,12 +264,34 @@ enum MediaConverter {
                     + "[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
                 "-loop", "0",
             ]
+        case .mkv:
+            // Copies the picture and sound as they are: quick, and nothing is lost.
+            ["-map", "0:v:0", "-map", "0:a?", "-c", "copy"]
+        case .webm:
+            [
+                "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "32", "-row-mt", "1",
+                "-deadline", "good", "-cpu-used", "4", "-pix_fmt", "yuv420p", "-c:a", "libopus", "-b:a", "128k",
+            ]
+        case .avi:
+            // MPEG-4 and MP3: what older players and TVs expect in an AVI.
+            [
+                "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "mpeg4", "-vtag", "xvid",
+                "-q:v", "3", "-c:a", "libmp3lame", "-q:a", "4",
+            ]
+        case .wmv:
+            [
+                "-map", "0:v:0", "-map", "0:a:0?", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "wmv2", "-q:v", "3",
+                "-c:a", "wmav2", "-b:a", "192k",
+            ]
         case .m4a: ["-vn", "-c:a", "aac", "-b:a", "256k"]
         case .mp3: ["-vn", "-c:a", "libmp3lame", "-q:a", "2", "-id3v2_version", "3"]
         case .wav: ["-vn", "-c:a", "pcm_s16le"]
         case .aiff: ["-vn", "-c:a", "pcm_s16be"]
         case .flac: ["-vn", "-c:a", "flac"]
-        case .png, .jpeg, .heic, .tiff, .pdf: []
+        case .ogg: ["-vn", "-c:a", "libvorbis", "-q:a", "5"]
+        case .opus: ["-vn", "-c:a", "libopus", "-b:a", "128k"]
+        case .wma: ["-vn", "-c:a", "wmav2", "-b:a", "192k"]
+        case .png, .jpeg, .heic, .tiff, .pdf, .webp, .avif, .bmp, .ico, .icns, .zip, .tar, .tgz, .sevenZip: []
         }
     }
 }

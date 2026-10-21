@@ -20,7 +20,7 @@ struct FormatWheelSettingsTests {
         for kind in FileKind.allCases {
             #expect(store.shownCount(for: kind, in: .convert) == FormatCatalog.choices(for: kind, mode: .convert).count)
         }
-        #expect(store.shownCount(for: .image, in: .convert) == 7, "six formats and Collage")
+        #expect(store.shownCount(for: .image, in: .convert) == 12, "eleven formats and Collage")
     }
 
     @Test func formatsAndToolsAreSwitchedOffSeparately() {
@@ -45,7 +45,7 @@ struct FormatWheelSettingsTests {
         let store = SettingsStore(defaults: defaults)
         store.setOnWheel(.convert(.tiff), for: .image, in: .convert, false)
         store.setOnWheel(.convert(.mp3), for: .video, in: .convert, false)
-        #expect(store.shownCount(for: .image, in: .convert) == 6)
+        #expect(store.shownCount(for: .image, in: .convert) == 11)
         let again = SettingsStore(defaults: defaults)
         #expect(again.hiddenFormats == [FormatCatalog.hiddenKey(.image, .convert(.tiff)), FormatCatalog.hiddenKey(.video, .convert(.mp3))])
         #expect(again.isOnWheel(.convert(.mp3), for: .audio, in: .convert), "MP3 stays for audio files")
@@ -64,7 +64,10 @@ struct FormatWheelSettingsTests {
         wheel.availability = { _, _ in .available }
 
         wheel.show(urls: [photo], mode: .convert, at: NSPoint(x: 300, y: 300))
-        #expect(wheel.model.items.map(\.action) == [.convert(.jpeg), .convert(.heic), .convert(.tiff), .convert(.pdf)])
+        #expect(wheel.model.items.map(\.action) == [
+            .convert(.jpeg), .convert(.heic), .convert(.webp), .convert(.avif), .convert(.tiff), .convert(.bmp), .convert(.ico),
+            .convert(.icns), .convert(.pdf),
+        ])
         // The tools wheel isn't touched by it.
         wheel.setMode(.tools)
         #expect(wheel.model.items.map(\.action).contains(.tool(.compress)))
@@ -85,7 +88,8 @@ struct SettingsPaneTests {
         #expect(found("Glass") == [.wheel])
         #expect(found("greek") == [.textRecognition])
         #expect(found("JPEG") == [.conversions, .compatibility])
-        #expect(found("webm") == [.compatibility])
+        #expect(found("webm") == [.conversions, .compatibility])
+        #expect(found("rar") == [.compatibility])
         #expect(found("crop").contains(.tools))
         #expect(found("custom actions") == [.tools])
         #expect(found("ffmpeg") == [.advanced])
@@ -112,7 +116,7 @@ struct SettingsPaneTests {
         let window = try #require(controller.window)
         for pane in SettingsPane.allCases {
             state.pane = pane
-            if pane == .compatibility { state.tableSpot = CompatibilityPane.Spot(row: 0, column: 1) }
+            if pane == .compatibility { state.tableSpot = CompatibilityPane.Spot(kind: .image, row: 0, column: 1) }
             window.contentView?.layoutSubtreeIfNeeded()
             try await Task.sleep(for: .milliseconds(50))
             window.contentView?.layoutSubtreeIfNeeded()

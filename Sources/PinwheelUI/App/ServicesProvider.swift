@@ -16,6 +16,10 @@ final class ServicesProvider: NSObject {
         handle(pasteboard, error: error) { showWheel($0, .tools) }
     }
 
+    @objc func showActionsWheel(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
+        handle(pasteboard, error: error) { showWheel($0, .actions) }
+    }
+
     @objc func renameFiles(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
         handle(pasteboard, error: error) { openEditor(.rename, $0) }
     }

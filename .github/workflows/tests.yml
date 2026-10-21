@@ -30,9 +30,9 @@ jobs:
           xcode-select -p
           swift --version
 
-      # The tests also cover what these tools do (MP3, GIFs, small PNGs, Greek text).
-      - name: Install ffmpeg, pngquant and Tesseract
-        run: brew install ffmpeg pngquant tesseract
+      # The tests also cover what these tools do (MP3, GIFs, small PNGs, Greek text, WebP).
+      - name: Install ffmpeg, pngquant, Tesseract and WebP
+        run: brew install ffmpeg pngquant tesseract webp
 
       - name: Add Tesseract's Greek, where Pinwheel's Settings puts it
         run: |

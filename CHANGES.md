@@ -3,6 +3,49 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.4 — 2026-10-21
+
+Your own keys, a file actions wheel, archives, and many more formats.
+
+**New**
+- **Choose each wheel's keys** (Settings › Wheel › Keys): any of ⌃ ⌥ ⇧ ⌘
+  for the formats, tools and file actions wheels. A wheel opens with
+  exactly its keys; two wheels with the same keys get a warning. The wheel
+  can **stay open** after you let go of the keys, until you drop or press
+  Esc.
+- **The keyboard on the wheel:** ← → (or ↑ ↓) choose, Return applies, Tab
+  switches wheels, Esc closes. Returning during a drag does the job at once,
+  and the drop when you let go is taken in quietly, so Finder doesn't move
+  the files too.
+- **File actions wheel** (⌃ Control + ⇧ Shift), for any files and folders:
+  AirDrop, Copy (to paste in Finder), Move To… (undoable from the menu bar,
+  never replacing anything), Copy Path, Terminal (in their folder, in the
+  Terminal app you choose), Quick Look, and ZIP. Also in Finder's
+  right-click › Services › **Pinwheel File Actions**.
+- **Archives:** ZIP, RAR, 7Z, TAR, TAR.GZ and single .gz, .bz2 and .xz
+  files are **extracted** into a folder, or repacked as ZIP, TAR, TAR.GZ or
+  7Z. Archives are made without the Mac's hidden extras (the "._" files and
+  .DS_Store), so they open cleanly anywhere. Locked archives say so.
+- **Pictures:** WebP (with cwebp: `brew install webp`), AVIF, BMP, and
+  icons: ICO (6 sizes, for Windows) and ICNS (16 to 1024 pixels, made with
+  Apple's iconutil). WebP and AVIF have their own quality.
+- **SVG drawings** convert like pictures (2048 pixels across), and stay
+  drawings in a PDF.
+- **Video:** MKV (copies the picture and sound when it can: quick and
+  lossless), WebM (VP9 and Opus), AVI and WMV. **Audio:** OGG, Opus, WMA.
+  All with ffmpeg.
+- **Read Codes…** for pictures: QR codes and barcodes, with Copy and Open.
+  Switch it on in Settings › Tools (the pictures' tools wheel is full).
+- The format wheel holds up to **12** wedges; pictures get all eleven
+  formats and Collage.
+- The `pinwheel` command: `zip`, `extract`, `show actions`, `open codes`,
+  and every new format (`convert webp`, `convert tar.gz`…).
+
+**Changed**
+- Settings › Compatibility shows a table for each kind of file (pictures,
+  PDFs, videos, audio, archives), each with what that kind can become; the
+  ticks say when ffmpeg or cwebp is needed and missing.
+
 ## v1.3 — 2026-10-21
 
 **Fixed**

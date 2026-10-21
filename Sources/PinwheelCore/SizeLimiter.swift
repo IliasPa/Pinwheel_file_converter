@@ -50,7 +50,7 @@ enum SizeLimiter {
             return try await video(file, limit: limit, destination: destination, options: options, progress: progress)
         case .audio:
             return try await audio(file, limit: limit, destination: destination, options: options, progress: progress)
-        case nil:
+        case .archive, nil:
             throw ConversionError.unsupported(file.url.lastPathComponent)
         }
     }

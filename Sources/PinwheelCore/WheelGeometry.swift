@@ -1,10 +1,21 @@
 import CoreGraphics
 import Foundation
 
-/// Which wheel is showing: output formats (Shift) or tools (Option+Shift).
-public enum WheelMode: String, Sendable, Equatable {
+/// Which wheel is showing: output formats, tools, or file actions (each
+/// opened with its own keys, chosen in Settings).
+public enum WheelMode: String, Sendable, Equatable, Codable, CaseIterable {
     case convert
     case tools
+    case actions
+
+    /// The next wheel, when switching by clicking the middle or with Tab.
+    public var next: WheelMode {
+        switch self {
+        case .convert: .tools
+        case .tools: .actions
+        case .actions: .convert
+        }
+    }
 }
 
 /// Angles are measured in radians, clockwise from 12 o'clock.

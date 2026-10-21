@@ -37,7 +37,7 @@ public enum MetadataField: String, CaseIterable, Codable, Sendable, CodingKeyRep
         case .video: [.title, .artist, .description]
         case .audio: [.title, .artist, .album, .genre, .year, .comment]
         case .pdf: [.title, .author, .subject, .keywords]
-        case nil: []
+        case .archive, nil: []
         }
     }
 

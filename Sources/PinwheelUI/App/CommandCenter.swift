@@ -88,7 +88,7 @@ final class CommandCenter {
 
         switch request.command {
         case "show":
-            showWheel(urls, request.value == "tools" ? .tools : .convert)
+            showWheel(urls, Self.wheel(named: request.value))
             reply(request.id, "finished")
             return
         case "open":
@@ -169,12 +169,23 @@ final class CommandCenter {
     static let tools: [String: ToolAction] = [
         "compress": .compress, "resize": .resize, "remove-background": .removeBackground, "strip-info": .stripMetadata,
         "get-text": .extractText, "searchable": .makeSearchable, "get-audio": .extractAudio, "mute": .mute,
-        "normalize": .normalize, "merge": .merge, "split": .split,
+        "normalize": .normalize, "merge": .merge, "split": .split, "zip": .archive, "extract": .extract,
     ]
+
+    /// "tools", "actions"; anything else is the format wheel.
+    static func wheel(named name: String?) -> WheelMode {
+        switch name?.lowercased() {
+        case "tools": .tools
+        case "actions", "files", "file-actions": .actions
+        default: .convert
+        }
+    }
 
     static func format(named name: String) -> OutputFormat? {
         let name = name.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ". "))
-        let aliases = ["jpg": OutputFormat.jpeg, "jpe": .jpeg, "tif": .tiff, "aif": .aiff, "heif": .heic]
+        let aliases = [
+            "jpg": OutputFormat.jpeg, "jpe": .jpeg, "tif": .tiff, "aif": .aiff, "heif": .heic, "tgz": .tgz, "7zip": .sevenZip, "oga": .ogg,
+        ]
         return aliases[name] ?? OutputFormat(rawValue: name)
     }
 
@@ -183,6 +194,7 @@ final class CommandCenter {
             "rename": .rename, "size-limit": .sizeLimit, "crop": .crop, "edit": .adjust, "adjust": .adjust,
             "background": .background, "markup": .markup, "watermark": .watermark, "info": .info,
             "organize": .organize, "collage": .collage, "password": .password, "trim": .trim, "media": .trim,
+            "codes": .codes, "qr": .codes,
         ]
         return names[name.lowercased()]
     }

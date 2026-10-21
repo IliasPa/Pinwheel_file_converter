@@ -13,8 +13,12 @@ final class DragMonitor {
     /// The user pressed or released Option while the wheel is open.
     var onModeChange: ((WheelMode) -> Void)?
     /// The wheel should go away. `dragEnded` is true when the mouse button was
-    /// released (a drop may still be arriving) and false when Shift was released.
+    /// released (a drop may still be arriving) and false when the keys were let go.
     var onHide: ((_ dragEnded: Bool) -> Void)?
+    /// The keys that open each wheel (Settings).
+    var keys: () -> WheelKeys = { .standard }
+    /// The wheel stays open after the keys are let go, until a drop or Esc.
+    var keepsOpen: () -> Bool = { false }
 
     private let pasteboard = NSPasteboard(name: .drag)
     private var monitors: [Any] = []
@@ -22,6 +26,8 @@ final class DragMonitor {
     private var dragChecked = true
     private var dragURLs: [URL] = []
     private var shownMode: WheelMode?
+    /// Closed with Esc: stays closed until the next drag.
+    private var dismissed = false
     private var pollTimer: Timer?
 
     func start() {
@@ -57,6 +63,15 @@ final class DragMonitor {
         baselineChangeCount = pasteboard.changeCount
         dragChecked = false
         dragURLs = []
+        dismissed = false
+    }
+
+    /// Esc closed the wheel: it stays closed for the rest of this drag.
+    func dismiss() {
+        guard shownMode != nil else { return }
+        shownMode = nil
+        dismissed = true
+        onHide?(false)
     }
 
     private func mouseDragged(_ event: NSEvent) {
@@ -83,9 +98,8 @@ final class DragMonitor {
     }
 
     private func update(flags: NSEvent.ModifierFlags) {
-        guard !dragURLs.isEmpty else { return }
-        let flags = flags.intersection(.deviceIndependentFlagsMask)
-        let desired: WheelMode? = flags.contains(.shift) ? (flags.contains(.option) ? .tools : .convert) : nil
+        guard !dragURLs.isEmpty, !dismissed else { return }
+        let desired = Self.mode(for: ModifierKeys(flags), keys: keys(), shown: shownMode, keepsOpen: keepsOpen())
         guard desired != shownMode else { return }
 
         let previous = shownMode
@@ -100,6 +114,12 @@ final class DragMonitor {
         case (nil, nil):
             break
         }
+    }
+
+    /// The wheel to show for the keys held: exactly a wheel's keys open it;
+    /// with "keep open", letting go leaves the one already showing.
+    static func mode(for pressed: ModifierKeys, keys: WheelKeys, shown: WheelMode?, keepsOpen: Bool) -> WheelMode? {
+        keys.mode(for: pressed) ?? (keepsOpen ? shown : nil)
     }
 
     private func readFileURLs() -> [URL] {

@@ -37,7 +37,7 @@ struct Command {
 }
 
 let commands = [
-    Command("convert", "<format>", "Convert to png, jpg, heic, tiff, gif, pdf, mp4, mov, m4a, mp3, wav, aiff or flac"),
+    Command("convert", "<format>", "Convert to png, jpg, heic, webp, avif, tiff, gif, bmp, ico, icns, pdf, mp4, mov, mkv, webm, avi, wmv, mp3, m4a, wav, aiff, flac, ogg, opus, wma, zip, tar, tar.gz or 7z"),
     Command("compress", "Compress, with the quality chosen in Settings"),
     Command("size-limit", "<size>", "Make each file smaller than a size: 10MB, 2.5MB, 500KB"),
     Command("resize", "Resize pictures to the size chosen in Settings"),
@@ -50,9 +50,11 @@ let commands = [
     Command("normalize", "Even out the loudness of audio"),
     Command("merge", "Join PDFs into one, in name order"),
     Command("split", "One PDF per page"),
+    Command("zip", "Put files and folders into one .zip"),
+    Command("extract", "Open archives (zip, rar, 7z, tar, gz) into folders"),
     Command("run", "<name>", "Run one of your custom actions (see: pinwheel list)"),
-    Command("show", "[tools]", optional: true, "Show the wheel at the pointer, to choose with a click"),
-    Command("open", "<window>", "Open a window: rename, size-limit, crop, edit, watermark, info, organize, collage"),
+    Command("show", "[tools|actions]", optional: true, "Show a wheel at the pointer, to choose with a click"),
+    Command("open", "<window>", "Open a window: rename, size-limit, crop, edit, watermark, info, organize, collage, codes"),
 ]
 
 func usage() -> String {

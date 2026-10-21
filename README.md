@@ -3,19 +3,25 @@
 **Convert, compress and edit files on your Mac with a drop wheel.**
 Start dragging files in Finder, hold **⇧ Shift**, and a wheel of formats
 appears under the pointer. Drop the files on one and Pinwheel does the rest.
-Hold **⌥ Option** too for the tools. Free, open source, and everything
-happens on your Mac: nothing is uploaded.
+Hold **⌥ Option** too for the tools, or **⌃ Control** too for file actions
+(the keys can be changed). Free, open source, and everything happens on
+your Mac: nothing is uploaded.
 
 ![The format wheel and the tools wheel](docs/wheels.png)
 
 ## What it does
 
 **Convert** (⇧ Shift while dragging)
-- Pictures (JPEG, PNG, HEIC, TIFF, GIF, WebP, camera RAW…) → PNG, JPEG, HEIC,
-  TIFF, GIF or PDF. Several pictures → one PDF, or a **collage**.
-- Videos (MOV, MP4, M4V; MKV, WebM, AVI with ffmpeg) → MP4, MOV, GIF, M4A, MP3.
-- Audio (MP3, M4A, WAV, AIFF, FLAC, OGG…) → MP3, M4A, WAV, AIFF, FLAC.
+- Pictures (JPEG, PNG, HEIC, WebP, AVIF, TIFF, GIF, BMP, SVG, camera RAW…)
+  → PNG, JPEG, HEIC, WebP, AVIF, TIFF, GIF, BMP, PDF, or icons (ICO for
+  Windows, ICNS for the Mac). Several pictures → one PDF, or a **collage**.
+- Videos (MOV, MP4, M4V; MKV, WebM, AVI, WMV with ffmpeg) → MP4, MOV, MKV,
+  WebM, AVI, WMV, GIF, M4A, MP3.
+- Audio (MP3, M4A, WAV, AIFF, FLAC, OGG, Opus, WMA…) → MP3, M4A, WAV, AIFF,
+  FLAC, OGG, Opus, WMA.
 - PDFs → PNG, JPEG, HEIC or TIFF (one picture per page), or a smaller PDF.
+- Archives (ZIP, RAR, 7Z, TAR, TAR.GZ, GZ) → **extracted** into a folder, or
+  repacked as ZIP, TAR, TAR.GZ or 7Z.
 - Settings › Compatibility has the whole table, and Settings › Conversions
   chooses which formats each kind of file gets.
 
@@ -37,16 +43,23 @@ happens on your Mac: nothing is uploaded.
   location or all hidden info.
 - **Get Text** from pictures and scanned PDFs, and make scanned PDFs
   **searchable**. Greek too, with Tesseract.
+- **Read Codes…:** QR codes and barcodes in pictures; copy the text or open
+  the link.
 - PDFs: **merge, split, organize** pages (reorder, turn, remove, from
   several PDFs), and **add a password**.
 - **Custom actions:** several steps on one wedge, in your order, for
   example *crop 4:5 → fit 1080 px → watermark → JPEG*.
 
+**File actions** (⌃ Control + ⇧ Shift while dragging), for any files and
+folders: **AirDrop**, **Copy** (to paste in Finder), **Move To…**, **Copy
+Path**, **Terminal** (opened in their folder), **Quick Look**, and **ZIP**
+(everything dropped in one .zip).
+
 **And**
 - **Undo** at the top of the menu-bar menu: new files go to the Trash and
   originals come back.
 - In Finder: **right-click › Services › Convert with Pinwheel**, **Pinwheel
-  Tools** or **Rename with Pinwheel**.
+  Tools**, **Pinwheel File Actions** or **Rename with Pinwheel**.
 - In Terminal and Shortcuts: the **`pinwheel` command**.
 - New files are saved next to the originals and never overwrite anything:
   `photo (converted).png`, `video (under 25 MB).mp4`.
@@ -74,9 +87,11 @@ Look for the small wheel in the menu bar. That's it: drag some files, hold
 Shift, and drop.
 
 **Optional extras** from [Homebrew](https://brew.sh):
-`brew install ffmpeg pngquant tesseract`
-- **ffmpeg:** MP3, GIFs from videos, and MKV, WebM, AVI or OGG files.
+`brew install ffmpeg pngquant tesseract webp`
+- **ffmpeg:** MP3, OGG, Opus, WMA, MKV, WebM, AVI and WMV, GIFs from
+  videos, and video and audio files macOS can't open.
 - **pngquant:** much smaller PNGs with Compress.
+- **webp:** WebP pictures (its cwebp makes them).
 - **tesseract:** reading Greek text. Then click **Download Greek** in
   Settings › Text Recognition.
 
@@ -92,7 +107,10 @@ Applications with the new one; your settings stay.
 |---|---|
 | Convert | Drag files, hold **⇧ Shift**, drop on a format |
 | Use a tool | Drag files, hold **⌥ Option + ⇧ Shift**, drop on a tool |
-| Change your mind | Let go of Shift, or drop in the middle |
+| AirDrop, copy, move, ZIP… | Drag files, hold **⌃ Control + ⇧ Shift**, drop on an action |
+| Choose with the keyboard | With the wheel open: **← →**, then **Return**; **Tab** switches wheels |
+| Change your mind | Let go of the keys, press **Esc**, or drop in the middle |
+| Use other keys | Settings › Wheel › Keys (and whether the wheel stays open) |
 | Choose from Finder | Right-click files › **Services** › **Pinwheel Tools**, then click a wedge |
 | Take it back | Menu-bar icon › **Undo …** |
 | See the original while editing a photo | Hold **Space** (or the Compare button) |
@@ -106,14 +124,15 @@ get a notification.
 in a sidebar with a search field:
 - **General:** the permission, what happens after converting, where new
   files go, opening at login.
-- **Wheel:** the glass look, the click sound and the trackpad vibration
-  (off, low or high).
+- **Wheel:** the keys for each wheel, the glass look, the click sound and
+  the trackpad vibration (off, low or high).
 - **Conversions:** which formats each kind of file gets on the ⇧ Shift
   wheel, with each format's settings (JPEG and HEIC quality, GIF size and
   length, PDF page resolution…).
 - **Compatibility:** a table of every kind of file against every format:
   ✓ it converts, – it's the same format.
-- **Tools:** Compress and Resize, which tools are on the ⌥ Option wheel,
+- **Tools:** Compress and Resize, which tools and file actions are on
+  their wheels, the Terminal app,
   and **custom actions**.
 - **Text Recognition**, **Finder & Shortcuts** (and the `pinwheel`
   command), and **Advanced** (how many files at once, ffmpeg, Reset to
@@ -126,6 +145,8 @@ alias pinwheel=/Applications/Pinwheel.app/Contents/Helpers/pinwheel
 pinwheel convert jpg ~/Desktop/*.heic
 pinwheel size-limit 10MB video.mov
 pinwheel run "Instagram" photo.jpg      # one of your custom actions
+pinwheel zip ~/Desktop/Trip             # one .zip of a folder
+pinwheel extract download.rar
 pinwheel help
 ```
 

@@ -9,8 +9,11 @@ public enum ExternalTool: String, Sendable {
     case pngquant
     /// Text recognition for languages Apple's Vision can't read (Greek).
     case tesseract
+    /// WebP pictures (macOS reads them but can't write them).
+    case cwebp
 
-    public var installCommand: String { "brew install \(rawValue)" }
+    /// cwebp comes in Homebrew's "webp".
+    public var installCommand: String { "brew install \(self == .cwebp ? "webp" : rawValue)" }
 
     /// The tool to use: `customPath` if it works, else the usual Homebrew
     /// places. nil when it isn't installed.

@@ -2,26 +2,48 @@ import Foundation
 
 /// Which wedges each kind of file gets.
 public enum FormatCatalog {
-    /// The most wedges a wheel shows. More get too small to hit easily.
+    /// The most tools or file actions a wheel shows. More get too small to hit easily.
     public static let maxWedges = 9
+    /// Format names are short, so the format wheel holds a few more.
+    public static let maxFormats = 12
+
+    public static func maxWedges(in mode: WheelMode) -> Int {
+        mode == .convert ? maxFormats : maxWedges
+    }
+
+    /// The file actions wheel: the same for any files and folders.
+    public static let fileActions: [WheelAction] = FileAction.allCases.map(WheelAction.file) + [.tool(.archive)]
 
     /// Everything a kind of file can get, in wheel order (clockwise from the
     /// top). Images have more tools than fit; Settings chooses which show.
     public static func actions(for kind: FileKind, mode: WheelMode) -> [WheelAction] {
         switch (kind, mode) {
+        case (_, .actions):
+            fileActions
         case (.image, .convert):
-            [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .convert(.gif), .convert(.pdf)]
+            [
+                .convert(.png), .convert(.jpeg), .convert(.heic), .convert(.webp), .convert(.avif), .convert(.tiff),
+                .convert(.gif), .convert(.bmp), .convert(.ico), .convert(.icns), .convert(.pdf),
+            ]
         case (.video, .convert):
-            [.convert(.mp4), .convert(.mov), .convert(.gif), .convert(.m4a), .convert(.mp3)]
+            [
+                .convert(.mp4), .convert(.mov), .convert(.mkv), .convert(.webm), .convert(.avi), .convert(.wmv),
+                .convert(.gif), .convert(.m4a), .convert(.mp3),
+            ]
         case (.audio, .convert):
-            [.convert(.mp3), .convert(.m4a), .convert(.wav), .convert(.aiff), .convert(.flac)]
+            [
+                .convert(.mp3), .convert(.m4a), .convert(.wav), .convert(.aiff), .convert(.flac), .convert(.ogg),
+                .convert(.opus), .convert(.wma),
+            ]
         case (.pdf, .convert):
             [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff), .tool(.compress)]
+        case (.archive, .convert):
+            [.tool(.extract), .convert(.zip), .convert(.tar), .convert(.tgz), .convert(.sevenZip)]
         case (.image, .tools):
             [
                 .tool(.compress), .open(.sizeLimit), .tool(.resize), .tool(.removeBackground), .open(.crop),
                 .open(.adjust), .open(.background), .open(.markup), .open(.watermark), .open(.info), .open(.rename),
-                .tool(.stripMetadata), .tool(.extractText),
+                .tool(.stripMetadata), .tool(.extractText), .open(.codes),
             ]
         case (.video, .tools):
             [
@@ -35,6 +57,8 @@ public enum FormatCatalog {
                 .tool(.compress), .open(.sizeLimit), .tool(.stripMetadata), .tool(.merge), .tool(.split), .open(.organize),
                 .tool(.makeSearchable), .tool(.extractText), .open(.password), .open(.info), .open(.rename),
             ]
+        case (.archive, .tools):
+            [.open(.rename)]
         }
     }
 
@@ -47,6 +71,7 @@ public enum FormatCatalog {
         hiddenKey(.image, .tool(.extractText)),
         hiddenKey(.image, .open(.background)),
         hiddenKey(.image, .open(.markup)),
+        hiddenKey(.image, .open(.codes)),
         hiddenKey(.pdf, .tool(.stripMetadata)),
         hiddenKey(.pdf, .tool(.extractText)),
     ]
@@ -72,6 +97,10 @@ public enum FormatCatalog {
         for files: [SourceFile], mode: WheelMode, hidden: Set<String> = [], recipes: [Recipe] = []
     ) -> [WheelAction] {
         guard !files.isEmpty else { return [] }
+        if mode == .actions {
+            // Any files and folders, whatever they are.
+            return Array(fileActions.filter { !hidden.contains(actionKey($0)) }.prefix(maxWedges))
+        }
         let kinds = files.map(\.kind)
         guard !kinds.contains(nil) else { return mode == .tools ? [.open(.rename)] : [] }
 
@@ -98,7 +127,12 @@ public enum FormatCatalog {
                 if !hidden.contains(hiddenKey(recipe.kind, action)) { result.append(action) }
             }
         }
-        return Array(result.prefix(maxWedges))
+        return Array(result.prefix(maxWedges(in: mode)))
+    }
+
+    /// How a file action left off its wheel is remembered: "file.airDrop".
+    public static func actionKey(_ action: WheelAction) -> String {
+        action.id
     }
 
     /// "3 images", or "3 files" when they're mixed.

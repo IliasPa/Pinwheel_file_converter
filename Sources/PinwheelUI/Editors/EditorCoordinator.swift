@@ -80,6 +80,10 @@ final class EditorCoordinator {
             let model = PasswordModel(files: pdfs)
             model.onSave = { [weak self] password in self?.enqueue(pdfs, .tool(.protect), .password(password)) }
             controller = PasswordWindowController(model: model)
+        case .codes:
+            let images = files.filter { $0.kind == .image }
+            guard !images.isEmpty else { return }
+            controller = CodesWindowController(model: CodesModel(files: images.map(\.url)))
         }
         show(controller)
     }

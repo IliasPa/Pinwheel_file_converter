@@ -15,6 +15,8 @@ final class WheelController {
     var availability: (WheelAction, [SourceFile]) -> Availability = {
         ConversionEngine.availability(of: $0, for: $1, ffmpegAvailable: false)
     }
+    /// Esc during a drag: the drag monitor keeps the wheel closed until the next one.
+    var onDismiss: () -> Void = {}
 
     private let settings: SettingsStore
     private let feedback = HoverFeedback()
@@ -27,6 +29,12 @@ final class WheelController {
     private var isDemo = false
     /// Watches for Esc and clicks elsewhere while the wheel waits for a click.
     private var clickMonitors: [Any] = []
+    /// Watches the arrow keys, Return, Tab and Esc while the wheel shows.
+    private var keyMonitors: [Any] = []
+    /// A wedge was chosen with Return during a drag: the drop that follows
+    /// when the mouse is let go is taken in quietly, so Finder doesn't move
+    /// the files to wherever the pointer is.
+    private var chosenWithKeys = false
     /// False in tests, which check what the wheel does without showing it.
     var showsOnScreen = true
 
@@ -79,7 +87,7 @@ final class WheelController {
     }
 
     func setMode(_ mode: WheelMode) {
-        guard mode != model.mode, !isDemo else { return }
+        guard mode != model.mode, !isDemo, !chosenWithKeys else { return }
         model.hovered = nil
         load(mode)
     }
@@ -96,6 +104,7 @@ final class WheelController {
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             guard generation == self.hideGeneration else { return }
             self.setClickMode(false)
+            self.setKeysWatched(false)
             self.model.isPresented = false
             let fade = 0.18
             NSAnimationContext.runAnimationGroup({ context in
@@ -139,12 +148,76 @@ final class WheelController {
     func handleClick(_ hit: WheelLayout.Hit) {
         switch hit {
         case .hub:
-            setMode(model.mode == .convert ? .tools : .convert)
+            setMode(model.mode.next)
         case .wedge:
             _ = handleDrop(hit, urls: [])
         case .outside:
             hide()
         }
+    }
+
+    // MARK: - Keyboard
+
+    private func setKeysWatched(_ on: Bool) {
+        keyMonitors.forEach(NSEvent.removeMonitor)
+        keyMonitors.removeAll()
+        guard on, showsOnScreen else { return }
+        // Keys usually go to Finder (the global monitor sees them); when
+        // Pinwheel is in front, the local one takes them.
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            let code = event.keyCode
+            MainActor.assumeIsolated { _ = self?.handleKey(code) }
+        }) { keyMonitors.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            self?.handleKey(event.keyCode) == true ? nil : event
+        }) { keyMonitors.append(local) }
+    }
+
+    /// ← → (and ↑ ↓) move between wedges, Return chooses, Tab switches
+    /// wheels, Esc closes. Returns whether the key was used.
+    @discardableResult
+    func handleKey(_ code: UInt16) -> Bool {
+        guard model.isPresented, !isDemo, !chosenWithKeys else { return false }
+        switch code {
+        case 123, 126: moveHighlight(by: -1)
+        case 124, 125: moveHighlight(by: 1)
+        case 36, 76: chooseHighlighted()
+        case 48: setMode(model.mode.next)
+        case 53:
+            onDismiss()
+            hide()
+        default: return false
+        }
+        return true
+    }
+
+    private func moveHighlight(by step: Int) {
+        let count = model.items.count
+        guard count > 0 else { return }
+        var index: Int
+        if case .wedge(let current)? = model.hovered {
+            index = (current + step + count) % count
+        } else {
+            index = step > 0 ? 0 : count - 1
+        }
+        // Grayed-out wedges are skipped.
+        for _ in 0..<count where !model.items[index].isEnabled {
+            index = (index + step + count) % count
+        }
+        hoverChanged(to: .wedge(index))
+    }
+
+    private func chooseHighlighted() {
+        guard let hit = model.hovered, item(for: hit)?.isEnabled == true else { return }
+        if model.isClickMode {
+            _ = handleDrop(hit, urls: [])
+            return
+        }
+        // During a drag: done now; the drop when the mouse is let go is taken in.
+        guard let item = item(for: hit) else { return }
+        onDrop?(files, item.action)
+        model.confirmed = true
+        chosenWithKeys = true
     }
 
     // MARK: - Private
@@ -154,6 +227,8 @@ final class WheelController {
         pendingHide = nil
         model.hovered = nil
         model.confirmed = false
+        chosenWithKeys = false
+        if !isDemo { setKeysWatched(true) }
 
         let size = Self.panelSize
         let center = clampedCenter(for: location)
@@ -180,7 +255,7 @@ final class WheelController {
     }
 
     private func hoverChanged(to hit: WheelLayout.Hit?) {
-        guard model.hovered != hit else { return }
+        guard model.hovered != hit, !chosenWithKeys else { return }
         model.hovered = hit
         // A click (and a trackpad tap) when landing on a usable wedge.
         if let hit, item(for: hit)?.isEnabled == true {
@@ -189,6 +264,7 @@ final class WheelController {
     }
 
     private func handleDrop(_ hit: WheelLayout.Hit, urls: [URL]) -> Bool {
+        if chosenWithKeys { return true }  // already done with Return
         guard !isDemo, let item = item(for: hit), item.isEnabled else { return false }
         // Normally the dropped files are the ones seen when the drag started.
         let dropped = urls.isEmpty || Set(urls) == Set(files.map(\.url)) ? files : urls.map(SourceFile.init)
@@ -217,7 +293,7 @@ final class WheelController {
         }
         dropView.canDrop = { [weak self] hit in
             guard let self, !self.isDemo else { return false }
-            return self.item(for: hit)?.isEnabled == true
+            return self.chosenWithKeys || self.item(for: hit)?.isEnabled == true
         }
         dropView.onHover = { [weak self] hit in
             self?.hoverChanged(to: hit)

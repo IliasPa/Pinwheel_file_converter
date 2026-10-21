@@ -74,6 +74,7 @@ extension FileKind {
         case .video: "Videos"
         case .audio: "Audio"
         case .pdf: "PDFs"
+        case .archive: "Archives"
         }
     }
 }
@@ -125,6 +126,8 @@ public enum RecipeStep: Codable, Sendable, Hashable {
             ]
         case .pdf:
             [.makeSearchable, .compress, .sizeLimit(megabytes: 10), .stripMetadata, .extractText, .convert(.jpeg)]
+        case .archive:
+            []
         }
     }
 
@@ -218,13 +221,8 @@ public enum RecipeStep: Codable, Sendable, Hashable {
     public func works(on kind: FileKind) -> Bool {
         switch self {
         case .convert(let format):
-            switch kind {
-            case .image: [.png, .jpeg, .heic, .tiff, .gif, .pdf].contains(format)
-            case .video: [.mp4, .mov, .gif, .m4a, .mp3].contains(format)
-            case .audio: [.mp3, .m4a, .wav, .aiff, .flac].contains(format)
-            case .pdf: [.png, .jpeg, .heic, .tiff].contains(format)
-            }
-        case .compress, .sizeLimit, .stripMetadata: true
+            kind != .archive && FormatCatalog.actions(for: kind, mode: .convert).contains(.convert(format))
+        case .compress, .sizeLimit, .stripMetadata: kind != .archive
         case .removeLocation: kind == .image || kind == .video
         case .resize, .crop, .turn, .flip, .removeBackground, .autoEnhance, .filter, .frame, .watermark: kind == .image
         case .extractText: kind == .image || kind == .pdf
@@ -239,12 +237,8 @@ public enum RecipeStep: Codable, Sendable, Hashable {
     public func outputKind(from kind: FileKind) -> FileKind? {
         switch self {
         case .convert(let format):
-            switch format {
-            case .pdf: return .pdf
-            case .gif, .png, .jpeg, .heic, .tiff: return kind == .pdf ? nil : .image  // a PDF's pages may become a folder
-            case .m4a, .mp3, .wav, .aiff, .flac: return .audio
-            case .mp4, .mov: return .video
-            }
+            // A PDF's pages may become a folder of pictures.
+            return format.kind == .image && kind == .pdf ? nil : format.kind
         case .extractText: return nil
         case .extractAudio: return .audio
         default: return kind

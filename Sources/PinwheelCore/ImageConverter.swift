@@ -6,12 +6,23 @@ import UniformTypeIdentifiers
 /// Image conversions with ImageIO (the same engine Preview uses).
 public enum ImageConverter {
     public static func convert(_ source: URL, to format: OutputFormat, destination: URL, options: ConversionOptions) throws {
+        if format == .pdf && SVGImage.isSVG(source) {
+            try SVGImage.writePDF(source, destination: destination)
+            return
+        }
         let src = try open(source)
         let index = CGImageSourceGetPrimaryImageIndex(src)
 
         if format == .pdf {
             try writePDF(from: src, index: index, title: source.deletingPathExtension().lastPathComponent, destination: destination)
             return
+        }
+        if format == .ico {
+            try IconWriter.writeICO(src, destination: destination)
+            return
+        }
+        guard format != .icns, format != .webp else {
+            throw ConversionError.unsupported("\(format.title) here")  // made by other tools (see ConversionEngine)
         }
 
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
@@ -31,6 +42,25 @@ public enum ImageConverter {
         try finalize(dest, destination)
     }
 
+    /// WebP, made by cwebp (macOS can't write it) from a lossless PNG of
+    /// the upright picture, so nothing is lost on the way.
+    static func writeWebP(_ source: URL, destination: URL, options: ConversionOptions) async throws {
+        guard let cwebp = options.cwebpURL else {
+            throw ConversionError.failed("WebP needs cwebp. Install it with: \(ExternalTool.cwebp.installCommand)")
+        }
+        let src = try open(source)
+        let image = try orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src))
+        let png = FileManager.default.temporaryDirectory.appendingPathComponent("pinwheel-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: png) }
+        try write(image, to: png, format: .png, options: options)
+        let quality = Int((options.webpQuality * 100).rounded())
+        let result = try await ProcessRunner.run(cwebp, ["-quiet", "-q", "\(quality)", "-alpha_q", "100", png.path, "-o", destination.path])
+        guard result.status == 0 else {
+            let reason = result.stderr.split(whereSeparator: \.isNewline).last.map(String.init) ?? "it stopped with an error"
+            throw ConversionError.failed("cwebp couldn't make the WebP: \(reason)")
+        }
+    }
+
     /// Saves an image that was drawn in memory (e.g. a PDF page).
     static func write(_ image: CGImage, to url: URL, format: OutputFormat, options: ConversionOptions) throws {
         let dest = try makeDestination(url, format: format)
@@ -44,12 +74,14 @@ public enum ImageConverter {
         switch format {
         case .jpeg: [kCGImageDestinationLossyCompressionQuality: options.jpegQuality]
         case .heic: [kCGImageDestinationLossyCompressionQuality: options.heicQuality]
+        case .avif: [kCGImageDestinationLossyCompressionQuality: options.avifQuality]
         case .tiff: [kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: 5]]  // LZW, lossless
         default: [:]
         }
     }
 
     static func open(_ url: URL) throws -> CGImageSource {
+        if SVGImage.isSVG(url) { return try SVGImage.source(url) }
         guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               CGImageSourceGetCount(src) > 0 else {
             throw ConversionError.unreadable(url.lastPathComponent)

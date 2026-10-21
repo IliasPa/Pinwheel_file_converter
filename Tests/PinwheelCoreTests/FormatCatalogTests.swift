@@ -20,14 +20,17 @@ struct FormatCatalogTests {
         #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.flac")) == .audio)
         #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.ogg")) == .audio)
         #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.pdf")) == .pdf)
-        #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.svg")) == nil)
+        #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.svg")) == .image)  // drawn as a picture first
         #expect(FileKind.of(URL(fileURLWithPath: "/tmp/a.txt")) == nil)
         #expect(FileKind.of(FileManager.default.temporaryDirectory) == nil)  // folders
     }
 
     @Test func singleImageHidesItsOwnFormat() {
         let actions = FormatCatalog.actions(for: files("a.png"), mode: .convert)
-        #expect(actions == [.convert(.jpeg), .convert(.heic), .convert(.tiff), .convert(.gif), .convert(.pdf)])
+        #expect(actions == [
+            .convert(.jpeg), .convert(.heic), .convert(.webp), .convert(.avif), .convert(.tiff), .convert(.gif), .convert(.bmp),
+            .convert(.ico), .convert(.icns), .convert(.pdf),
+        ])
     }
 
     @Test func mixedImageFormatsKeepEveryWedge() {

@@ -31,6 +31,14 @@ enum ToolConverter {
     ) async throws -> String? {
         let file = request.files[0]
         switch (file.kind, tool) {
+        case (_, .archive):
+            progress(0.05)
+            try await ArchiveTools.make(request.files.map(\.url), format: .zip, destination: destination)
+        case (.archive, .extract):
+            progress(0.05)
+            try await ArchiveTools.extract(file.url, into: destination)
+        case (.archive, _), (_, .extract):
+            throw ConversionError.unsupported("\(tool.title) for \(file.url.lastPathComponent)")
         case (.image, .collage):
             guard case .collage(let spec)? = request.parameters, let format = plan.format else {
                 throw ConversionError.failed("Choose the collage's layout first.")

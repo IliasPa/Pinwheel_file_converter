@@ -8,19 +8,22 @@ public enum FileKind: String, CaseIterable, Codable, Sendable {
     case video
     case audio
     case pdf
+    case archive
 
     /// Formats that macOS has no built-in type for on some systems.
     static let extraVideoExtensions: Set<String> = ["mkv", "webm", "avi", "flv", "wmv", "ogv", "mts", "m2ts", "ts", "vob", "mpg", "mpeg"]
     static let extraAudioExtensions: Set<String> = ["ogg", "oga", "opus", "flac", "wma", "ape", "mka"]
+    /// Told by name, since documents such as .docx are zip files inside too.
+    static let archiveExtensions: Set<String> = ["zip", "tar", "tgz", "gz", "gzip", "tbz", "tbz2", "bz2", "txz", "xz", "rar", "7z"]
 
     public static func of(_ url: URL) -> FileKind? {
         if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
             return nil
         }
+        if archiveExtensions.contains(url.pathExtension.lowercased()) { return .archive }
         if let type = contentType(of: url) {
             if type.conforms(to: .pdf) { return .pdf }
-            if type.conforms(to: .svg) { return nil }  // vector art; ImageIO can't read it
-            if type.conforms(to: .image) { return .image }
+            if type.conforms(to: .image) { return .image }  // SVG too: it's drawn as a picture first
             // Check audio before movie: .m4a counts as both in UTType terms.
             if type.conforms(to: .audio) { return .audio }
             if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
@@ -37,6 +40,7 @@ public enum FileKind: String, CaseIterable, Codable, Sendable {
         case .video: "film"
         case .audio: "waveform"
         case .pdf: "doc.richtext"
+        case .archive: "archivebox"
         }
     }
 
@@ -46,6 +50,7 @@ public enum FileKind: String, CaseIterable, Codable, Sendable {
         case .video: count == 1 ? "1 video" : "\(count) videos"
         case .audio: count == 1 ? "1 audio file" : "\(count) audio files"
         case .pdf: count == 1 ? "1 PDF" : "\(count) PDFs"
+        case .archive: count == 1 ? "1 archive" : "\(count) archives"
         }
     }
 
