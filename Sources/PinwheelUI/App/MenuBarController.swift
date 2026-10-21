@@ -8,6 +8,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var showFFmpegHelp: @MainActor () -> Void
         var showFeedback: @MainActor () -> Void
         var toggleShelf: @MainActor () -> Void
+        var showClipboard: @MainActor () -> Void = {}
         var quit: @MainActor () -> Void
     }
 
@@ -20,10 +21,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let isTrusted: @MainActor () -> Bool
     private let hasFFmpeg: @MainActor () -> Bool
     private let shelfCount: @MainActor () -> Int
+    private let clipboardShortcut: @MainActor () -> KeyShortcut?
 
     init(
         actions: Actions,
         shelfCount: @escaping @MainActor () -> Int = { 0 },
+        clipboardShortcut: @escaping @MainActor () -> KeyShortcut? = { nil },
         recents: RecentsStore,
         history: UndoHistory,
         launch: LaunchAtLogin,
@@ -32,6 +35,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     ) {
         self.actions = actions
         self.shelfCount = shelfCount
+        self.clipboardShortcut = clipboardShortcut
         self.recents = recents
         self.history = history
         self.launch = launch
@@ -72,6 +76,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(item("Show Progress Window", #selector(showProgress)))
         let parked = shelfCount()
         menu.addItem(item(parked > 0 ? "Shelf (\(parked))" : "Shelf", #selector(toggleShelf)))
+        if let shortcut = clipboardShortcut() {
+            let history = item("Clipboard History", #selector(showClipboard))
+            // Shown beside it, as menus show shortcuts (single letters only).
+            if shortcut.key.count == 1 {
+                history.keyEquivalent = shortcut.key.lowercased()
+                history.keyEquivalentModifierMask = shortcut.modifiers.eventFlags
+            }
+            menu.addItem(history)
+        }
         menu.addItem(.separator())
 
         menu.addItem(item("Settings…", #selector(showSettings), key: ","))
@@ -171,6 +184,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func showSettings() { actions.showSettings() }
     @objc private func showProgress() { actions.showProgress() }
     @objc private func toggleShelf() { actions.toggleShelf() }
+    @objc private func showClipboard() { actions.showClipboard() }
     @objc private func showFFmpegHelp() { actions.showFFmpegHelp() }
     @objc private func toggleLaunchAtLogin() {
         launch.setEnabled(!(launch.isEnabled || launch.needsApproval))

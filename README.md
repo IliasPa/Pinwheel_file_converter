@@ -77,6 +77,12 @@ where they go: drop them on the Shelf wedge (or on the shelf itself), then
 drag them off, all at once or one by one. Menu-bar icon › **Shelf** shows
 it.
 
+**Clipboard history** (beta): press **⌥⌘V** in any app to see what you
+copied, sorted by kind (text, links, images, files) and by the app it came
+from, with a search field. Click one (or press Return) and it's on the
+clipboard, ready to paste. A **heart** keeps a copy as a favorite for good.
+The keys can be changed in Settings › Clipboard.
+
 **And**
 - **Undo** at the top of the menu-bar menu: new files go to the Trash and
   originals come back.
@@ -141,6 +147,7 @@ Applications with the new one; your settings stay.
 | Use other keys | Settings › Wheel › Keys (and whether the wheel stays open) |
 | Choose from Finder | Right-click files › **Services** › **Pinwheel Tools**, then click a wedge |
 | Take it back | Menu-bar icon › **Undo …** |
+| Get back something you copied | **⌥⌘V**, then click it (or type to search, ↑↓ and Return) |
 | See the original while editing a photo | Hold **Space** (or the Compare button) |
 
 Tools whose names end in "…" open a window where you choose the details
@@ -162,6 +169,8 @@ in a sidebar with a search field:
 - **Tools:** Compress and Resize, which tools and file actions are on
   their wheels, the Terminal app,
   and **custom actions**.
+- **Clipboard** (beta): the history on or off, its keys (⌥⌘V), and how
+  many copies it keeps.
 - **Text Recognition**, **Finder & Shortcuts** (and the `pinwheel`
   command), and **Advanced** (how many files at once, ffmpeg, Reset to
   Defaults).
@@ -200,6 +209,11 @@ keys and the mouse while you drag files. Pinwheel never records what you
 type. The Automation permission (asked for the first time a file needs
 Pages, Keynote or Numbers) is used only to have them open that file and
 save a copy.
+
+The clipboard history is kept only on this Mac, in
+`~/Library/Application Support/Pinwheel/Clipboard`. What password managers
+and other apps mark as private is never kept. Switch it off, or clear it
+(favorites stay), in Settings › Clipboard.
 
 ## Troubleshooting
 
@@ -248,7 +262,7 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 360, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 375, with real conversions). GitHub runs them on every push too. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |

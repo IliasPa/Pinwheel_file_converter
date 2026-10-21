@@ -19,6 +19,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var notifier = Notifier()
     private lazy var editors = EditorCoordinator(settings: settings)
     private lazy var shelf = ShelfController(settings: settings)
+    private lazy var clipboard = ClipboardController(settings: settings)
+    private var settingsState: SettingsViewState?
     private var menuBar: MenuBarController?
     private var settingsWindow: SettingsWindowController?
     private var feedbackWindow: FeedbackWindowController?
@@ -38,9 +40,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 showFFmpegHelp: { [weak self] in self?.showFFmpegHelp() },
                 showFeedback: { [weak self] in self?.showFeedback() },
                 toggleShelf: { [weak self] in self?.shelf.toggle() },
+                showClipboard: { [weak self] in self?.clipboard.show() },
                 quit: { NSApp.terminate(nil) }
             ),
             shelfCount: { [weak self] in self?.shelf.model.items.count ?? 0 },
+            clipboardShortcut: { settings.clipboardEnabled ? settings.clipboardShortcut : nil },
             recents: recents,
             history: history,
             launch: launch,
@@ -118,6 +122,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.editors.open(editor, files: files)
         }
         commands.addToShelf = { [weak self] urls in self?.shelf.add(urls) }
+
+        // The clipboard history: kept as things are copied, shown with its shortcut.
+        clipboard.onOpenSettings = { [weak self] in self?.showSettings(pane: .clipboard) }
+        settings.onClipboardChange = { [weak self] in self?.clipboard.apply() }
+        clipboard.apply()
         commands.recipes = { settings.recipes }
         commands.availability = availability
         commands.start()
@@ -167,17 +176,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showSettings() {
+    private func showSettings(pane: SettingsPane? = nil) {
         if settingsWindow == nil {
+            let state = SettingsViewState()
+            settingsState = state
             let view = SettingsView(
                 settings: settings,
                 launch: launch,
                 permission: permission,
-                state: SettingsViewState(),
+                state: state,
                 onShowDemo: { [weak self] in
                     self?.wheel.showDemo(avoiding: self?.settingsWindow?.window?.frame)
                 },
-                onShowFFmpegHelp: { [weak self] in self?.showFFmpegHelp() }
+                onShowFFmpegHelp: { [weak self] in self?.showFFmpegHelp() },
+                clipboard: clipboard
             )
             settingsWindow = SettingsWindowController(view: view) { [weak self] in
                 // Let the window finish closing, then free it: a closed
@@ -188,6 +200,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        if let pane { settingsState?.pane = pane }
         settingsWindow?.present()
     }
 

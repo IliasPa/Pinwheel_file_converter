@@ -27,6 +27,16 @@ struct ModifierKeys: OptionSet, Hashable, Sendable {
         self = keys
     }
 
+    /// As AppKit writes them (menus, events).
+    var eventFlags: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if contains(.control) { flags.insert(.control) }
+        if contains(.option) { flags.insert(.option) }
+        if contains(.shift) { flags.insert(.shift) }
+        if contains(.command) { flags.insert(.command) }
+        return flags
+    }
+
     /// "⌥⇧"
     var symbols: String {
         Self.each.filter(contains).map(\.symbol).joined()

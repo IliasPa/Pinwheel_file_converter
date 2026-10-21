@@ -3,6 +3,28 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7 (beta) — 2026-10-21
+
+A clipboard history.
+
+**New**
+- **Clipboard history** (beta): press **⌥⌘V** in any app. What you copied
+  is there, newest first, with the app it came from and when; filter by
+  kind (text, links, images, files), by app, or type to search. **Click
+  one, or press Return, and it's copied at once**: the window closes and
+  you paste where you were (Pinwheel doesn't take over the keyboard of the
+  app you're in). ↑↓ choose, ⌘⌫ removes one, Esc closes.
+- **Favorites:** a heart keeps a copy for good; the Favorites filter shows
+  just those. The rest go after the last 200 copies (or 50 to 1000).
+- Copies come back exactly as they were copied: formatted text stays
+  formatted, pictures stay pictures, files stay files.
+- **Settings › Clipboard:** on or off, **your own keys** (click, then press
+  them; ⌥⌘V again in one click), how many copies to keep, Clear History
+  (favorites stay). If another app already uses the keys, it says so.
+- Kept only on this Mac. What password managers and other apps mark as
+  private is never kept.
+- Menu-bar icon › **Clipboard History**.
+
 ## v1.6 — 2026-10-21
 
 Cut, crop and bleep; a visualizer; faces and text blurred out; a shelf.

@@ -23,11 +23,55 @@ final class SettingsViewState {
     let languageDownload = LanguageDownload()
     /// The box of the compatibility table under the pointer.
     var tableSpot: CompatibilityPane.Spot?
+    let shortcutRecorder = ShortcutRecorder()
+    var confirmClearClipboard = false
+}
+
+/// Takes the next keys pressed as a new shortcut (Esc gives up).
+@Observable
+final class ShortcutRecorder {
+    private(set) var isRecording = false
+    /// Why the keys pressed can't be used.
+    private(set) var message: String?
+    @ObservationIgnored private var monitor: Any?
+    @ObservationIgnored private var onRecording: (Bool) -> Void = { _ in }
+
+    func start(onRecorded: @escaping (KeyShortcut) -> Void, onRecording: @escaping (Bool) -> Void) {
+        stop()
+        isRecording = true
+        message = nil
+        self.onRecording = onRecording
+        onRecording(true)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == 53 {  // Esc
+                self.stop()
+                return nil
+            }
+            guard let shortcut = KeyShortcut(event: event) else { return nil }
+            if !shortcut.isUsable {
+                self.message = "Add ⌘, ⌥ or ⌃, so typing \(shortcut.title) still types."
+            } else if shortcut.isReserved {
+                self.message = "\(shortcut.title) is used by every app. Try other keys."
+            } else {
+                self.stop()
+                onRecorded(shortcut)
+            }
+            return nil
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        if isRecording { onRecording(false) }
+        isRecording = false
+    }
 }
 
 /// The pages of the Settings window, in the sidebar's order.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, wheel, conversions, compatibility, tools, textRecognition, finderAndShortcuts, advanced
+    case general, wheel, conversions, compatibility, tools, clipboard, textRecognition, finderAndShortcuts, advanced
 
     var id: Self { self }
 
@@ -38,6 +82,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .conversions: "Conversions"
         case .compatibility: "Compatibility"
         case .tools: "Tools"
+        case .clipboard: "Clipboard"
         case .textRecognition: "Text Recognition"
         case .finderAndShortcuts: "Finder & Shortcuts"
         case .advanced: "Advanced"
@@ -51,6 +96,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .conversions: "arrow.triangle.2.circlepath"
         case .compatibility: "tablecells"
         case .tools: "wrench.and.screwdriver"
+        case .clipboard: "list.clipboard"
         case .textRecognition: "text.viewfinder"
         case .finderAndShortcuts: "contextualmenu.and.cursorarrow"
         case .advanced: "gearshape.2"
@@ -65,6 +111,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .conversions: Brand.blue
         case .compatibility: Brand.teal
         case .tools: .orange
+        case .clipboard: .pink
         case .textRecognition: .purple
         case .finderAndShortcuts: .green
         }
@@ -92,6 +139,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title) + FileAction.allCases.map(\.title)
                 + ["quality", "bit rate", "video size", "custom actions", "file actions", "path", "iterm", "zip", "qr", "barcode",
                    "shelf", "visualizer", "waveform", "faces", "blur", "redact", "bleep", "split", "crop video", "mono", "stereo", "channels"]
+        case .clipboard:
+            return ["clipboard", "history", "paste", "copy", "copied", "favorites", "heart", "shortcut", "keys", "pasta", "beta"]
         case .textRecognition:
             return ["ocr", "get text", "searchable", "tesseract", "greek", "language", "apple"]
         case .finderAndShortcuts:
@@ -144,6 +193,8 @@ struct SettingsView: View {
     @Bindable var state: SettingsViewState
     var onShowDemo: () -> Void
     var onShowFFmpegHelp: () -> Void
+    /// The clipboard history, for its page.
+    var clipboard: ClipboardController? = nil
 
     var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -167,6 +218,13 @@ struct SettingsView: View {
                 state.recipeDraft = nil
             }
         }
+        .alert("Clear the clipboard history?", isPresented: $state.confirmClearClipboard) {
+            Button("Clear", role: .destructive) { clipboard?.store.clear() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every copy is removed from Pinwheel's history, except your favorites. What's on the clipboard now stays.")
+        }
+        .onDisappear { state.shortcutRecorder.stop() }
         .alert("Reset the permission?", isPresented: $state.confirmReset) {
             Button("Reset", role: .destructive) { permission.resetAndAskAgain() }
             Button("Cancel", role: .cancel) {}
@@ -237,6 +295,8 @@ struct SettingsView: View {
                 toolsWheel
                 fileActionsWheel
             }
+        case .clipboard:
+            Form { clipboardSection }
         case .textRecognition:
             Form { textRecognition }
         case .finderAndShortcuts:
@@ -358,6 +418,66 @@ struct SettingsView: View {
             if let error = launch.lastError {
                 Text(error).font(.caption).foregroundStyle(.red)
             }
+        }
+    }
+
+    // MARK: - Clipboard
+
+    private var clipboardSection: some View {
+        let recorder = state.shortcutRecorder
+        let count = clipboard?.store.items.count ?? 0
+        return Section {
+            Toggle("Keep a clipboard history", isOn: $settings.clipboardEnabled)
+            LabeledContent("Open it with") {
+                HStack(spacing: 8) {
+                    Button {
+                        if recorder.isRecording {
+                            recorder.stop()
+                        } else {
+                            recorder.start { settings.clipboardShortcut = $0 } onRecording: { clipboard?.suspendShortcut($0) }
+                        }
+                    } label: {
+                        Text(recorder.isRecording ? "Press the new keys…" : settings.clipboardShortcut.title)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .frame(minWidth: 130)
+                    }
+                    .help(recorder.isRecording ? "Press the keys to use, or Esc to keep the ones you have" : "Click, then press the keys you'd like")
+                    if settings.clipboardShortcut != .clipboard && !recorder.isRecording {
+                        Button("Use \(KeyShortcut.clipboard.title)") { settings.clipboardShortcut = .clipboard }
+                    }
+                }
+            }
+            .disabled(!settings.clipboardEnabled)
+            if let message = recorder.message {
+                Text(message).font(.callout).foregroundStyle(.orange)
+            }
+            if let problem = clipboard?.model.shortcutProblem, settings.clipboardEnabled {
+                Label(problem, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
+            }
+            Picker("Keep the last", selection: $settings.clipboardLimit) {
+                ForEach(SettingsStore.clipboardLimits, id: \.self) { Text("\($0) copies").tag($0) }
+            }
+            .disabled(!settings.clipboardEnabled)
+            HStack {
+                Button("Show Clipboard History") { clipboard?.show() }
+                    .disabled(!settings.clipboardEnabled || clipboard == nil)
+                Spacer()
+                Text(count == 1 ? "1 copy kept" : "\(count) copies kept").foregroundStyle(.secondary).monospacedDigit()
+                Button("Clear History…") { state.confirmClearClipboard = true }
+                    .disabled(count == 0)
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Text("Clipboard history")
+                Text("BETA")
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+                    .foregroundStyle(Color.accentColor)
+            }
+        } footer: {
+            Footnote("Press \(settings.clipboardShortcut.title) in any app to see what you copied, by app and by kind (text, links, images, files). Click one, or press Return, and it's on the clipboard, ready to paste. A heart keeps a copy for good; the rest go after the number above. Kept only on this Mac; passwords and anything else apps mark as private are never kept.")
         }
     }
 

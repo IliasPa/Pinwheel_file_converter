@@ -64,6 +64,7 @@ final class SettingsStore {
         case wheelKeys, keepWheelOpen, hiddenActions, terminalApp
         case webpQuality, avifQuality
         case textRecognition
+        case clipboardEnabled, clipboardShortcut, clipboardLimit
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -132,6 +133,31 @@ final class SettingsStore {
     /// Rename rules saved under a name.
     var renamePresets: [RenamePreset] { didSet { saveJSON(renamePresets, Self.renamePresetsKey) } }
 
+    // The clipboard history
+    var clipboardEnabled: Bool {
+        didSet {
+            save(clipboardEnabled, .clipboardEnabled)
+            onClipboardChange()
+        }
+    }
+    /// Opens the history from any app.
+    var clipboardShortcut: KeyShortcut {
+        didSet {
+            save(clipboardShortcut.stored, .clipboardShortcut)
+            onClipboardChange()
+        }
+    }
+    /// Copies kept besides the favorites.
+    var clipboardLimit: Int {
+        didSet {
+            save(clipboardLimit, .clipboardLimit)
+            onClipboardChange()
+        }
+    }
+    static let clipboardLimits = [50, 100, 200, 500, 1000]
+    /// The clipboard history follows its settings at once.
+    @ObservationIgnored var onClipboardChange: () -> Void = {}
+
     // Text recognition
     var textRecognition: TextRecognitionChoice { didSet { save(textRecognition.rawValue, .textRecognition) } }
     /// Bumped when a language file is added, so views showing what's installed refresh.
@@ -177,6 +203,9 @@ final class SettingsStore {
             .keepWheelOpen: false,
             .terminalApp: TerminalApp.terminal.rawValue,
             .textRecognition: TextRecognitionChoice.automatic.rawValue,
+            .clipboardEnabled: true,
+            .clipboardShortcut: KeyShortcut.clipboard.stored,
+            .clipboardLimit: 200,
         ]
     }
 
@@ -227,6 +256,9 @@ final class SettingsStore {
         recipes = Self.loadJSON(defaults, Self.recipesKey) ?? []
         renamePresets = Self.loadJSON(defaults, Self.renamePresetsKey) ?? []
         textRecognition = TextRecognitionChoice(rawValue: string(.textRecognition)) ?? .automatic
+        clipboardEnabled = defaults.bool(forKey: Key.clipboardEnabled.rawValue)
+        clipboardShortcut = KeyShortcut(stored: defaults.dictionary(forKey: Key.clipboardShortcut.rawValue)) ?? .clipboard
+        clipboardLimit = defaults.integer(forKey: Key.clipboardLimit.rawValue)
         placeNewTools()
     }
 
@@ -385,6 +417,9 @@ final class SettingsStore {
         keepWheelOpen = fresh.keepWheelOpen
         terminalApp = fresh.terminalApp
         textRecognition = fresh.textRecognition
+        clipboardEnabled = fresh.clipboardEnabled
+        clipboardShortcut = fresh.clipboardShortcut
+        clipboardLimit = fresh.clipboardLimit
     }
 
     /// The last watermark saved from the image editor, offered again next time.

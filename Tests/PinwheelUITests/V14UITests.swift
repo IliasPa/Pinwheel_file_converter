@@ -92,7 +92,7 @@ struct V14SettingsTests {
 
     @Test func searchFindsTheNewSettings() {
         func found(_ text: String) -> [SettingsPane] { SettingsPane.allCases.filter { $0.matches(text) } }
-        #expect(found("keys") == [.wheel])
+        #expect(found("keys") == [.wheel, .clipboard])  // the clipboard history has keys too (v1.7)
         #expect(found("airdrop") == [.tools])
         #expect(found("quick look") == [.tools])
         #expect(found("cwebp") == [.advanced])
