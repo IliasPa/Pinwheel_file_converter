@@ -229,7 +229,7 @@ struct CommandTests {
             let process = Process()
             process.executableURL = cli
             process.arguments = arguments
-            process.environment = ["PINWHEEL_CHANNEL": channel, "PINWHEEL_PATIENCE": "3"]
+            process.environment = ["PINWHEEL_CHANNEL": channel, "PINWHEEL_PATIENCE": "6"]
             let out = Pipe(), err = Pipe()
             process.standardOutput = out
             process.standardError = err

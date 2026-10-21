@@ -209,7 +209,9 @@ conversation.listen()
 var request: [String: Any] = ["command": name, "files": files, "wait": wait]
 if let value { request["value"] = value }
 conversation.send(request)
-if !conversation.wait(seconds: 1.5, until: { conversation.accepted }) && testChannel == nil {
+// On a test channel nothing gets started, so it waits its whole patience
+// (a test Mac that's busy may answer late).
+if !conversation.wait(seconds: testChannel == nil ? 1.5 : patience, until: { conversation.accepted }) && testChannel == nil {
     // Not running (or still starting): start it, then ask again until it answers.
     openPinwheel(front: false)
     var heard = false
