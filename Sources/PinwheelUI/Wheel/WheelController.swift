@@ -90,6 +90,13 @@ final class WheelController {
         guard mode != model.mode, !isDemo, !chosenWithKeys else { return }
         model.hovered = nil
         load(mode)
+        // The new wheel's wedge under the pointer lights up at once, without
+        // waiting for the pointer to move.
+        if showsOnScreen, panel.isVisible {
+            let pointer = NSEvent.mouseLocation
+            let hit = WheelView.layout(count: model.items.count).hit(dx: pointer.x - panel.frame.midX, dy: pointer.y - panel.frame.midY)
+            hoverChanged(to: hit == .outside ? nil : hit)
+        }
     }
 
     /// Hides the wheel. When several hide requests overlap, the earliest wins.
@@ -306,7 +313,7 @@ final class WheelController {
         }
         self.dropView = dropView
 
-        let hosting = PassthroughHostingView(rootView: WheelView(model: model, settings: settings))
+        let hosting = PassthroughHostingView(rootView: WheelPanelContent(model: model, settings: settings))
         hosting.frame = dropView.bounds
         hosting.autoresizingMask = [.width, .height]
         hosting.unregisterDraggedTypes()
@@ -314,5 +321,32 @@ final class WheelController {
 
         panel.contentView = dropView
         return panel
+    }
+}
+
+/// The wheel as its panel shows it: in the middle of the whole window, where
+/// the drop view measures from, over a disc that keeps the pointer.
+struct WheelPanelContent: View {
+    var model: WheelModel
+    var settings: SettingsStore
+
+    /// The wheel and the margin around it where a drop still counts.
+    static var catchDiameter: CGFloat { 2 * (WheelView.outerRadius + WheelView.layout(count: 1).outerSlack) }
+
+    var body: some View {
+        ZStack {
+            // macOS hands the pointer (and a drag) to the window below
+            // wherever nothing is drawn: between the blades, around the hub,
+            // and on Liquid Glass most of each blade, since the glass itself
+            // is drawn by macOS. A disc too faint to see keeps it on the wheel.
+            Circle()
+                .fill(Color.black.opacity(0.01))
+                .frame(width: Self.catchDiameter, height: Self.catchDiameter)
+            WheelView(model: model, settings: settings)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The panel is a titled window with its title bar hidden; without
+        // this, the wheel sits below the title bar's room, off the middle.
+        .ignoresSafeArea()
     }
 }

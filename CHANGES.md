@@ -3,6 +3,25 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.5.1 — 2026-10-21
+
+**Fixed**
+- **The wheel no longer misses wedges or flickers while you drag over it.**
+  macOS hands the pointer to the window underneath wherever a window draws
+  nothing, and the glass wheel drew nothing between its blades, around the
+  middle, in the margin around it, and (with Liquid Glass, the standard
+  look) on most of each blade, because macOS draws that glass itself. Over
+  those spots the drag went to Finder: the wedge lost its highlight, ticked
+  again a moment later, and a drop there could land in the folder behind
+  the wheel. An invisible disc now keeps the whole wheel and its margin
+  under Pinwheel's control.
+- **Wedges light up exactly under the pointer.** The wheel was drawn
+  14 points lower than the spot its wedges were measured from (the room of
+  the hidden title bar), so near the middle and between wedges the pointer
+  could count for a neighbour, or for Cancel.
+- Switching wheels with the keys lights up the wedge under the pointer
+  right away, without waiting for the pointer to move.
+
 ## v1.5 — 2026-10-21
 
 Documents, spreadsheets, slides and subtitles.
