@@ -478,6 +478,9 @@ struct SettingsView: View {
                 Button("Clear History…") { state.confirmClearClipboard = true }
                     .disabled(count == 0)
             }
+            Label("Password and encryption features will come in a future update.", systemImage: "lock")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         } header: {
             HStack(spacing: 6) {
                 Text("Clipboard history")

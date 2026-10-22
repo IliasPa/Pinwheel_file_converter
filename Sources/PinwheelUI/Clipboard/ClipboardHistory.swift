@@ -295,14 +295,26 @@ final class ClipboardStore {
         items.count >= 10 ? totalBytes / items.count : 120_000
     }
 
-    /// "about 24 MB" for this many copies.
+    /// "~24 MB" for this many copies.
     func estimate(copies: Int) -> String {
-        "about " + Self.size(copies * typicalBytes)
+        "~" + Self.roundedSize(copies * typicalBytes)
     }
 
     /// "3.2 MB"
     static func size(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    /// "3 MB": a whole number, for an estimate.
+    static func roundedSize(_ bytes: Int) -> String {
+        let units = [(1_000_000_000, "GB"), (1_000_000, "MB"), (1_000, "KB")]
+        for (index, (unit, name)) in units.enumerated() where bytes >= unit {
+            let amount = Int((Double(bytes) / Double(unit)).rounded())
+            // 999.6 KB is 1 MB, not 1000 KB.
+            if amount >= 1000, index > 0 { return "1 \(units[index - 1].1)" }
+            return "\(amount) \(name)"
+        }
+        return "\(bytes) bytes"
     }
 
     /// The apps things were copied in, the most recent first.

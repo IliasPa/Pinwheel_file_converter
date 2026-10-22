@@ -280,7 +280,7 @@ struct ClipboardSpaceTests {
         let scratch = try Scratch()
         let store = ClipboardStore(folder: scratch.url)
         // Before there are enough copies: a typical mix.
-        #expect(store.totalBytes == 0 && store.estimate(copies: 200) == "about 24 MB")
+        #expect(store.totalBytes == 0 && store.estimate(copies: 200) == "~24 MB")
         let board = testPasteboard()
         for number in 0..<10 {
             put([text(String(repeating: "\(number)", count: 1000))], on: board)
@@ -288,7 +288,11 @@ struct ClipboardSpaceTests {
         }
         // Then from the copies themselves: 1 KB of text each.
         #expect(store.totalBytes == 10_000 && store.typicalBytes == 1000)
-        #expect(store.estimate(copies: 1000) == "about 1 MB")
+        #expect(store.estimate(copies: 1000) == "~1 MB")
         #expect(ClipboardStore.size(3_200_000) == "3.2 MB")
+        // Estimates are whole numbers.
+        #expect(ClipboardStore.roundedSize(3_200_000) == "3 MB" && ClipboardStore.roundedSize(2_600_000_000) == "3 GB")
+        #expect(ClipboardStore.roundedSize(999_600) == "1 MB" && ClipboardStore.roundedSize(48_400) == "48 KB")
+        #expect(ClipboardStore.roundedSize(512) == "512 bytes")
     }
 }

@@ -81,8 +81,9 @@ it.
 copied, sorted by kind (text, links, images, files) and by the app it came
 from, with a search field. Click one (or press Return) and it's pasted
 where you were typing (or just copied, if you prefer). A **heart** keeps a
-copy as a favorite for good. The keys, and how many copies to keep (with
-the room they take), are in Settings › Clipboard.
+copy as a favorite for good. The **anchor** at the bottom keeps the window
+open while you work in other apps. The keys, and how many copies to keep
+(with the room they take), are in Settings › Clipboard.
 
 **And**
 - **Undo** at the top of the menu-bar menu: new files go to the Trash and

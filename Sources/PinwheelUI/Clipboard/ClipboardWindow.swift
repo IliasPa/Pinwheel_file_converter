@@ -82,22 +82,30 @@ final class ClipboardController {
 
     /// On the clipboard and, unless Settings says just copy, pasted where
     /// the cursor was: the window closes and ⌘V goes to the app in front.
+    /// Pinned, the window stays (it steps aside for the paste).
     func copy(_ item: ClipItem) {
         store.copy(item, to: pasteboard)
         seenChangeCount = pasteboard.changeCount  // not a new copy
         guard settings.clipboardPastes, mayPress() else {
             model.justCopied = item.id
+            guard !model.isPinned else { return }
             Task {
                 try? await Task.sleep(for: .milliseconds(180))
                 hide()
             }
             return
         }
+        let staysOpen = model.isPinned
         hide()
         Task {
             // The app in front gets its keyboard back first.
             try? await Task.sleep(for: .milliseconds(60))
             paste()
+            guard staysOpen else { return }
+            try? await Task.sleep(for: .milliseconds(120))
+            // Back in view, leaving the keyboard to that app.
+            panel.orderFrontRegardless()
+            model.justCopied = item.id
         }
     }
 
@@ -125,7 +133,8 @@ final class ClipboardController {
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
         if let visible = screen?.visibleFrame {
             let size = panel.frame.size
-            panel.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2, y: visible.maxY - visible.height * 0.18 - size.height))
+            let top = visible.maxY - visible.height * 0.18 + ClipboardPanel.margin
+            panel.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2, y: top - size.height))
         }
         panel.makeKeyAndOrderFront(nil)
     }
@@ -138,8 +147,13 @@ final class ClipboardController {
 
     private func makePanel() -> ClipboardPanel {
         let panel = ClipboardPanel()
-        panel.onResignKey = { [weak self] in self?.hide() }
+        panel.onResignKey = { [weak self] in
+            guard self?.model.isPinned == false else { return }
+            self?.hide()
+        }
         let hosting = NSHostingView(rootView: ClipboardView(model: model, settings: settings))
+        // The window keeps its size (else it grows by the hidden title bar).
+        hosting.sizingOptions = []
         hosting.frame = NSRect(origin: .zero, size: ClipboardPanel.size)
         hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
@@ -150,7 +164,11 @@ final class ClipboardController {
 /// Takes the keyboard (to search) without bringing Pinwheel to the front,
 /// so a copy can be pasted straight into the app that was in use.
 final class ClipboardPanel: GlassPanel {
-    static let size = NSSize(width: 580, height: 560)
+    /// The glass.
+    static let contentSize = NSSize(width: 580, height: 560)
+    /// Room around it for its shadow.
+    static let margin: CGFloat = 36
+    static let size = NSSize(width: contentSize.width + 2 * margin, height: contentSize.height + 2 * margin)
     var onResignKey: () -> Void = {}
 
     init() {
@@ -159,7 +177,9 @@ final class ClipboardPanel: GlassPanel {
         level = .floating
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
-        hasShadow = true
+        // macOS outlines a window's shadow with a dark line, around the
+        // whole window rather than the glass; the view draws a soft one.
+        hasShadow = false
         animationBehavior = .utilityWindow
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
     }
@@ -198,6 +218,8 @@ final class ClipboardPanelModel {
     var shortcutProblem: String?
     /// Choosing a copy pastes it too (else it's only copied).
     var pastes = true
+    /// Stays open when another window is clicked or a copy is chosen (the anchor).
+    var isPinned = false
 
     var onCopy: (ClipItem) -> Void = { _ in }
     var onClose: () -> Void = {}
@@ -269,8 +291,10 @@ struct ClipboardView: View {
             Divider()
             footer(shown.count)
         }
-        .frame(width: ClipboardPanel.size.width, height: ClipboardPanel.size.height)
+        .frame(width: ClipboardPanel.contentSize.width, height: ClipboardPanel.contentSize.height)
         .glassSurface(settings.glassLevel, cornerRadius: 24)
+        .background(OuterShadow(cornerRadius: 24))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .onAppear { searchFocused = true }
         .onChange(of: model.justCopied) { searchFocused = true }
@@ -391,6 +415,8 @@ struct ClipboardView: View {
             Text("Click or ↩ \(model.pastes ? "pastes" : "copies") · ↑↓ · ⌘⌫ removes · Esc closes")
             Spacer()
             Text(count == model.store.items.count ? "\(count) copies" : "\(count) of \(model.store.items.count)").monospacedDigit()
+            anchor
+                .padding(.trailing, 14)
             Button(action: model.onOpenSettings) { Image(systemName: "gearshape") }
                 .buttonStyle(.borderless)
                 .help("Clipboard settings")
@@ -399,6 +425,72 @@ struct ClipboardView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
+    }
+
+    /// Keeps the window open while you work in other apps.
+    private var anchor: some View {
+        Button { model.isPinned.toggle() } label: {
+            AnchorIcon()
+                .stroke(style: StrokeStyle(lineWidth: 1.3, lineCap: .round, lineJoin: .round))
+                .frame(width: 13, height: 14)
+                .foregroundStyle(model.isPinned ? Color.accentColor : Color.secondary)
+                .padding(5)
+                .background(Circle().fill(model.isPinned ? Color.accentColor.opacity(0.2) : .clear))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(model.isPinned
+              ? "Anchored: stays open while you use other apps. Click to let it close again"
+              : "Anchor: keep the window open while you use other apps")
+    }
+}
+
+/// An anchor (SF Symbols has none).
+nonisolated struct AnchorIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        let width = rect.width, height = rect.height
+        let ring = width * 0.16
+        let tipY = rect.minY + height * 0.6
+        let left = CGPoint(x: rect.minX + width * 0.06, y: tipY)
+        let right = CGPoint(x: rect.maxX - width * 0.06, y: tipY)
+        let bottom = CGPoint(x: rect.midX, y: rect.maxY)
+        var path = Path()
+        path.addEllipse(in: CGRect(x: rect.midX - ring, y: rect.minY, width: ring * 2, height: ring * 2))
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY + ring * 2))
+        path.addLine(to: bottom)
+        path.move(to: CGPoint(x: rect.midX - width * 0.26, y: rect.minY + height * 0.34))
+        path.addLine(to: CGPoint(x: rect.midX + width * 0.26, y: rect.minY + height * 0.34))
+        path.move(to: left)
+        path.addQuadCurve(to: bottom, control: CGPoint(x: rect.minX + width * 0.1, y: rect.maxY))
+        path.addQuadCurve(to: right, control: CGPoint(x: rect.maxX - width * 0.1, y: rect.maxY))
+        // The barbs at the tips.
+        for (tip, side) in [(left, 1.0), (right, -1.0)] {
+            path.move(to: CGPoint(x: tip.x - side * width * 0.04, y: tip.y + height * 0.1))
+            path.addLine(to: tip)
+            path.addLine(to: CGPoint(x: tip.x + side * width * 0.14, y: tip.y + height * 0.04))
+        }
+        return path
+    }
+}
+
+/// A soft shadow around a rounded rectangle, drawn only outside it, so the
+/// glass on top stays as clear as it is.
+struct OuterShadow: View {
+    var cornerRadius: CGFloat
+    var radius: CGFloat = 18
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        shape
+            .fill(Color.black)
+            .shadow(color: .black.opacity(0.32), radius: radius, y: radius / 3)
+            .mask {
+                Rectangle()
+                    .padding(-radius * 3)
+                    .overlay(shape.blendMode(.destinationOut))
+                    .compositingGroup()
+            }
+            .allowsHitTesting(false)
     }
 }
 

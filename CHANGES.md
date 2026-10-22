@@ -3,6 +3,25 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7.2 (beta) — 2026-10-22
+
+**New**
+- **An anchor** at the bottom of the clipboard history, next to its
+  settings: anchored, the window stays open while you use other apps, and
+  after you choose a copy (it steps aside for the paste, then comes back).
+  Esc or the shortcut still closes it.
+- Settings › Clipboard says what's coming: password and encryption
+  features, in a future update.
+
+**Changed**
+- Each choice of how many copies to keep reads like "200 copies · ~24 MB":
+  whole numbers, since it's an estimate.
+
+**Fixed**
+- A dark line ran around the clipboard history window. macOS drew it
+  around the window's shadow, and the window was taller than its glass;
+  now the window is just the glass, with a soft shadow of its own.
+
 ## v1.7.1 (beta) — 2026-10-22
 
 **New**
