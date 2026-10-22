@@ -3,6 +3,20 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7.5 (beta) — 2026-10-22
+
+**New**
+- **Your own collections** in the clipboard history: copies put together
+  under a name ("Work", "Addresses", "Replies"), kept for good like
+  favorites. Click **New Collection** under the filters and type a name.
+  Put a copy in one by **dragging it onto the collection**, or
+  right-click it › Add to Collection (a tick shows which it's in; New
+  Collection… makes one for it). Click a collection to see just its
+  copies. Right-click a collection to rename or delete it (its copies stay
+  in the history). A copy's row says which collections it's in.
+- Drag a copy onto **Favorites** to make it a favorite.
+- Clear History keeps the copies in collections, as it keeps favorites.
+
 ## v1.7.4 (beta) — 2026-10-22
 
 **New**

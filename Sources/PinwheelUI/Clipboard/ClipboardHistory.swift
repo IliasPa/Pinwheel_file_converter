@@ -47,11 +47,20 @@ struct ClipItem: Codable, Identifiable, Equatable, Sendable {
     var byteCount: Int
 }
 
+/// Copies put together under a name. Like favorites, they're kept for good.
+struct ClipCollection: Codable, Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var name: String
+    /// The copies in it, in the order they were added.
+    var items: [UUID] = []
+}
+
 /// Copies and favorites, kept on this Mac (in Application Support), newest
 /// first. Anything an app marks as private (password managers do) is left out.
 @Observable
 final class ClipboardStore {
     private(set) var items: [ClipItem] = []
+    private(set) var collections: [ClipCollection] = []
     /// Copies kept besides the favorites; older ones go.
     var limit = 200 {
         didSet { if limit < oldValue { trim(); save() } }
@@ -217,13 +226,70 @@ final class ClipboardStore {
         items.removeAll { $0.id == item.id }
         try? FileManager.default.removeItem(at: folder(of: item))
         save()
+        if collections.contains(where: { $0.items.contains(item.id) }) {
+            for index in collections.indices { collections[index].items.removeAll { $0 == item.id } }
+            saveCollections()
+        }
     }
 
-    /// Everything but the favorites.
+    /// Everything but the favorites and what's in collections.
     func clear() {
-        for item in items where !item.isFavorite { try? FileManager.default.removeItem(at: folder(of: item)) }
-        items.removeAll { !$0.isFavorite }
+        let kept = keptForGood
+        for item in items where !kept.contains(item.id) { try? FileManager.default.removeItem(at: folder(of: item)) }
+        items.removeAll { !kept.contains($0.id) }
         save()
+    }
+
+    // MARK: - Collections
+
+    @discardableResult
+    func addCollection(named name: String) -> ClipCollection? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let collection = ClipCollection(name: name)
+        collections.append(collection)
+        saveCollections()
+        return collection
+    }
+
+    func rename(_ collection: ClipCollection.ID, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let index = collections.firstIndex(where: { $0.id == collection }) else { return }
+        collections[index].name = name
+        saveCollections()
+    }
+
+    /// The collection goes; its copies stay in the history, now counted
+    /// toward its limit like any other.
+    func removeCollection(_ collection: ClipCollection.ID) {
+        collections.removeAll { $0.id == collection }
+        saveCollections()
+        trim()
+        save()
+    }
+
+    func add(_ item: ClipItem, to collection: ClipCollection.ID) {
+        guard let index = collections.firstIndex(where: { $0.id == collection }), !collections[index].items.contains(item.id) else { return }
+        collections[index].items.append(item.id)
+        saveCollections()
+    }
+
+    func remove(_ item: ClipItem, from collection: ClipCollection.ID) {
+        guard let index = collections.firstIndex(where: { $0.id == collection }) else { return }
+        collections[index].items.removeAll { $0 == item.id }
+        saveCollections()
+        trim()
+        save()
+    }
+
+    /// The collections a copy is in.
+    func collections(of item: ClipItem) -> [ClipCollection] {
+        collections.filter { $0.items.contains(item.id) }
+    }
+
+    /// Favorites and copies in collections: never removed to make room.
+    private var keptForGood: Set<UUID> {
+        Set(items.filter(\.isFavorite).map(\.id)).union(collections.flatMap(\.items))
     }
 
     /// Puts it back on the clipboard exactly as it was copied, and moves it to the top.
@@ -300,10 +366,14 @@ final class ClipboardStore {
 
     /// The items matching the filters, newest first. Words in `search` are
     /// looked for in the text and the app's name.
-    func matching(search: String = "", kind: ClipKind? = nil, appID: String? = nil, favoritesOnly: Bool = false) -> [ClipItem] {
+    func matching(
+        search: String = "", kind: ClipKind? = nil, appID: String? = nil, favoritesOnly: Bool = false, collection: ClipCollection.ID? = nil
+    ) -> [ClipItem] {
         let words = search.split(separator: " ").map(String.init)
+        let inCollection = collection.map { id in Set(collections.first { $0.id == id }?.items ?? []) }
         return items.filter { item in
             if favoritesOnly && !item.isFavorite { return false }
+            if let inCollection, !inCollection.contains(item.id) { return false }
             if let kind, item.kind != kind { return false }
             if let appID, item.appID != appID { return false }
             let haystack = item.preview + " " + (item.appName ?? "")
@@ -356,12 +426,25 @@ final class ClipboardStore {
     // MARK: - Keeping
 
     private var indexFile: URL { folder.appendingPathComponent("history.json") }
+    private var collectionsFile: URL { folder.appendingPathComponent("collections.json") }
 
     private func folder(of item: ClipItem) -> URL { folder.appendingPathComponent(item.id.uuidString, isDirectory: true) }
 
     private func load() {
+        if let data = try? Data(contentsOf: collectionsFile), let saved = try? JSONDecoder().decode([ClipCollection].self, from: data) {
+            collections = saved
+        }
         guard let data = try? Data(contentsOf: indexFile), let saved = try? JSONDecoder().decode([ClipItem].self, from: data) else { return }
         items = saved
+    }
+
+    private func saveCollections() {
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try JSONEncoder().encode(collections).write(to: collectionsFile, options: .atomic)
+        } catch {
+            // As with the history: fine for now, gone after a restart.
+        }
     }
 
     private func save() {
@@ -373,12 +456,13 @@ final class ClipboardStore {
         }
     }
 
-    /// The newest `limit` copies stay, and every favorite.
+    /// The newest `limit` copies stay, and every favorite and copy in a collection.
     private func trim() {
+        let keptForGood = keptForGood
         var kept = 0
         var gone: [ClipItem] = []
         items.removeAll { item in
-            guard !item.isFavorite else { return false }
+            guard !keptForGood.contains(item.id) else { return false }
             kept += 1
             if kept > limit {
                 gone.append(item)

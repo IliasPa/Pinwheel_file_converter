@@ -140,7 +140,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
                 + ["quality", "bit rate", "video size", "custom actions", "file actions", "path", "iterm", "zip", "qr", "barcode",
                    "shelf", "visualizer", "waveform", "faces", "blur", "redact", "bleep", "split", "crop video", "mono", "stereo", "channels"]
         case .clipboard:
-            return ["clipboard", "history", "paste", "copy", "copied", "favorites", "heart", "shortcut", "keys", "pasta", "beta", "preview", "drag", "plain text", "links", "tracking", "buttons"]
+            return ["clipboard", "history", "paste", "copy", "copied", "favorites", "heart", "shortcut", "keys", "pasta", "beta", "preview", "drag", "plain text", "links", "tracking", "buttons", "collections"]
         case .textRecognition:
             return ["ocr", "get text", "searchable", "tesseract", "greek", "language", "apple"]
         case .finderAndShortcuts:
@@ -222,7 +222,7 @@ struct SettingsView: View {
             Button("Clear", role: .destructive) { clipboard?.store.clear() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Every copy is removed from Pinwheel's history, except your favorites. What's on the clipboard now stays.")
+            Text("Every copy is removed from Pinwheel's history, except your favorites and the copies in your collections. What's on the clipboard now stays.")
         }
         .onDisappear { state.shortcutRecorder.stop() }
         .alert("Reset the permission?", isPresented: $state.confirmReset) {
@@ -498,7 +498,7 @@ struct SettingsView: View {
                     .foregroundStyle(Color.accentColor)
             }
         } footer: {
-            Footnote("Press \(settings.clipboardShortcut.title) in any app to see what you copied, by app and by kind (text, links, images, files). Click one, or press Return, and it's pasted where you were typing (or just copied); drag one into any app to drop it there. Press and hold one, or press Space, to see all of it (Space types a space while you search). The quick buttons under a copy paste it changed: as plain text, with clean links (no tracking), on one line, with tidy spaces, in other capitals, the text or QR code in a picture, a file's path or name. A heart keeps a copy for good; the rest go after the number above. The sizes are worked out from your copies so far: screenshots take far more room than text. Kept only on this Mac; passwords and anything else apps mark as private are never kept.")
+            Footnote("Press \(settings.clipboardShortcut.title) in any app to see what you copied, by app and by kind (text, links, images, files). Click one, or press Return, and it's pasted where you were typing (or just copied); drag one into any app to drop it there. Press and hold one, or press Space, to see all of it (Space types a space while you search). The quick buttons under a copy paste it changed: as plain text, with clean links (no tracking), on one line, with tidy spaces, in other capitals, the text or QR code in a picture, a file's path or name. A heart keeps a copy for good, and so do your own collections (drag a copy onto one, or right-click it); the rest go after the number above. The sizes are worked out from your copies so far: screenshots take far more room than text. Kept only on this Mac; passwords and anything else apps mark as private are never kept.")
         }
     }
 

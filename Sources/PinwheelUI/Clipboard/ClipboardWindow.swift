@@ -111,7 +111,7 @@ final class ClipboardController {
             }
             model.working = nil
             guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                show(problem, on: item.id)
+                model.flash(problem, on: item.id)
                 return
             }
             pasteboard.clearContents()
@@ -121,16 +121,6 @@ final class ClipboardController {
             // Closed meanwhile: you've moved on, so it's only copied.
             guard isShown else { return }
             finishChoosing(kept?.id ?? item.id)
-        }
-    }
-
-    /// A short note on a copy's row, for a moment.
-    private func show(_ text: String, on id: ClipItem.ID) {
-        let notice = ClipNotice(item: id, text: text)
-        model.notice = notice
-        Task {
-            try? await Task.sleep(for: .seconds(2.5))
-            if model.notice == notice { model.notice = nil }
         }
     }
 
@@ -246,6 +236,7 @@ final class ClipboardController {
     /// back and the row says so). Not dropped: the card flies back.
     func dragEnded(_ item: ClipItem, at point: NSPoint, operation: NSDragOperation) {
         model.dragging = nil
+        model.dropTarget = nil
         guard operation != [], !glassFrame.contains(point) else {
             fade(to: 1)
             return
@@ -337,6 +328,18 @@ final class ClipboardPanelModel {
     var appID: String? {
         didSet { selectFirst() }
     }
+    /// Only the copies in this collection.
+    var collectionID: ClipCollection.ID? {
+        didSet { selectFirst() }
+    }
+    /// A collection being named, new or renamed.
+    var naming: CollectionNaming?
+    /// The collection asked to be deleted (it waits for a yes).
+    var confirmingDelete: ClipCollection.ID?
+    /// Where a copy being dragged would land now.
+    var dropTarget: ClipDropTarget?
+    /// Where a copy just landed (it bounces).
+    var landed: ClipDropTarget?
     var selection: ClipItem.ID?
     /// Flashes on the row just copied.
     var justCopied: ClipItem.ID?
@@ -375,14 +378,27 @@ final class ClipboardPanelModel {
     }
 
     var visible: [ClipItem] {
-        store.matching(search: search, kind: kind, appID: appID, favoritesOnly: favoritesOnly)
+        store.matching(search: search, kind: kind, appID: appID, favoritesOnly: favoritesOnly, collection: collectionID)
     }
 
     /// Each time the window opens: a fresh search, filters kept.
     func prepare() {
         search = ""
         if let appID, !store.apps.contains(where: { $0.id == appID }) { self.appID = nil }
+        if let collectionID, !store.collections.contains(where: { $0.id == collectionID }) { self.collectionID = nil }
+        naming = nil
+        confirmingDelete = nil
         selectFirst()
+    }
+
+    /// A short note on a copy's row, for a moment.
+    func flash(_ text: String, on id: ClipItem.ID, isProblem: Bool = true) {
+        let flashed = ClipNotice(item: id, text: text, isProblem: isProblem)
+        notice = flashed
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            if notice == flashed { notice = nil }
+        }
     }
 
     func selectFirst() {
@@ -454,6 +470,9 @@ struct ClipboardView: View {
                 .padding(.bottom, 10)
             filters
                 .padding(.horizontal, 12)
+            CollectionsBar(model: model)
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
             apps
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
@@ -481,6 +500,7 @@ struct ClipboardView: View {
         .onAppear { searchFocused = true }
         .onChange(of: model.justCopied) { searchFocused = true }
         .onChange(of: model.previewing) { searchFocused = true }
+        .onChange(of: model.naming == nil) { if model.naming == nil { searchFocused = true } }
     }
 
     private var searchField: some View {
@@ -519,11 +539,20 @@ struct ClipboardView: View {
 
     private var filters: some View {
         HStack(spacing: 6) {
-            chip("All", symbol: nil, isOn: model.kind == nil && !model.favoritesOnly) {
+            chip("All", symbol: nil, isOn: model.kind == nil && !model.favoritesOnly && model.collectionID == nil) {
                 model.kind = nil
                 model.favoritesOnly = false
+                model.collectionID = nil
             }
-            chip("Favorites", symbol: "heart.fill", isOn: model.favoritesOnly) { model.favoritesOnly.toggle() }
+            chip("Favorites", symbol: "heart.fill", isOn: model.favoritesOnly) {
+                model.favoritesOnly.toggle()
+                if model.favoritesOnly { model.collectionID = nil }
+            }
+            .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: model.dropTarget == .favorites ? 2 : 0))
+            .scaleEffect(model.dropTarget == .favorites ? 1.08 : (model.landed == .favorites ? 1.12 : 1))
+            .animation(.spring(response: 0.3, dampingFraction: 0.5), value: model.dropTarget)
+            .animation(.spring(response: 0.3, dampingFraction: 0.4), value: model.landed)
+            .onDrop(of: [.item], isTargeted: model.isTargeted(.favorites)) { _ in model.drop(on: .favorites) }
             ForEach(ClipKind.allCases, id: \.self) { kind in
                 chip(kind.title, symbol: kind.symbolName, isOn: model.kind == kind) { model.kind = model.kind == kind ? nil : kind }
             }
@@ -589,13 +618,17 @@ struct ClipboardView: View {
     }
 
     private var empty: some View {
-        VStack(spacing: 8) {
-            Image(systemName: model.store.items.isEmpty ? "list.clipboard" : "magnifyingglass")
+        let collection = model.store.collections.first { $0.id == model.collectionID }
+        return VStack(spacing: 8) {
+            Image(systemName: model.store.items.isEmpty ? "list.clipboard" : (collection?.items.isEmpty == true ? "folder" : "magnifyingglass"))
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(.secondary)
-            Text(model.store.items.isEmpty ? "Nothing copied yet" : "Nothing matches").font(.system(size: 14, weight: .semibold))
+            Text(model.store.items.isEmpty ? "Nothing copied yet" : (collection?.items.isEmpty == true ? "\(collection?.name ?? "") is empty" : "Nothing matches"))
+                .font(.system(size: 14, weight: .semibold))
             Text(model.store.items.isEmpty
                  ? "Copy something in any app and it shows up here."
+                 : collection?.items.isEmpty == true
+                 ? "Drag a copy onto \(collection?.name ?? "its chip"), or right-click one › Add to Collection."
                  : (model.favoritesOnly ? "Click a heart to keep a copy here for good." : "Try other words, or another filter."))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -754,6 +787,12 @@ private struct ClipRow: View {
                         Text(item.appName ?? "Unknown app")
                         Text("·")
                         Text(item.date, format: .relative(presentation: .named))
+                        let collections = model.store.collections(of: item)
+                        if !collections.isEmpty {
+                            Text("·")
+                            Image(systemName: "folder").font(.system(size: 9))
+                            Text(collections.map(\.name).joined(separator: ", "))
+                        }
                     }
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
@@ -763,7 +802,7 @@ private struct ClipRow: View {
                 if let notice = model.notice, notice.item == item.id {
                     Text(notice.text)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(notice.isProblem ? Color.orange : Color.accentColor)
                 } else if wasDropped {
                     Label("Dropped", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 11, weight: .semibold))
@@ -801,6 +840,21 @@ private struct ClipRow: View {
         menu.addItem(actionMenuItem(model.pastes ? "Paste" : "Copy") { model.onCopy(item) })
         menu.addItem(actionMenuItem("Preview") { model.preview(item) })
         menu.addItem(actionMenuItem(item.isFavorite ? "Remove from Favorites" : "Add to Favorites") { model.store.toggleFavorite(item) })
+        // Collections: a tick by those it's in; choosing one puts it in or takes it out.
+        let collections = NSMenu()
+        for collection in model.store.collections {
+            let entry = actionMenuItem(collection.name) { model.toggle(item, in: collection) }
+            entry.state = collection.items.contains(item.id) ? .on : .off
+            collections.addItem(entry)
+        }
+        if !model.store.collections.isEmpty { collections.addItem(.separator()) }
+        collections.addItem(actionMenuItem("New Collection…") { model.startNewCollection(adding: item) })
+        let collectionsItem = NSMenuItem(title: "Add to Collection", action: nil, keyEquivalent: "")
+        collectionsItem.submenu = collections
+        menu.addItem(collectionsItem)
+        if let shown = model.store.collections.first(where: { $0.id == model.collectionID }) {
+            menu.addItem(actionMenuItem("Remove from \u{201C}\(shown.name)\u{201D}") { model.store.remove(item, from: shown.id) })
+        }
         menu.addItem(.separator())
         menu.addItem(actionMenuItem("Remove from History") { model.store.remove(item) })
         return menu

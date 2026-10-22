@@ -235,6 +235,7 @@ struct ClipWork: Equatable {
 struct ClipNotice: Equatable {
     let item: ClipItem.ID
     let text: String
+    var isProblem = true
 }
 
 /// The small buttons under a copy. A click pastes the copy changed that way.

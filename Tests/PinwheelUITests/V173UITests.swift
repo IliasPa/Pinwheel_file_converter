@@ -145,8 +145,7 @@ struct ClipPreviewAndDragTests {
         }
         try await Task.sleep(for: .milliseconds(300))
         let window = controller.panel
-        // On the first copy's text: below the search field and the filters.
-        let row = NSPoint(x: 260, y: window.frame.height - 149)
+        let row = try await firstRow(in: window)
         var number = 0
         func send(_ type: NSEvent.EventType, at point: NSPoint) {
             number += 1
@@ -157,19 +156,16 @@ struct ClipPreviewAndDragTests {
             if let event { NSApp.sendEvent(event) }
         }
 
-        // Once the list is laid out (a busy Mac takes a moment).
-        for _ in 0..<80 where !(window.contentView?.hitTest(row) is ClipRowPointerView) {
-            try await Task.sleep(for: .milliseconds(25))
-        }
         #expect(window.contentView?.hitTest(row) is ClipRowPointerView)
+        // A click: down and up at once (a pause could pass for holding on a busy Mac).
         send(.leftMouseDown, at: row)
-        try await Task.sleep(for: .milliseconds(60))
         send(.leftMouseUp, at: row)
         for _ in 0..<20 where copied.isEmpty { try await Task.sleep(for: .milliseconds(25)) }
         #expect(copied == ["beta"], "a click pastes")
 
+        // Held down: the preview opens (on a busy Mac the moment can come late).
         send(.leftMouseDown, at: row)
-        try await Task.sleep(for: .milliseconds(800))
+        for _ in 0..<160 where controller.model.previewing == nil { try await Task.sleep(for: .milliseconds(25)) }
         #expect(controller.model.previewing == controller.store.items[0].id, "holding shows the preview")
         send(.leftMouseUp, at: row)
         try await Task.sleep(for: .milliseconds(200))
@@ -194,17 +190,33 @@ struct ClipPreviewAndDragTests {
             windowNumber: window.windowNumber, context: nil, eventNumber: 99, clickCount: 1, pressure: 1
         ))
         let menu = try #require(pointer.menu(for: rightClick))
-        #expect(menu.items.map(\.title) == ["Copy", "Preview", "Add to Favorites", "", "Remove from History"])
+        #expect(menu.items.map(\.title) == ["Copy", "Preview", "Add to Favorites", "Add to Collection", "", "Remove from History"])
         _ = menu.items[1].target?.perform(menu.items[1].action)
         #expect(controller.model.previewing == controller.store.items[0].id)
         controller.model.closePreview()
 
         // Clicks still work afterwards.
+        // A click: down and up at once (a pause could pass for holding on a busy Mac).
         send(.leftMouseDown, at: row)
-        try await Task.sleep(for: .milliseconds(60))
         send(.leftMouseUp, at: row)
         for _ in 0..<20 where copied.count < 2 { try await Task.sleep(for: .milliseconds(25)) }
         #expect(copied == ["beta", "beta"])
     }
 }
 
+/// A point on the first copy's text in the clipboard window, once the list
+/// is laid out (a busy Mac takes a moment): found going down from the top.
+@MainActor
+func firstRow(in window: NSWindow) async throws -> NSPoint {
+    for _ in 0..<80 {
+        for fromTop in stride(from: CGFloat(60), to: window.frame.height - 60, by: 4) {
+            let point = NSPoint(x: 260, y: window.frame.height - fromTop)
+            if window.contentView?.hitTest(point) is ClipRowPointerView {
+                return NSPoint(x: point.x, y: point.y - 12)
+            }
+        }
+        try await Task.sleep(for: .milliseconds(25))
+    }
+    Issue.record("No copy in the window")
+    return .zero
+}

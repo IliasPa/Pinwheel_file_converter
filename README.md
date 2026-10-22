@@ -83,10 +83,12 @@ from, with a search field. Click one (or press Return) and it's pasted
 where you were typing (or just copied, if you prefer). Press and hold one
 (or press Space) to see all of it, or drag it straight into any app.
 **Quick buttons** under a copy paste it as plain text, with clean links
-(no tracking), on one line, in other capitals, or the text or QR code in
-a picture. A **heart** keeps a copy as a favorite for good. The **anchor** at the bottom
-keeps the window open while you work in other apps. The keys, and how many copies to keep
-(with the room they take), are in Settings › Clipboard.
+(no tracking), on one line, in other capitals, or the text or QR code in a
+picture. A **heart** keeps a copy as a favorite for good, and your own
+**collections** ("Work", "Addresses"…) keep copies together: drag a copy
+onto one. The **anchor** at the bottom keeps the window open while you
+work in other apps. The keys, and how many copies to keep (with the room
+they take), are in Settings › Clipboard.
 
 **And**
 - **Undo** at the top of the menu-bar menu: new files go to the Trash and
@@ -174,8 +176,9 @@ in a sidebar with a search field:
 - **Tools:** Compress and Resize, which tools and file actions are on
   their wheels, the Terminal app,
   and **custom actions**.
-- **Clipboard** (beta): the history on or off, its keys (⌥⌘V), and how
-  many copies it keeps.
+- **Clipboard** (beta): the history on or off, its keys (⌥⌘V), pasting or
+  just copying, how a preview opens, the quick buttons, and how many
+  copies it keeps.
 - **Text Recognition**, **Finder & Shortcuts** (and the `pinwheel`
   command), and **Advanced** (how many files at once, ffmpeg, Reset to
   Defaults).
@@ -218,7 +221,7 @@ save a copy.
 The clipboard history is kept only on this Mac, in
 `~/Library/Application Support/Pinwheel/Clipboard`. What password managers
 and other apps mark as private is never kept. Switch it off, or clear it
-(favorites stay), in Settings › Clipboard.
+(favorites and collections stay), in Settings › Clipboard.
 
 ## Troubleshooting
 
@@ -267,7 +270,7 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 375, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 390, with real conversions). GitHub runs them on every push too. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |
