@@ -66,8 +66,7 @@ struct DragCard: View {
     /// The card as a picture, for AppKit's drag.
     static func image(of item: ClipItem, store: ClipboardStore, appearance: NSAppearance) -> NSImage {
         let files = store.files(of: item)
-        let picture = store.thumbnail(of: item).flatMap { NSImage(contentsOf: $0) }
-            ?? files.first.map { NSWorkspace.shared.icon(forFile: $0.path) }
+        let picture = store.thumbnailImage(of: item) ?? files.first.map(AppIcon.fileIcon)
         let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let renderer = ImageRenderer(content: DragCard(item: item, picture: picture, count: max(files.count, 1))
             .environment(\.colorScheme, isDark ? .dark : .light))

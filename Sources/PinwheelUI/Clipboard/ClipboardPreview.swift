@@ -141,7 +141,7 @@ private struct FilesPreview: View {
                         ForEach(Array(files.enumerated()), id: \.offset) { index, file in
                             Button { model.previewFile = index } label: {
                                 HStack(spacing: 5) {
-                                    Image(nsImage: NSWorkspace.shared.icon(forFile: file.path)).resizable().frame(width: 14, height: 14)
+                                    Image(nsImage: AppIcon.fileIcon(file)).resizable().frame(width: 14, height: 14)
                                     Text(file.lastPathComponent).font(.system(size: 11, weight: .medium)).lineLimit(1)
                                 }
                                 .padding(.horizontal, 8)

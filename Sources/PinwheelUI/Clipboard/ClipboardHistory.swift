@@ -45,6 +45,10 @@ struct ClipItem: Codable, Identifiable, Equatable, Sendable {
     /// Tells copies of the same thing apart.
     var fingerprint: String
     var byteCount: Int
+    /// Whether a picture has words, or a QR code or barcode, in it: looked
+    /// at once, in the background (nil until then).
+    var pictureHasText: Bool?
+    var pictureHasCode: Bool?
 }
 
 /// Copies put together under a name. Like favorites, they're kept for good.
@@ -59,16 +63,27 @@ struct ClipCollection: Codable, Identifiable, Equatable, Sendable {
 /// first. Anything an app marks as private (password managers do) is left out.
 @Observable
 final class ClipboardStore {
-    private(set) var items: [ClipItem] = []
-    private(set) var collections: [ClipCollection] = []
+    private(set) var items: [ClipItem] = [] {
+        didSet { revision &+= 1 }
+    }
+    private(set) var collections: [ClipCollection] = [] {
+        didSet { revision &+= 1 }
+    }
+    /// Goes up with every change, so what's shown is worked out again only then.
+    private(set) var revision = 0
     /// Copies kept besides the favorites; older ones go.
     var limit = 200 {
         didSet { if limit < oldValue { trim(); save() } }
     }
 
     @ObservationIgnored let folder: URL
-    /// Texts read from disk, kept (a copy never changes).
+    // Read from disk once and kept (a copy never changes): what the list
+    // shows for each row, so moving the pointer over it costs nothing.
     @ObservationIgnored private var texts: [UUID: String] = [:]
+    @ObservationIgnored private var thumbnails: [UUID: NSImage] = [:]
+    @ObservationIgnored private var fileLists: [UUID: [URL]] = [:]
+    /// What a search looks in: the copy and its app, without capitals or accents.
+    @ObservationIgnored private var searchTexts: [UUID: String] = [:]
 
     init(folder: URL = ClipboardStore.defaultFolder) {
         self.folder = folder
@@ -180,6 +195,7 @@ final class ClipboardStore {
     func add(_ contents: [[(type: String, data: Data)]], appID: String?, appName: String?, date: Date = Date()) -> ClipItem? {
         guard let (kind, preview, fingerprint) = Self.describe(contents) else { return nil }
         if let index = items.firstIndex(where: { $0.fingerprint == fingerprint }) {
+            searchTexts[items[index].id] = nil  // the app may be another one now
             var again = items.remove(at: index)
             again.date = date
             again.appID = appID ?? again.appID
@@ -217,9 +233,9 @@ final class ClipboardStore {
     func toggleFavorite(_ item: ClipItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index].isFavorite.toggle()
-        save()
         // Taken off the favorites, it counts toward the limit again.
         trim()
+        save()
     }
 
     func remove(_ item: ClipItem) {
@@ -337,14 +353,60 @@ final class ClipboardStore {
         item.kind == .image ? folder(of: item).appendingPathComponent("thumbnail.png") : nil
     }
 
+    /// The small picture, loaded.
+    func thumbnailImage(of item: ClipItem) -> NSImage? {
+        if let image = thumbnails[item.id] { return image }
+        guard let image = thumbnail(of: item).flatMap(NSImage.init(contentsOf:)) else { return nil }
+        if thumbnails.count > 120 { thumbnails.removeAll() }
+        thumbnails[item.id] = image
+        return image
+    }
+
     /// The files of a copy of files.
     func files(of item: ClipItem) -> [URL] {
         guard item.kind == .file else { return [] }
-        return item.contents.enumerated().compactMap { itemIndex, types in
+        if let files = fileLists[item.id] { return files }
+        let files = item.contents.enumerated().compactMap { itemIndex, types in
             types.firstIndex(of: UTType.fileURL.identifier)
                 .flatMap { try? Data(contentsOf: folder(of: item).appendingPathComponent("\(itemIndex)-\($0)")) }
                 .flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
         }
+        if fileLists.count > 300 { fileLists.removeAll() }
+        fileLists[item.id] = files
+        return files
+    }
+
+    /// The picture to look at for words or a code: a copied picture, or a
+    /// single picture file.
+    func picture(of item: ClipItem) -> URL? {
+        if let file = imageFile(of: item) { return file }
+        let files = files(of: item)
+        guard files.count == 1, UTType(filenameExtension: files[0].pathExtension)?.conforms(to: .image) == true else { return nil }
+        return files[0]
+    }
+
+    /// What was found in a picture: kept beside it, so its buttons paste at once.
+    func setPictureFindings(of item: ClipItem, text: String, codes: [String]) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let place = folder(of: item)
+        try? FileManager.default.createDirectory(at: place, withIntermediateDirectories: true)
+        try? Data(text.utf8).write(to: place.appendingPathComponent("picture-text.txt"))
+        try? Data(codes.joined(separator: "\n").utf8).write(to: place.appendingPathComponent("picture-codes.txt"))
+        items[index].pictureHasText = !text.isEmpty
+        items[index].pictureHasCode = !codes.isEmpty
+        save()
+    }
+
+    /// The words found in a picture ("" when there were none; nil when it
+    /// hasn't been looked at).
+    func pictureText(of item: ClipItem) -> String? {
+        (try? Data(contentsOf: folder(of: item).appendingPathComponent("picture-text.txt"))).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// What the QR codes and barcodes found in a picture say, one a line.
+    func pictureCodes(of item: ClipItem) -> String? {
+        (try? Data(contentsOf: folder(of: item).appendingPathComponent("picture-codes.txt"))).map { String(decoding: $0, as: UTF8.self) }
     }
 
     /// The whole text of a text or link (the preview is shortened); from
@@ -357,8 +419,11 @@ final class ClipboardStore {
         }
         guard let text = data(.utf8PlainText).flatMap({ String(data: $0, encoding: .utf8) })
                 ?? data(.rtf).flatMap({ NSAttributedString(rtf: $0, documentAttributes: nil)?.string }) else { return nil }
-        if texts.count > 400 { texts.removeAll() }
-        texts[item.id] = text
+        // Kept in memory unless it's very long (it's read again then).
+        if text.utf8.count <= 100_000 {
+            if texts.count > 400 { texts.removeAll() }
+            texts[item.id] = text
+        }
         return text
     }
 
@@ -369,16 +434,29 @@ final class ClipboardStore {
     func matching(
         search: String = "", kind: ClipKind? = nil, appID: String? = nil, favoritesOnly: Bool = false, collection: ClipCollection.ID? = nil
     ) -> [ClipItem] {
-        let words = search.split(separator: " ").map(String.init)
+        let words = search.split(separator: " ").map { Self.folded(String($0)) }
         let inCollection = collection.map { id in Set(collections.first { $0.id == id }?.items ?? []) }
         return items.filter { item in
             if favoritesOnly && !item.isFavorite { return false }
             if let inCollection, !inCollection.contains(item.id) { return false }
             if let kind, item.kind != kind { return false }
             if let appID, item.appID != appID { return false }
-            let haystack = item.preview + " " + (item.appName ?? "")
-            return words.allSatisfy { haystack.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+            guard !words.isEmpty else { return true }
+            let haystack = searchText(of: item)
+            return words.allSatisfy { haystack.contains($0) }
         }
+    }
+
+    private func searchText(of item: ClipItem) -> String {
+        if let text = searchTexts[item.id] { return text }
+        let text = Self.folded(item.preview + " " + (item.appName ?? ""))
+        searchTexts[item.id] = text
+        return text
+    }
+
+    /// Without capitals or accents: "Αθήνα" is found by "αθηνα".
+    private static func folded(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
     }
 
     // MARK: - Space

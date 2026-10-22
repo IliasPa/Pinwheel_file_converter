@@ -468,7 +468,7 @@ struct SettingsView: View {
                 ForEach(ClipPreviewTrigger.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             .disabled(!settings.clipboardEnabled)
-            Toggle("Quick buttons under each copy", isOn: $settings.clipboardActions)
+            Toggle("Quick buttons", isOn: $settings.clipboardActions)
                 .disabled(!settings.clipboardEnabled)
             Picker("Keep the last", selection: $settings.clipboardLimit) {
                 ForEach(SettingsStore.clipboardLimits, id: \.self) { limit in

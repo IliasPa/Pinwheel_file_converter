@@ -50,7 +50,7 @@ enum ClipAction: String, CaseIterable, Identifiable {
         case .plainText: "Pastes it without its formatting"
         case .cleanLinks: "Pastes it with the tracking taken out of its links (utm_source, fbclid…)"
         case .oneLine: "Pastes its lines joined into one"
-        case .tidySpaces: "Pastes it without doubled spaces, spaces at line ends or extra blank lines"
+        case .tidySpaces: "Pastes it without doubled spaces, spaces at line ends or extra blank lines (indents stay)"
         case .uppercase, .lowercase, .titleCase, .sentenceCase: "Pastes it in other capitals"
         case .textInImage: "Reads the text in the picture and pastes it"
         case .readCode: "Reads the QR code or barcode in the picture and pastes what it says"
@@ -74,27 +74,47 @@ enum ClipAction: String, CaseIterable, Identifiable {
 }
 
 enum ClipActions {
-    /// The buttons for a copy: only those that would change something.
+    /// How much of a long text is looked at to choose its buttons (the
+    /// button then changes all of it).
+    static let lookLimit = 50_000
+
+    /// The buttons for a copy: only those that would change something. A
+    /// picture's show once it's been looked at, and only for what's in it.
     static func available(for item: ClipItem, store: ClipboardStore) -> [ClipAction] {
         switch item.kind {
         case .text, .link:
-            guard let text = store.text(of: item) else { return [] }
+            guard let whole = store.text(of: item) else { return [] }
+            let text = whole.count > lookLimit ? String(whole.prefix(lookLimit)) : whole
             var actions: [ClipAction] = []
             if isFormatted(item) { actions.append(.plainText) }
             if cleanLinks(text) != text { actions.append(.cleanLinks) }
             if item.kind == .text {
-                if oneLine(text) != text && text.contains(where: \.isNewline) { actions.append(.oneLine) }
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).contains(where: \.isNewline) { actions.append(.oneLine) }
                 if tidySpaces(text) != text { actions.append(.tidySpaces) }
                 if text.contains(where: \.isLetter) { actions += ClipAction.cases }
             }
             return actions
         case .image:
-            return [.textInImage, .readCode]
+            return pictureActions(item)
         case .file:
-            let files = store.files(of: item)
-            let picture = files.count == 1 && UTType(filenameExtension: files[0].pathExtension)?.conforms(to: .image) == true
-            return (picture ? [.textInImage, .readCode] : []) + [.filePath, .fileName]
+            return (store.picture(of: item) != nil ? pictureActions(item) : []) + [.filePath, .fileName]
         }
+    }
+
+    private static func pictureActions(_ item: ClipItem) -> [ClipAction] {
+        (item.pictureHasText == true ? [.textInImage] : []) + (item.pictureHasCode == true ? [.readCode] : [])
+    }
+
+    /// Whether a picture still needs looking at for words and codes.
+    static func needsLook(_ item: ClipItem, store: ClipboardStore) -> Bool {
+        (item.pictureHasText == nil || item.pictureHasCode == nil) && (item.kind == .image || item.kind == .file) && store.picture(of: item) != nil
+    }
+
+    /// The words and codes in a picture, read on this Mac.
+    static func look(at picture: URL, recognition: TextRecognition) async -> (text: String, codes: [String]) {
+        let text = (try? await PictureText.read(picture, recognition: recognition)) ?? ""
+        let codes = (try? await CodeReader.read(picture).map(\.text)) ?? []
+        return (text, codes)
     }
 
     /// What the button pastes; nil or empty when there's nothing (a picture without text).
@@ -109,19 +129,18 @@ enum ClipActions {
         case .lowercase: return text?.localizedLowercase
         case .titleCase: return text?.localizedCapitalized
         case .sentenceCase: return text.map(sentenceCase)
+        // Read when it was copied; read now only if that hasn't happened.
         case .textInImage:
-            guard let picture = picture(of: item, store: store) else { return nil }
+            if let found = store.pictureText(of: item) { return found }
+            guard let picture = store.picture(of: item) else { return nil }
             return try await PictureText.read(picture, recognition: recognition)
         case .readCode:
-            guard let picture = picture(of: item, store: store) else { return nil }
+            if let found = store.pictureCodes(of: item) { return found }
+            guard let picture = store.picture(of: item) else { return nil }
             return try await CodeReader.read(picture).map(\.text).joined(separator: "\n")
         case .filePath: return store.files(of: item).map(\.path).joined(separator: "\n")
         case .fileName: return store.files(of: item).map(\.lastPathComponent).joined(separator: "\n")
         }
-    }
-
-    private static func picture(of item: ClipItem, store: ClipboardStore) -> URL? {
-        store.imageFile(of: item) ?? store.files(of: item).first
     }
 
     /// Copied with formatting (or as a rich link), not just as plain text.
@@ -165,6 +184,15 @@ enum ClipActions {
     }
 
     private static func cleanLink(_ link: String) -> String? {
+        // "www.example.com/?utm_source=…" too: read with a scheme, given back without.
+        // (A scheme is "https:" or "mailto:", not the "example.com:" of a port.)
+        let hasScheme = link.range(of: "^[A-Za-z][A-Za-z0-9+.-]*:(?![0-9])", options: .regularExpression) != nil
+        guard !hasScheme || link.lowercased().hasPrefix("http") else { return nil }
+        guard let cleaned = cleanWebLink(hasScheme ? link : "http://" + link) else { return nil }
+        return hasScheme ? cleaned : String(cleaned.dropFirst("http://".count))
+    }
+
+    private static func cleanWebLink(_ link: String) -> String? {
         guard var components = URLComponents(string: link), let scheme = components.scheme?.lowercased(),
               scheme == "http" || scheme == "https", let items = components.percentEncodedQueryItems else { return nil }
         let host = components.host?.lowercased() ?? ""
@@ -187,13 +215,19 @@ enum ClipActions {
             .replacing(/[ \t]{2,}/, with: " ")
     }
 
-    /// No doubled spaces or tabs, no spaces at the ends of lines, at most one blank line in a row.
+    /// No doubled spaces, no spaces at the ends of lines, at most one blank
+    /// line in a row. Indents stay, and so do tabs (cells copied from a
+    /// spreadsheet are kept apart by them).
     static func tidySpaces(_ text: String) -> String {
-        text.components(separatedBy: .newlines)
-            .map { $0.replacing(/[ \t\u{00A0}]+/, with: " ").trimmingCharacters(in: .whitespaces) }
+        text.components(separatedBy: "\n")
+            .map { line -> String in
+                var line = Substring(line)
+                while let last = line.last, last == " " || last == "\t" || last == "\u{00A0}" { line.removeLast() }
+                let indent = line.prefix { $0 == " " || $0 == "\t" }
+                return String(indent) + String(line.dropFirst(indent.count)).replacing(/[ \u{00A0}]{2,}/, with: " ")
+            }
             .joined(separator: "\n")
             .replacing(/\n{3,}/, with: "\n\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Lowercase, with a capital starting each sentence (and each line).
@@ -247,28 +281,28 @@ struct ClipActionBar: View {
     var body: some View {
         HStack(spacing: 5) {
             ForEach(actions.filter { !$0.isCase }) { action in
-                Button { model.onAction(item, action) } label: {
-                    chip(action.title, symbol: action.symbol, working: model.working == ClipWork(item: item.id, action: action))
-                }
-                .buttonStyle(.plain)
-                .help(action.help)
+                chip(action.title, symbol: action.symbol, working: model.working == ClipWork(item: item.id, action: action))
+                    .overlay { ClickArea(label: action.title, help: action.help) { _ in model.onAction(item, action) } }
             }
             if actions.contains(where: \.isCase) {
-                Menu {
-                    ForEach(ClipAction.cases) { action in
-                        Button(action.title) { model.onAction(item, action) }
+                chip("Aa", symbol: nil, working: model.working.map { $0.item == item.id && $0.action.isCase } ?? false)
+                    .overlay {
+                        ClickArea(label: "Aa", help: ClipAction.uppercase.help) { view in
+                            Self.caseMenu(for: item, model: model).popUp(positioning: nil, at: NSPoint(x: 0, y: -4), in: view)
+                        }
                     }
-                } label: {
-                    chip("Aa", symbol: nil, working: model.working.map { $0.item == item.id && $0.action.isCase } ?? false)
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help(ClipAction.uppercase.help)
             }
         }
-        .disabled(model.working != nil)
+        .opacity(model.working == nil || model.working?.item == item.id ? 1 : 0.5)
+    }
+
+    /// UPPERCASE, lowercase, Title Case, Sentence case.
+    static func caseMenu(for item: ClipItem, model: ClipboardPanelModel) -> NSMenu {
+        let menu = NSMenu()
+        for action in ClipAction.cases {
+            menu.addItem(actionMenuItem(action.title) { model.onAction(item, action) })
+        }
+        return menu
     }
 
     private func chip(_ title: String, symbol: String?, working: Bool) -> some View {
@@ -284,6 +318,58 @@ struct ClipActionBar: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(Capsule().fill(Color.primary.opacity(0.07)))
-        .contentShape(Capsule())
+    }
+}
+
+/// Where a small button takes its click (AppKit, like the rows): the first
+/// click counts even when the window isn't in front, and VoiceOver can find
+/// and press it.
+struct ClickArea: NSViewRepresentable {
+    let label: String
+    let help: String
+    let action: (NSView) -> Void
+
+    func makeNSView(context: Context) -> ClickAreaView {
+        let view = ClickAreaView()
+        updateNSView(view, context: context)
+        return view
+    }
+
+    func updateNSView(_ view: ClickAreaView, context: Context) {
+        view.label = label
+        view.toolTip = help
+        view.action = action
+    }
+}
+
+final class ClickAreaView: NSView {
+    var label = ""
+    var action: (NSView) -> Void = { _ in }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        showPressed(true)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        showPressed(false)
+        // Let go outside: not pressed.
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { action(self) }
+    }
+
+    private func showPressed(_ pressed: Bool) {
+        wantsLayer = true
+        layer?.cornerRadius = bounds.height / 2
+        layer?.backgroundColor = pressed ? NSColor.labelColor.withAlphaComponent(0.15).cgColor : nil
+    }
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { label }
+
+    override func accessibilityPerformPress() -> Bool {
+        action(self)
+        return true
     }
 }

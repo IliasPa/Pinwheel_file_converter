@@ -23,6 +23,11 @@ final class ClipboardController {
     private var isSuspended = false
     /// Anchored, it's out of the way for a paste and comes back after.
     private var isSteppingAside = false
+    /// Pictures waiting to be looked at for words and codes, and those
+    /// already queued this time (each is looked at once).
+    private var lookQueue: [ClipItem.ID] = []
+    private var queuedLooks: Set<ClipItem.ID> = []
+    private var isLooking = false
     private(set) lazy var panel: ClipboardPanel = makePanel()
     private let dragSource = ClipDragSource()
 
@@ -36,6 +41,7 @@ final class ClipboardController {
         model.onClose = { [weak self] in self?.hide() }
         model.onDragOut = { [weak self] item, view, event in self?.dragOut(item, from: view, event: event) }
         model.onAction = { [weak self] item, action in self?.run(action, on: item) }
+        model.onLook = { [weak self] item in self?.look(at: item) }
         model.onOpenSettings = { [weak self] in
             self?.hide()
             self?.onOpenSettings()
@@ -59,8 +65,20 @@ final class ClipboardController {
             timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.checkClipboard() }
             }
+            // Made a moment after launch, so the first ⌥⌘V opens it at once.
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                self?.prepareWindow()
+            }
         }
         registerShortcut()
+    }
+
+    /// Makes the window and lays out its first copies, out of sight.
+    func prepareWindow() {
+        guard settings.clipboardEnabled, !panel.isVisible else { return }
+        model.prepare()
+        panel.contentView?.layoutSubtreeIfNeeded()
     }
 
     /// While Settings records a new shortcut, the old one mustn't open the window.
@@ -83,7 +101,29 @@ final class ClipboardController {
         seenChangeCount = count
         guard settings.clipboardEnabled, let contents = ClipboardStore.read(pasteboard) else { return }
         let app = NSWorkspace.shared.frontmostApplication
-        store.add(contents, appID: app?.bundleIdentifier, appName: app?.localizedName)
+        if let added = store.add(contents, appID: app?.bundleIdentifier, appName: app?.localizedName) {
+            look(at: added)
+        }
+    }
+
+    /// A picture is looked at once, in the background, for words and for a
+    /// QR code or barcode: its buttons then show only for what's there, and
+    /// paste at once. One picture at a time; only while the buttons are on.
+    func look(at item: ClipItem) {
+        guard settings.clipboardActions, !queuedLooks.contains(item.id), ClipActions.needsLook(item, store: store) else { return }
+        queuedLooks.insert(item.id)
+        lookQueue.append(item.id)
+        guard !isLooking else { return }
+        isLooking = true
+        Task {
+            while !lookQueue.isEmpty {
+                let id = lookQueue.removeFirst()
+                guard let item = store.items.first(where: { $0.id == id }), let picture = store.picture(of: item) else { continue }
+                let found = await ClipActions.look(at: picture, recognition: settings.resolvedTextRecognition)
+                store.setPictureFindings(of: item, text: found.text, codes: found.codes)
+            }
+            isLooking = false
+        }
     }
 
     /// On the clipboard and, unless Settings says just copy, pasted where
@@ -118,8 +158,9 @@ final class ClipboardController {
             pasteboard.setString(text, forType: .string)
             seenChangeCount = pasteboard.changeCount
             let kept = store.add([[(type: UTType.utf8PlainText.identifier, data: Data(text.utf8))]], appID: item.appID, appName: item.appName)
-            // Closed meanwhile: you've moved on, so it's only copied.
-            guard isShown else { return }
+            // Closed meanwhile: you've moved on, so it's only copied. (Out
+            // of the way for a paste, anchored, isn't closed.)
+            guard isShown || isSteppingAside else { return }
             finishChoosing(kept?.id ?? item.id)
         }
     }
@@ -341,6 +382,8 @@ final class ClipboardPanelModel {
     /// Where a copy just landed (it bounces).
     var landed: ClipDropTarget?
     var selection: ClipItem.ID?
+    /// Where the list scrolls to: the copy chosen with the keyboard.
+    var scrollTarget: ClipItem.ID?
     /// Flashes on the row just copied.
     var justCopied: ClipItem.ID?
     /// Why the shortcut couldn't be set up, for Settings (nil when it works).
@@ -372,6 +415,8 @@ final class ClipboardPanelModel {
     /// Starts dragging a copy out, from where the pointer went down on it.
     var onDragOut: (ClipItem, NSView, NSEvent) -> Void = { _, _, _ in }
     var onAction: (ClipItem, ClipAction) -> Void = { _, _ in }
+    /// A picture's row came into view: look at it if that hasn't happened.
+    var onLook: (ClipItem) -> Void = { _ in }
 
     init(store: ClipboardStore) {
         self.store = store
@@ -403,6 +448,12 @@ final class ClipboardPanelModel {
 
     func selectFirst() {
         selection = visible.first?.id
+        scrollTarget = selection
+    }
+
+    /// The pointer moved onto a copy.
+    func hover(_ item: ClipItem) {
+        if selection != item.id { selection = item.id }
     }
 
     func moveSelection(by step: Int) {
@@ -410,11 +461,14 @@ final class ClipboardPanelModel {
         guard !shown.isEmpty else { return }
         let index = shown.firstIndex { $0.id == selection } ?? (step > 0 ? -1 : shown.count)
         selection = shown[min(max(index + step, 0), shown.count - 1)].id
+        scrollTarget = selection
         // The preview follows, as in Quick Look.
         if previewing != nil { previewing = selection }
     }
 
     func actions(for item: ClipItem) -> [ClipAction] {
+        // A picture's change once it's been looked at (and are quick to work out).
+        guard item.kind == .text || item.kind == .link else { return ClipActions.available(for: item, store: store) }
         if let found = actionsFound[item.id] { return found }
         let found = ClipActions.available(for: item, store: store)
         if actionsFound.count > 500 { actionsFound.removeAll() }
@@ -480,7 +534,7 @@ struct ClipboardView: View {
             if shown.isEmpty {
                 empty
             } else {
-                list(shown)
+                ClipList(shown: shown, model: model, holdPreviews: settings.clipboardPreview.byHolding, showsActions: settings.clipboardActions)
             }
             Divider()
             footer(shown.count)
@@ -600,23 +654,6 @@ struct ClipboardView: View {
         .buttonStyle(.plain)
     }
 
-    private func list(_ shown: [ClipItem]) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(shown) { item in
-                        ClipRow(item: item, model: model, holdPreviews: settings.clipboardPreview.byHolding, showsActions: settings.clipboardActions)
-                            .id(item.id)
-                    }
-                }
-                .padding(8)
-            }
-            .onChange(of: model.selection) {
-                if let selection = model.selection { proxy.scrollTo(selection) }
-            }
-        }
-    }
-
     private var empty: some View {
         let collection = model.store.collections.first { $0.id == model.collectionID }
         return VStack(spacing: 8) {
@@ -728,15 +765,41 @@ struct OuterShadow: View {
     }
 }
 
+/// The copies. Its own view, so the pointer moving from copy to copy
+/// redraws just the two rows that change, not the whole window.
+private struct ClipList: View {
+    let shown: [ClipItem]
+    var model: ClipboardPanelModel
+    var holdPreviews: Bool
+    var showsActions: Bool
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(shown) { item in
+                        ClipRow(item: item, model: model, isSelected: model.selection == item.id, holdPreviews: holdPreviews, showsActions: showsActions)
+                            .id(item.id)
+                    }
+                }
+                .padding(8)
+            }
+            // Only for the keyboard: a copy under the pointer is in view.
+            .onChange(of: model.scrollTarget) {
+                if let target = model.scrollTarget { proxy.scrollTo(target) }
+            }
+        }
+    }
+}
+
 private struct ClipRow: View {
     let item: ClipItem
     var model: ClipboardPanelModel
+    let isSelected: Bool
     /// Pressing and holding shows the preview (Settings).
     var holdPreviews: Bool
     /// The small buttons under it (Settings).
     var showsActions: Bool
-
-    private var isSelected: Bool { model.selection == item.id }
     private var isDragged: Bool { model.dragging == item.id }
     private var wasDropped: Bool { model.justDropped == item.id }
 
@@ -766,7 +829,8 @@ private struct ClipRow: View {
         .opacity(isDragged ? 0.5 : 1)
         .animation(.spring(response: 0.35, dampingFraction: 0.55), value: isDragged)
         .animation(.spring(response: 0.3, dampingFraction: 0.45), value: wasDropped)
-        .onHover { if $0 { model.selection = item.id } }
+        .onHover { if $0 { model.hover(item) } }
+        .onAppear { if showsActions { model.onLook(item) } }
         .help(model.store.text(of: item).map { String($0.prefix(600)) } ?? item.preview)
     }
 
@@ -818,7 +882,7 @@ private struct ClipRow: View {
                     onClick: { model.onCopy(item) },
                     onHold: { model.preview(item) },
                     onDragOut: { view, event in model.onDragOut(item, view, event) },
-                    onHover: { model.selection = item.id },
+                    onHover: { model.hover(item) },
                     menu: menu
                 )
             }
@@ -862,7 +926,7 @@ private struct ClipRow: View {
 
     @ViewBuilder
     private var leading: some View {
-        if let thumbnail = model.store.thumbnail(of: item), let image = NSImage(contentsOf: thumbnail) {
+        if let image = model.store.thumbnailImage(of: item) {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
@@ -870,7 +934,7 @@ private struct ClipRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         } else if let file = model.store.files(of: item).first {
             // As Finder shows it (several: the first one's).
-            Image(nsImage: NSWorkspace.shared.icon(forFile: file.path)).resizable().frame(width: 36, height: 36)
+            Image(nsImage: AppIcon.fileIcon(file)).resizable().frame(width: 36, height: 36)
         } else {
             Image(systemName: item.kind.symbolName)
                 .font(.system(size: 16, weight: .medium))
@@ -892,6 +956,17 @@ struct AppIcon: View {
         } else {
             Image(systemName: "app.dashed").resizable().foregroundStyle(.secondary)
         }
+    }
+
+    private static var fileIcons: [String: NSImage] = [:]
+
+    /// A file's icon, as Finder shows it (kept once found).
+    static func fileIcon(_ file: URL) -> NSImage {
+        if let icon = fileIcons[file.path] { return icon }
+        let icon = NSWorkspace.shared.icon(forFile: file.path)
+        if fileIcons.count > 300 { fileIcons.removeAll() }
+        fileIcons[file.path] = icon
+        return icon
     }
 
     static func icon(for bundleID: String) -> NSImage? {

@@ -3,6 +3,32 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7.6 (beta) — 2026-10-23
+
+**Changed**
+- **Quick buttons show only when they'd do something:**
+  - **Text in Image** and **Read Code**: a copied picture (or picture file)
+    is read once, in the background, right after it's copied. The buttons
+    then show only when there are words, or a QR code or barcode, in it,
+    and they paste at once instead of reading the picture then.
+  - **Tidy Spaces** keeps indents and tabs (code, cells copied from a
+    spreadsheet) and no longer shows for a copy that just ends with a line
+    break. **One Line** shows only for two lines or more.
+  - **Clean Links** also cleans links written without https://
+    (www.example.com/…?utm_source=…).
+- The quick buttons take the first click even when the anchored history
+  isn't in front, look pressed when clicked, and VoiceOver can find and
+  press them. **Aa** opens a regular menu.
+- Settings › Clipboard: the switch is just **Quick buttons**.
+- **Faster.** With 1,000 copies, moving the pointer over the list is about
+  10 times quicker, a search about 5 times, and the history opens in
+  5–10 ms (the first time after Pinwheel starts, in about 65 ms: it's
+  prepared a moment after launch). Pictures, file icons and texts in the
+  list are read from disk once, not on every redraw.
+
+**Fixed**
+- Anchored, a quick button pressed just after a paste only copied.
+
 ## v1.7.5 (beta) — 2026-10-22
 
 **New**

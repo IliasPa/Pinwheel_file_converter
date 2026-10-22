@@ -55,11 +55,17 @@ struct ClipActionTests {
         #expect(clean("https://example.com/q?si=1&q=caf%C3%A9") == "https://example.com/q?si=1&q=caf%C3%A9")
         #expect(clean("No links here.") == "No links here.")
         #expect(clean("mailto:me@example.com?utm_source=x") == "mailto:me@example.com?utm_source=x")
+        // Written without https:// (v1.7.6).
+        #expect(clean("See www.example.com/a?utm_source=x&id=2.") == "See www.example.com/a?id=2.")
+        #expect(clean("example.com:8080/?fbclid=1") == "example.com:8080/")
     }
 
     @Test func changingText() {
         #expect(ClipActions.oneLine("First line\n  second   line \n\nthird") == "First line second line third")
-        #expect(ClipActions.tidySpaces("  Too   many\tspaces  \n\n\n\nEnd ") == "Too many spaces\n\nEnd")
+        // Indents and tabs stay (code, cells from a spreadsheet); a line break at the end is nothing to tidy (v1.7.6).
+        #expect(ClipActions.tidySpaces("  Too   many\tspaces  \n\n\n\nEnd ") == "  Too many\tspaces\n\nEnd")
+        #expect(ClipActions.tidySpaces("func a() {\n    return 1\n}\n") == "func a() {\n    return 1\n}\n")
+        #expect(ClipActions.tidySpaces("Name\t\tCity") == "Name\t\tCity")
         #expect(ClipActions.sentenceCase("HELLO THERE. HOW ARE YOU? fine; thanks\nnew LINE") == "Hello there. How are you? Fine; thanks\nNew line")
         // In Greek, ";" ends a question.
         #expect(ClipActions.sentenceCase("ΤΙ ΚΑΝΕΙΣ; ΚΑΛΑ") == "Τι κανεις; Καλα")
@@ -76,8 +82,12 @@ struct ClipActionTests {
         #expect(link.kind == .link && ClipActions.available(for: link, store: store) == [.cleanLinks])
         let messy = try add(store, [(.utf8PlainText, Data("a  b".utf8))])
         #expect(ClipActions.available(for: messy, store: store) == [.tidySpaces] + ClipAction.cases)
-        let picture = try add(store, [(.png, png(textPicture("Hi")))])
-        #expect(ClipActions.available(for: picture, store: store) == [.textInImage, .readCode])
+        // A picture's buttons wait until it's been looked at, then show for what's in it (v1.7.6).
+        var picture = try add(store, [(.png, png(textPicture("Hi")))])
+        #expect(ClipActions.available(for: picture, store: store).isEmpty && ClipActions.needsLook(picture, store: store))
+        store.setPictureFindings(of: picture, text: "Hi", codes: [])
+        picture = try #require(store.items.first { $0.id == picture.id })
+        #expect(ClipActions.available(for: picture, store: store) == [.textInImage] && !ClipActions.needsLook(picture, store: store))
 
         let board = NSPasteboard(name: NSPasteboard.Name("PinwheelTests-\(UUID().uuidString)"))
         board.clearContents()
@@ -86,8 +96,12 @@ struct ClipActionTests {
         #expect(ClipActions.available(for: files, store: store) == [.filePath, .fileName])
         board.clearContents()
         board.writeObjects([try scratch.image("one.png")] as [NSURL])
-        let photo = try keep(board, in: store)
-        #expect(ClipActions.available(for: photo, store: store) == [.textInImage, .readCode, .filePath, .fileName])
+        var photo = try keep(board, in: store)
+        #expect(ClipActions.available(for: photo, store: store) == [.filePath, .fileName] && ClipActions.needsLook(photo, store: store))
+        store.setPictureFindings(of: photo, text: "", codes: ["https://example.com"])
+        photo = try #require(store.items.first { $0.id == photo.id })
+        #expect(ClipActions.available(for: photo, store: store) == [.readCode, .filePath, .fileName])
+        #expect(try await ClipActions.text(of: .readCode, for: photo, store: store, recognition: TextRecognition()) == "https://example.com")
         let path = try await ClipActions.text(of: .filePath, for: photo, store: store, recognition: TextRecognition())
         #expect(path == scratch.url.appendingPathComponent("one.png").path)
     }
