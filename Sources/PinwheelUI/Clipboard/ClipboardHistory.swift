@@ -226,24 +226,37 @@ final class ClipboardStore {
 
     /// Puts it back on the clipboard exactly as it was copied, and moves it to the top.
     func copy(_ item: ClipItem, to pasteboard: NSPasteboard = .general) {
-        let place = folder(of: item)
-        let restored = item.contents.enumerated().map { itemIndex, types -> NSPasteboardItem in
-            let restoredItem = NSPasteboardItem()
-            for (typeIndex, type) in types.enumerated() {
-                if let data = try? Data(contentsOf: place.appendingPathComponent("\(itemIndex)-\(typeIndex)")) {
-                    restoredItem.setData(data, forType: NSPasteboard.PasteboardType(type))
-                }
-            }
-            return restoredItem
-        }
         pasteboard.clearContents()
-        pasteboard.writeObjects(restored)
+        pasteboard.writeObjects(pasteboardItems(of: item))
         if let index = items.firstIndex(where: { $0.id == item.id }) {
             var moved = items.remove(at: index)
             moved.date = Date()
             items.insert(moved, at: 0)
             save()
         }
+    }
+
+    /// The copy as it was on the clipboard, every type of every item (to
+    /// copy it again, or drag it into an app).
+    func pasteboardItems(of item: ClipItem) -> [NSPasteboardItem] {
+        let place = folder(of: item)
+        return item.contents.enumerated().map { itemIndex, types -> NSPasteboardItem in
+            let restored = NSPasteboardItem()
+            for (typeIndex, type) in types.enumerated() {
+                if let data = try? Data(contentsOf: place.appendingPathComponent("\(itemIndex)-\(typeIndex)")) {
+                    restored.setData(data, forType: NSPasteboard.PasteboardType(type))
+                }
+            }
+            return restored
+        }
+    }
+
+    /// The whole picture of an image (the list shows a small one).
+    func imageData(of item: ClipItem) -> Data? {
+        guard item.kind == .image, let index = item.contents.first?.firstIndex(where: { UTType($0)?.conforms(to: .image) == true }) else {
+            return nil
+        }
+        return try? Data(contentsOf: folder(of: item).appendingPathComponent("0-\(index)"))
     }
 
     /// The small picture for an image in the list.

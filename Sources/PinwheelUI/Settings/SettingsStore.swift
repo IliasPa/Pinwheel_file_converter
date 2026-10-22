@@ -41,6 +41,22 @@ enum TextRecognitionChoice: String, CaseIterable {
     }
 }
 
+/// What opens a copy's preview in the clipboard history.
+enum ClipPreviewTrigger: String, CaseIterable {
+    case holdOrSpace, hold, space
+
+    var title: String {
+        switch self {
+        case .holdOrSpace: "Press and hold, or Space"
+        case .hold: "Press and hold"
+        case .space: "Space"
+        }
+    }
+
+    var byHolding: Bool { self != .space }
+    var bySpace: Bool { self != .hold }
+}
+
 /// Saved rename rules, offered again in the Rename window.
 struct RenamePreset: Codable, Equatable, Identifiable {
     var id = UUID()
@@ -64,7 +80,7 @@ final class SettingsStore {
         case wheelKeys, keepWheelOpen, hiddenActions, terminalApp
         case webpQuality, avifQuality
         case textRecognition
-        case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes
+        case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes, clipboardPreview
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -157,6 +173,8 @@ final class SettingsStore {
     static let clipboardLimits = [50, 100, 200, 500, 1000]
     /// Choosing a copy pastes it where you're typing (else it's only copied).
     var clipboardPastes: Bool { didSet { save(clipboardPastes, .clipboardPastes) } }
+    /// What opens a copy's preview.
+    var clipboardPreview: ClipPreviewTrigger { didSet { save(clipboardPreview.rawValue, .clipboardPreview) } }
     /// The clipboard history follows its settings at once.
     @ObservationIgnored var onClipboardChange: () -> Void = {}
 
@@ -209,6 +227,7 @@ final class SettingsStore {
             .clipboardShortcut: KeyShortcut.clipboard.stored,
             .clipboardLimit: 200,
             .clipboardPastes: true,
+            .clipboardPreview: ClipPreviewTrigger.holdOrSpace.rawValue,
         ]
     }
 
@@ -263,6 +282,7 @@ final class SettingsStore {
         clipboardShortcut = KeyShortcut(stored: defaults.dictionary(forKey: Key.clipboardShortcut.rawValue)) ?? .clipboard
         clipboardLimit = defaults.integer(forKey: Key.clipboardLimit.rawValue)
         clipboardPastes = defaults.bool(forKey: Key.clipboardPastes.rawValue)
+        clipboardPreview = ClipPreviewTrigger(rawValue: string(.clipboardPreview)) ?? .holdOrSpace
         placeNewTools()
     }
 
@@ -425,6 +445,7 @@ final class SettingsStore {
         clipboardShortcut = fresh.clipboardShortcut
         clipboardLimit = fresh.clipboardLimit
         clipboardPastes = fresh.clipboardPastes
+        clipboardPreview = fresh.clipboardPreview
     }
 
     /// The last watermark saved from the image editor, offered again next time.

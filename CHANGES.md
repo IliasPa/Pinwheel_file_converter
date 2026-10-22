@@ -3,6 +3,23 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7.3 (beta) — 2026-10-22
+
+**New**
+- **See all of a copy:** press and hold one in the clipboard history, or
+  press **Space**, and it opens big: the whole text (to read or select),
+  the whole picture, or files as Quick Look shows them (documents,
+  pictures, films). ↑↓ go through the copies, Return pastes, Space or Esc
+  goes back. Settings › Clipboard › Preview a copy with: press and hold,
+  Space, or both. (While you type a search, Space is a space.)
+- **Drag a copy into any app.** It leaves its row as a dashed outline and
+  rides along on a card that leans into the drag; over other apps the
+  history fades so you see where it goes. Drop it, and the window goes as
+  after a paste (anchored, it stays and the row says "Dropped"); let go
+  elsewhere, and the card flies back. It arrives just as it was copied:
+  formatted text, pictures, files.
+- The right-click menu has Preview.
+
 ## v1.7.2 (beta) — 2026-10-22
 
 **New**

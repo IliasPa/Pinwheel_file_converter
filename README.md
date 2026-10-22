@@ -80,9 +80,10 @@ it.
 **Clipboard history** (beta): press **⌥⌘V** in any app to see what you
 copied, sorted by kind (text, links, images, files) and by the app it came
 from, with a search field. Click one (or press Return) and it's pasted
-where you were typing (or just copied, if you prefer). A **heart** keeps a
-copy as a favorite for good. The **anchor** at the bottom keeps the window
-open while you work in other apps. The keys, and how many copies to keep
+where you were typing (or just copied, if you prefer). Press and hold one
+(or press Space) to see all of it, or drag it straight into any app. A
+**heart** keeps a copy as a favorite for good. The **anchor** at the bottom
+keeps the window open while you work in other apps. The keys, and how many copies to keep
 (with the room they take), are in Settings › Clipboard.
 
 **And**

@@ -22,17 +22,13 @@ struct ClipboardWindowTests {
         return controller
     }
 
-    private var panel: ClipboardPanel? {
-        NSApp.windows.compactMap { $0 as? ClipboardPanel }.first { $0.isVisible }
-    }
-
     @Test func theWindowIsTheGlassAndItsShadow() async throws {
         let scratch = try Scratch()
         let controller = controller(scratch)
         controller.show()
         defer { controller.hide() }
         try await Task.sleep(for: .milliseconds(300))
-        let panel = try #require(panel)
+        let panel = controller.panel
         // It used to grow by the hidden title bar, leaving an empty strip
         // below the glass that macOS's shadow outlined in dark.
         #expect(panel.frame.size == ClipboardPanel.size)
@@ -52,14 +48,14 @@ struct ClipboardWindowTests {
         }
         try await Task.sleep(for: .milliseconds(200))
         // Clicking another window closes it…
-        try #require(panel).resignKey()
+        controller.panel.resignKey()
         #expect(!controller.isShown)
 
         // …unless it's anchored.
         controller.show()
         controller.model.isPinned = true
         try await Task.sleep(for: .milliseconds(200))
-        try #require(panel).resignKey()
+        controller.panel.resignKey()
         #expect(controller.isShown)
 
         // Choosing a copy: it steps aside for the paste, then comes back.
