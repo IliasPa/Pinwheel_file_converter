@@ -58,6 +58,8 @@ final class ClipboardStore {
     }
 
     @ObservationIgnored let folder: URL
+    /// Texts read from disk, kept (a copy never changes).
+    @ObservationIgnored private var texts: [UUID: String] = [:]
 
     init(folder: URL = ClipboardStore.defaultFolder) {
         self.folder = folder
@@ -253,10 +255,15 @@ final class ClipboardStore {
 
     /// The whole picture of an image (the list shows a small one).
     func imageData(of item: ClipItem) -> Data? {
+        imageFile(of: item).flatMap { try? Data(contentsOf: $0) }
+    }
+
+    /// Where the whole picture of an image is kept.
+    func imageFile(of item: ClipItem) -> URL? {
         guard item.kind == .image, let index = item.contents.first?.firstIndex(where: { UTType($0)?.conforms(to: .image) == true }) else {
             return nil
         }
-        return try? Data(contentsOf: folder(of: item).appendingPathComponent("0-\(index)"))
+        return folder(of: item).appendingPathComponent("0-\(index)")
     }
 
     /// The small picture for an image in the list.
@@ -274,12 +281,19 @@ final class ClipboardStore {
         }
     }
 
-    /// The whole text of a text or link (the preview is shortened).
+    /// The whole text of a text or link (the preview is shortened); from
+    /// the formatted text when there's no plain one.
     func text(of item: ClipItem) -> String? {
-        guard item.kind == .text || item.kind == .link, let index = item.contents.first?.firstIndex(of: UTType.utf8PlainText.identifier) else {
-            return nil
+        guard item.kind == .text || item.kind == .link, let types = item.contents.first else { return nil }
+        if let text = texts[item.id] { return text }
+        func data(_ type: UTType) -> Data? {
+            types.firstIndex(of: type.identifier).flatMap { try? Data(contentsOf: folder(of: item).appendingPathComponent("0-\($0)")) }
         }
-        return (try? Data(contentsOf: folder(of: item).appendingPathComponent("0-\(index)"))).flatMap { String(data: $0, encoding: .utf8) }
+        guard let text = data(.utf8PlainText).flatMap({ String(data: $0, encoding: .utf8) })
+                ?? data(.rtf).flatMap({ NSAttributedString(rtf: $0, documentAttributes: nil)?.string }) else { return nil }
+        if texts.count > 400 { texts.removeAll() }
+        texts[item.id] = text
+        return text
     }
 
     // MARK: - Finding

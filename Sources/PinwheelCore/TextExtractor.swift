@@ -106,3 +106,12 @@ enum ScannedPages {
         return try PDFConverter.render(page, dpi: dpi)
     }
 }
+
+/// The words in a picture, for the clipboard history's Text in Image.
+public enum PictureText {
+    /// In reading order; "" when there are none.
+    public static func read(_ url: URL, recognition: TextRecognition) async throws -> String {
+        let image = try await Blocking.run { _ in try TextExtractor.picture(url) }
+        return try await TextRecognizer.recognize(image, settings: recognition).string
+    }
+}

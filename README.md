@@ -81,8 +81,10 @@ it.
 copied, sorted by kind (text, links, images, files) and by the app it came
 from, with a search field. Click one (or press Return) and it's pasted
 where you were typing (or just copied, if you prefer). Press and hold one
-(or press Space) to see all of it, or drag it straight into any app. A
-**heart** keeps a copy as a favorite for good. The **anchor** at the bottom
+(or press Space) to see all of it, or drag it straight into any app.
+**Quick buttons** under a copy paste it as plain text, with clean links
+(no tracking), on one line, in other capitals, or the text or QR code in
+a picture. A **heart** keeps a copy as a favorite for good. The **anchor** at the bottom
 keeps the window open while you work in other apps. The keys, and how many copies to keep
 (with the room they take), are in Settings › Clipboard.
 

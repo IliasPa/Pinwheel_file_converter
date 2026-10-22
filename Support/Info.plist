@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.7.3</string>
+	<string>1.7.4</string>
 	<key>CFBundleVersion</key>
-	<string>24</string>
+	<string>25</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Pinwheel asks Pages, Keynote or Numbers to open a file and save a copy in the format you chose. Nothing else.</string>
 	<key>LSApplicationCategoryType</key>

@@ -70,8 +70,15 @@ struct ClipboardWindowTests {
         try await Task.sleep(for: .milliseconds(300))
         #expect(controller.isShown && pasted == 1)
 
-        // Esc still closes it.
+        // Esc still closes it, even while it's out of the way for a paste.
         controller.model.onClose()
         #expect(!controller.isShown)
+        controller.show()
+        controller.mayPress = { true }
+        controller.copy(controller.store.items[1])
+        for _ in 0..<40 where pasted < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        controller.model.onClose()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(pasted == 2 && !controller.isShown)
     }
 }

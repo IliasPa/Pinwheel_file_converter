@@ -140,6 +140,6 @@ final class ProgressPanel: GlassPanel {
 }
 
 /// Buttons respond to the first click even though the panel isn't focused.
-private final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

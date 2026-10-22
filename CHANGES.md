@@ -3,6 +3,29 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7.4 (beta) — 2026-10-22
+
+**New**
+- **Quick buttons under each copy** in the clipboard history. Click one
+  and the copy is pasted changed that way (and kept in the history too):
+  - **Plain Text**: without its formatting.
+  - **Clean Links**: links without their tracking (utm_source, fbclid,
+    gclid, YouTube's si…); what the link needs stays.
+  - **One Line**, **Tidy Spaces** (no doubled spaces or extra blank
+    lines), and **Aa**: UPPERCASE, lowercase, Title Case, Sentence case
+    (Greek too: ";" ends a question there).
+  - **Text in Image**: the words in a picture or screenshot, read on this
+    Mac. **Read Code**: what a QR code or barcode in it says.
+  - **Path** and **Name** of copied files.
+  A button shows only when it would change something. Settings ›
+  Clipboard › Quick buttons under each copy switches them off.
+- An anchored history that's behind another app takes your first click.
+- A picture's text that's still being read when you close the history is
+  only copied, not pasted into whatever app is in front by then.
+
+**Fixed**
+- Anchored, a history closed right after choosing a copy could come back.
+
 ## v1.7.3 (beta) — 2026-10-22
 
 **New**

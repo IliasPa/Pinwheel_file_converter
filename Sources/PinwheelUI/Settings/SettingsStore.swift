@@ -80,7 +80,7 @@ final class SettingsStore {
         case wheelKeys, keepWheelOpen, hiddenActions, terminalApp
         case webpQuality, avifQuality
         case textRecognition
-        case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes, clipboardPreview
+        case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes, clipboardPreview, clipboardActions
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -175,6 +175,8 @@ final class SettingsStore {
     var clipboardPastes: Bool { didSet { save(clipboardPastes, .clipboardPastes) } }
     /// What opens a copy's preview.
     var clipboardPreview: ClipPreviewTrigger { didSet { save(clipboardPreview.rawValue, .clipboardPreview) } }
+    /// The small buttons under each copy (plain text, clean links…).
+    var clipboardActions: Bool { didSet { save(clipboardActions, .clipboardActions) } }
     /// The clipboard history follows its settings at once.
     @ObservationIgnored var onClipboardChange: () -> Void = {}
 
@@ -228,6 +230,7 @@ final class SettingsStore {
             .clipboardLimit: 200,
             .clipboardPastes: true,
             .clipboardPreview: ClipPreviewTrigger.holdOrSpace.rawValue,
+            .clipboardActions: true,
         ]
     }
 
@@ -283,6 +286,7 @@ final class SettingsStore {
         clipboardLimit = defaults.integer(forKey: Key.clipboardLimit.rawValue)
         clipboardPastes = defaults.bool(forKey: Key.clipboardPastes.rawValue)
         clipboardPreview = ClipPreviewTrigger(rawValue: string(.clipboardPreview)) ?? .holdOrSpace
+        clipboardActions = defaults.bool(forKey: Key.clipboardActions.rawValue)
         placeNewTools()
     }
 
@@ -446,6 +450,7 @@ final class SettingsStore {
         clipboardLimit = fresh.clipboardLimit
         clipboardPastes = fresh.clipboardPastes
         clipboardPreview = fresh.clipboardPreview
+        clipboardActions = fresh.clipboardActions
     }
 
     /// The last watermark saved from the image editor, offered again next time.

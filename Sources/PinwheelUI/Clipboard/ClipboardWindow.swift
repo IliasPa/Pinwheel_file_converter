@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Watches the clipboard, keeps its history, and shows the history window
 /// with the shortcut (⌥⌘V unless changed in Settings).
@@ -20,6 +21,8 @@ final class ClipboardController {
     private var timer: Timer?
     private var seenChangeCount: Int
     private var isSuspended = false
+    /// Anchored, it's out of the way for a paste and comes back after.
+    private var isSteppingAside = false
     private(set) lazy var panel: ClipboardPanel = makePanel()
     private let dragSource = ClipDragSource()
 
@@ -32,6 +35,7 @@ final class ClipboardController {
         model.onCopy = { [weak self] item in self?.copy(item) }
         model.onClose = { [weak self] in self?.hide() }
         model.onDragOut = { [weak self] item, view, event in self?.dragOut(item, from: view, event: event) }
+        model.onAction = { [weak self] item, action in self?.run(action, on: item) }
         model.onOpenSettings = { [weak self] in
             self?.hide()
             self?.onOpenSettings()
@@ -86,11 +90,56 @@ final class ClipboardController {
     /// the cursor was: the window closes and ⌘V goes to the app in front.
     /// Pinned, the window stays (it steps aside for the paste).
     func copy(_ item: ClipItem) {
-        model.previewing = nil
         store.copy(item, to: pasteboard)
         seenChangeCount = pasteboard.changeCount  // not a new copy
+        finishChoosing(item.id)
+    }
+
+    /// A button under a copy: works out what to paste (reading a picture
+    /// takes a moment), then it's pasted like a chosen copy, and kept.
+    func run(_ action: ClipAction, on item: ClipItem) {
+        guard model.working == nil else { return }
+        model.working = ClipWork(item: item.id, action: action)
+        let recognition = settings.resolvedTextRecognition
+        Task {
+            var text: String?
+            var problem = action.nothingFound
+            do {
+                text = try await ClipActions.text(of: action, for: item, store: store, recognition: recognition)
+            } catch {
+                problem = "Couldn't read it"
+            }
+            model.working = nil
+            guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                show(problem, on: item.id)
+                return
+            }
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            seenChangeCount = pasteboard.changeCount
+            let kept = store.add([[(type: UTType.utf8PlainText.identifier, data: Data(text.utf8))]], appID: item.appID, appName: item.appName)
+            // Closed meanwhile: you've moved on, so it's only copied.
+            guard isShown else { return }
+            finishChoosing(kept?.id ?? item.id)
+        }
+    }
+
+    /// A short note on a copy's row, for a moment.
+    private func show(_ text: String, on id: ClipItem.ID) {
+        let notice = ClipNotice(item: id, text: text)
+        model.notice = notice
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            if model.notice == notice { model.notice = nil }
+        }
+    }
+
+    /// What's chosen is on the clipboard: paste it where the cursor was, or
+    /// say it's copied.
+    private func finishChoosing(_ id: ClipItem.ID) {
+        model.previewing = nil
         guard settings.clipboardPastes, mayPress() else {
-            model.justCopied = item.id
+            model.justCopied = id
             guard !model.isPinned else { return }
             Task {
                 try? await Task.sleep(for: .milliseconds(180))
@@ -100,15 +149,19 @@ final class ClipboardController {
         }
         let staysOpen = model.isPinned
         hide()
+        isSteppingAside = staysOpen
         Task {
             // The app in front gets its keyboard back first.
             try? await Task.sleep(for: .milliseconds(60))
             paste()
             guard staysOpen else { return }
             try? await Task.sleep(for: .milliseconds(120))
-            // Back in view, leaving the keyboard to that app.
+            // Back in view, leaving the keyboard to that app (unless it was
+            // closed meanwhile).
+            guard isSteppingAside else { return }
+            isSteppingAside = false
             panel.orderFrontRegardless()
-            model.justCopied = item.id
+            model.justCopied = id
         }
     }
 
@@ -143,6 +196,7 @@ final class ClipboardController {
     }
 
     func hide() {
+        isSteppingAside = false
         guard panel.isVisible else { return }
         panel.orderOut(nil)
         panel.alphaValue = 1
@@ -222,7 +276,8 @@ final class ClipboardController {
             guard self?.model.isPinned == false else { return }
             self?.hide()
         }
-        let hosting = NSHostingView(rootView: ClipboardView(model: model, settings: settings))
+        // Anchored and behind another app, it still takes the first click.
+        let hosting = FirstClickHostingView(rootView: ClipboardView(model: model, settings: settings))
         // The window keeps its size (else it grows by the hidden title bar).
         hosting.sizingOptions = []
         hosting.frame = NSRect(origin: .zero, size: ClipboardPanel.size)
@@ -301,12 +356,19 @@ final class ClipboardPanelModel {
     var dragging: ClipItem.ID?
     /// Just dropped into another app (flashes on its row).
     var justDropped: ClipItem.ID?
+    /// A button under a copy at work (reading a picture takes a moment).
+    var working: ClipWork?
+    /// A short note on a copy's row ("No text found").
+    var notice: ClipNotice?
+    /// The buttons under each copy, worked out once (a copy doesn't change).
+    @ObservationIgnored private var actionsFound: [ClipItem.ID: [ClipAction]] = [:]
 
     var onCopy: (ClipItem) -> Void = { _ in }
     var onClose: () -> Void = {}
     var onOpenSettings: () -> Void = {}
     /// Starts dragging a copy out, from where the pointer went down on it.
     var onDragOut: (ClipItem, NSView, NSEvent) -> Void = { _, _, _ in }
+    var onAction: (ClipItem, ClipAction) -> Void = { _, _ in }
 
     init(store: ClipboardStore) {
         self.store = store
@@ -334,6 +396,14 @@ final class ClipboardPanelModel {
         selection = shown[min(max(index + step, 0), shown.count - 1)].id
         // The preview follows, as in Quick Look.
         if previewing != nil { previewing = selection }
+    }
+
+    func actions(for item: ClipItem) -> [ClipAction] {
+        if let found = actionsFound[item.id] { return found }
+        let found = ClipActions.available(for: item, store: store)
+        if actionsFound.count > 500 { actionsFound.removeAll() }
+        actionsFound[item.id] = found
+        return found
     }
 
     /// Space, pressing and holding, or the menu: the copy shown big.
@@ -506,7 +576,8 @@ struct ClipboardView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(shown) { item in
-                        ClipRow(item: item, model: model, holdPreviews: settings.clipboardPreview.byHolding).id(item.id)
+                        ClipRow(item: item, model: model, holdPreviews: settings.clipboardPreview.byHolding, showsActions: settings.clipboardActions)
+                            .id(item.id)
                     }
                 }
                 .padding(8)
@@ -629,12 +700,45 @@ private struct ClipRow: View {
     var model: ClipboardPanelModel
     /// Pressing and holding shows the preview (Settings).
     var holdPreviews: Bool
+    /// The small buttons under it (Settings).
+    var showsActions: Bool
 
     private var isSelected: Bool { model.selection == item.id }
     private var isDragged: Bool { model.dragging == item.id }
     private var wasDropped: Bool { model.justDropped == item.id }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            line
+            if showsActions {
+                let actions = model.actions(for: item)
+                if !actions.isEmpty {
+                    ClipActionBar(item: item, actions: actions, model: model)
+                        .padding(.leading, 50)  // under the text
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isSelected && !isDragged ? Color.accentColor.opacity(0.18) : .clear))
+        // Dragged out: what's left is the copy's outline, until it lands
+        // (or springs back if it doesn't).
+        .overlay {
+            if isDragged {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+            }
+        }
+        .scaleEffect(isDragged ? 0.96 : (wasDropped ? 1.015 : 1))
+        .opacity(isDragged ? 0.5 : 1)
+        .animation(.spring(response: 0.35, dampingFraction: 0.55), value: isDragged)
+        .animation(.spring(response: 0.3, dampingFraction: 0.45), value: wasDropped)
+        .onHover { if $0 { model.selection = item.id } }
+        .help(model.store.text(of: item).map { String($0.prefix(600)) } ?? item.preview)
+    }
+
+    /// The copy, its app and when, and its heart.
+    private var line: some View {
         HStack(spacing: 10) {
             HStack(spacing: 10) {
                 leading
@@ -656,7 +760,11 @@ private struct ClipRow: View {
                     .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if wasDropped {
+                if let notice = model.notice, notice.item == item.id {
+                    Text(notice.text)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.orange)
+                } else if wasDropped {
                     Label("Dropped", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
@@ -685,23 +793,6 @@ private struct ClipRow: View {
             .buttonStyle(.plain)
             .help(item.isFavorite ? "Take it off the favorites" : "Keep it as a favorite (never removed)")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isSelected && !isDragged ? Color.accentColor.opacity(0.18) : .clear))
-        // Dragged out: what's left is the copy's outline, until it lands
-        // (or springs back if it doesn't).
-        .overlay {
-            if isDragged {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-            }
-        }
-        .scaleEffect(isDragged ? 0.96 : (wasDropped ? 1.015 : 1))
-        .opacity(isDragged ? 0.5 : 1)
-        .animation(.spring(response: 0.35, dampingFraction: 0.55), value: isDragged)
-        .animation(.spring(response: 0.3, dampingFraction: 0.45), value: wasDropped)
-        .onHover { if $0 { model.selection = item.id } }
-        .help(model.store.text(of: item).map { String($0.prefix(600)) } ?? item.preview)
     }
 
     /// The right-click menu.
