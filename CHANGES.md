@@ -3,6 +3,50 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7.7 (beta) — 2026-10-23
+
+**New**
+- **Straighten snaps to level.** In the image editor, the angle is pulled
+  to 0° when you drag it near (with a light tap on the trackpad), and a
+  notch marks the middle.
+- **Yellow ticks** in Settings › Compatibility: the conversion works, but
+  something is lost, and pointing at it says what ("PNG → JPEG:
+  see-through parts become white", "XLSX → CSV: only the first sheet",
+  "MP3 → M4A: it was already compressed", "MP4 → GIF: no sound"…).
+- **Bare Link**, a quick button for links: the link with nothing after
+  "?" or "#", for extras no list knows about.
+
+**Changed**
+- **Text reading has a helper of its own.** Reading text in a picture,
+  QR codes and barcodes (the clipboard's Text in Image and Read Code, the
+  Read Codes tool, Blur Faces/Text) needs Apple's text engine, which takes
+  tens of megabytes. It now runs in a small helper that quits a minute
+  after it was last used, and its memory goes back to macOS; Pinwheel
+  itself stays around 30 MB.
+- The first time a new version reads text, macOS takes about 40 seconds
+  to get the engine ready. Pinwheel now does that once, in the background,
+  half a minute after starting, so your first screenshot is read at once
+  (this was why Text in Image could seem not to appear).
+- **Text in Image reads photos.** With text recognition on Automatic and
+  Greek installed, pictures were read only by Tesseract, which finds little
+  or nothing in photos. Now a picture is read by Apple's text recognition
+  too, and the better reading is kept: Tesseract's for Greek, Apple's for
+  photos. Pictures already in the history are read again, and one that
+  couldn't be read is tried again later instead of counting as having no
+  text. (Get Text on a picture works the same way.)
+- **Clean Links knows many more trackers,** with lists for LinkedIn,
+  Facebook, TikTok, Instagram, X, Reddit, Amazon, Google, Bing, eBay and
+  AliExpress, besides utm_ and the like.
+- A picture copied from a browser (the picture and its address) counts as
+  a picture, so Text in Image and Read Code work on it.
+- **Quicker Settings.** Conversions and Compatibility show one kind of file
+  at a time (the icons at the top; searching for a format opens its kind),
+  and what's installed (ffmpeg, Tesseract, Pages…) is looked up once
+  instead of for every row: opening Settings is about 40% quicker, and
+  those two pages 2–4 times. A closed Settings window is kept for a
+  minute, so opening it again is instant.
+- The clipboard history appears at once, without fading in.
+
 ## v1.7.6 (beta) — 2026-10-23
 
 **Changed**

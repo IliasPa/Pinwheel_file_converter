@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// copy changed a little (plain text, links without tracking, the text in a
 /// picture…). A button shows only when it would change something.
 enum ClipAction: String, CaseIterable, Identifiable {
-    case plainText, cleanLinks, oneLine, tidySpaces
+    case plainText, cleanLinks, bareLink, oneLine, tidySpaces
     case uppercase, lowercase, titleCase, sentenceCase
     case textInImage, readCode
     case filePath, fileName
@@ -18,6 +18,7 @@ enum ClipAction: String, CaseIterable, Identifiable {
         switch self {
         case .plainText: "Plain Text"
         case .cleanLinks: "Clean Links"
+        case .bareLink: "Bare Link"
         case .oneLine: "One Line"
         case .tidySpaces: "Tidy Spaces"
         case .uppercase: "UPPERCASE"
@@ -35,6 +36,7 @@ enum ClipAction: String, CaseIterable, Identifiable {
         switch self {
         case .plainText: "doc.plaintext"
         case .cleanLinks: "sparkles"
+        case .bareLink: "scissors"
         case .oneLine: "arrow.right.to.line"
         case .tidySpaces: "eraser"
         case .uppercase, .lowercase, .titleCase, .sentenceCase: "textformat.size"
@@ -49,6 +51,7 @@ enum ClipAction: String, CaseIterable, Identifiable {
         switch self {
         case .plainText: "Pastes it without its formatting"
         case .cleanLinks: "Pastes it with the tracking taken out of its links (utm_source, fbclid…)"
+        case .bareLink: "Pastes the link with nothing after ? or # (check it still opens: some links need those)"
         case .oneLine: "Pastes its lines joined into one"
         case .tidySpaces: "Pastes it without doubled spaces, spaces at line ends or extra blank lines (indents stay)"
         case .uppercase, .lowercase, .titleCase, .sentenceCase: "Pastes it in other capitals"
@@ -87,7 +90,10 @@ enum ClipActions {
             let text = whole.count > lookLimit ? String(whole.prefix(lookLimit)) : whole
             var actions: [ClipAction] = []
             if isFormatted(item) { actions.append(.plainText) }
-            if cleanLinks(text) != text { actions.append(.cleanLinks) }
+            let cleaned = cleanLinks(text)
+            if cleaned != text { actions.append(.cleanLinks) }
+            // What no list knows about: everything after "?" or "#".
+            if item.kind == .link, bareLink(text) != cleaned.trimmingCharacters(in: .whitespacesAndNewlines) { actions.append(.bareLink) }
             if item.kind == .text {
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).contains(where: \.isNewline) { actions.append(.oneLine) }
                 if tidySpaces(text) != text { actions.append(.tidySpaces) }
@@ -105,15 +111,21 @@ enum ClipActions {
         (item.pictureHasText == true ? [.textInImage] : []) + (item.pictureHasCode == true ? [.readCode] : [])
     }
 
+    /// How pictures are looked at: 2 reads photos with Apple's text
+    /// recognition too, so pictures looked at before are looked at again.
+    static let lookVersion = 2
+
     /// Whether a picture still needs looking at for words and codes.
     static func needsLook(_ item: ClipItem, store: ClipboardStore) -> Bool {
-        (item.pictureHasText == nil || item.pictureHasCode == nil) && (item.kind == .image || item.kind == .file) && store.picture(of: item) != nil
+        item.pictureLook != lookVersion && (item.kind == .image || item.kind == .file) && store.picture(of: item) != nil
     }
 
-    /// The words and codes in a picture, read on this Mac.
-    static func look(at picture: URL, recognition: TextRecognition) async -> (text: String, codes: [String]) {
-        let text = (try? await PictureText.read(picture, recognition: recognition)) ?? ""
-        let codes = (try? await CodeReader.read(picture).map(\.text)) ?? []
+    /// The words and codes in a picture, read on this Mac (by the reader,
+    /// which is stopped a minute after it was last used); nil when it
+    /// couldn't be read, so it's looked at again another time.
+    static func look(at picture: URL, recognition: TextRecognition) async -> (text: String, codes: [String])? {
+        guard let text = try? await PictureReader.shared.text(in: picture, recognition: recognition) else { return nil }
+        let codes = (try? await PictureReader.shared.codes(in: picture).map(\.text)) ?? []
         return (text, codes)
     }
 
@@ -123,6 +135,7 @@ enum ClipActions {
         switch action {
         case .plainText: return text
         case .cleanLinks: return text.map(cleanLinks)
+        case .bareLink: return text.map(bareLink)
         case .oneLine: return text.map(oneLine)
         case .tidySpaces: return text.map(tidySpaces)
         case .uppercase: return text?.localizedUppercase
@@ -133,11 +146,11 @@ enum ClipActions {
         case .textInImage:
             if let found = store.pictureText(of: item) { return found }
             guard let picture = store.picture(of: item) else { return nil }
-            return try await PictureText.read(picture, recognition: recognition)
+            return try await PictureReader.shared.text(in: picture, recognition: recognition)
         case .readCode:
             if let found = store.pictureCodes(of: item) { return found }
             guard let picture = store.picture(of: item) else { return nil }
-            return try await CodeReader.read(picture).map(\.text).joined(separator: "\n")
+            return try await PictureReader.shared.codes(in: picture).map(\.text).joined(separator: "\n")
         case .filePath: return store.files(of: item).map(\.path).joined(separator: "\n")
         case .fileName: return store.files(of: item).map(\.lastPathComponent).joined(separator: "\n")
         }
@@ -155,17 +168,59 @@ enum ClipActions {
 
     // MARK: - Changing text
 
-    /// Query parameters that only say where a link was shared from.
+    /// Query parameters that only say where a link was shared from, or by
+    /// whom: on any site.
     static let trackingParameters: Set<String> = [
-        "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "mc_cid", "mc_eid", "igshid", "igsh", "yclid",
-        "twclid", "ttclid", "_hsenc", "_hsmi", "mkt_tok", "oly_anon_id", "oly_enc_id", "vero_id", "wickedid",
-        "ref_src", "ref_url", "_ga", "_gl", "srsltid",
+        "fbclid", "gclid", "gclsrc", "dclid", "gbraid", "wbraid", "msclkid", "yclid", "twclid", "ttclid", "li_fat_id",
+        "igshid", "igsh", "mc_cid", "mc_eid", "_hsenc", "_hsmi", "mkt_tok", "oly_anon_id", "oly_enc_id", "vero_id",
+        "vero_conv", "wickedid", "ref_src", "ref_url", "_ga", "_gl", "_ke", "_kx", "srsltid", "epik", "sc_cid",
+        "ck_subscriber_id", "rb_clickid", "s_cid", "ef_id", "irclickid", "irgwc", "ranmid", "raneaid", "ransiteid",
+        "at_medium", "at_campaign", "cmpid", "_openstat", "mbid", "nr_email_referer", "sr_share", "__s", "spm", "scm",
     ]
+    /// Names starting like these, on any site (Google's utm_source…, Matomo's pk_…).
+    static let trackingPrefixes = ["utm_", "pk_", "mtm_", "piwik_", "hsa_", "ga_", "oly_"]
+
     /// …and ones that do on these sites (elsewhere they may mean something).
+    /// "amazon." stands for every Amazon (amazon.com, amazon.de…).
     static let siteTrackingParameters: [String: Set<String>] = [
-        "youtube.com": ["si", "feature", "pp"], "youtu.be": ["si", "feature"], "spotify.com": ["si"],
-        "instagram.com": ["igsh", "img_index"], "twitter.com": ["s", "t"], "x.com": ["s", "t"],
+        "youtube.com": ["si", "feature", "pp", "ab_channel"], "youtu.be": ["si", "feature"],
+        "spotify.com": ["si", "context", "nd", "dlsi"],
+        "instagram.com": ["igsh", "img_index"], "threads.net": ["xmt", "slof"], "threads.com": ["xmt", "slof"],
+        "twitter.com": ["s", "t"], "x.com": ["s", "t"],
+        "facebook.com": ["mibextid", "rdid", "share_url", "__tn__", "__cft__", "ref", "fref", "hc_ref", "sfnsn", "extid"],
+        "fb.watch": ["mibextid"],
+        "tiktok.com": ["_r", "_t", "is_from_webapp", "sender_device", "sender_web_id", "share_app_id", "share_item_id",
+                       "share_link_id", "social_sharing", "u_code", "tt_from", "timestamp", "source"],
+        "linkedin.com": ["trk", "trkinfo", "lipi", "licu", "lici", "midtoken", "midsig", "trackingid", "refid", "eid",
+                         "isselfprofile", "originalsubdomain", "original_referer", "sessionredirect", "rcm"],
+        "reddit.com": ["share_id", "rdt", "ref", "ref_source", "ref_campaign", "correlation_id"],
+        "amazon.": ["ref", "ref_", "pd_rd_w", "pd_rd_wg", "pd_rd_r", "pd_rd_i", "pf_rd_p", "pf_rd_r", "pf_rd_s", "pf_rd_t",
+                    "pf_rd_i", "pf_rd_m", "content-id", "crid", "sprefix", "sr", "qid", "dib", "dib_tag", "linkcode", "tag", "linkid"],
+        "google.": ["ved", "ei", "sa", "usg", "gs_lcp", "sclient", "oq", "aqs", "sourceid", "gs_lp", "uact", "bih", "biw",
+                    "rlz", "sxsrf", "iflsig", "gws_rd", "sca_esv", "sca_upv", "sei", "fbs", "gs_ssp"],
+        "bing.com": ["form", "sp", "ghc", "lq", "pq", "sc", "qs", "sk", "cvid", "ghsh", "ghacc", "ghpl"],
+        "ebay.": ["_trkparms", "_trksid", "amdata", "mkcid", "mkrid", "campid", "toolid", "customid", "mkevt"],
+        "aliexpress.": ["pvid", "algo_pvid", "algo_expid", "aff_fcid", "aff_fsk", "aff_platform", "aff_trace_key",
+                        "terminal_id", "afsmartredirect", "gatewayadapt", "sk"],
+        "substack.com": ["r", "s", "triedredirect", "showwelcomeonshare"],
+        "medium.com": ["source", "sk"],
+        "quora.com": ["share", "ch", "oid", "srid", "target_type"],
     ]
+
+    /// The site-only tracking names for this host.
+    static func siteTracking(for host: String) -> Set<String> {
+        siteTrackingParameters.reduce(into: Set<String>()) { names, site in
+            let matches = site.key.hasSuffix(".")
+                ? host.hasPrefix(site.key) || host.contains("." + site.key)
+                : host == site.key || host.hasSuffix("." + site.key)
+            if matches { names.formUnion(site.value) }
+        }
+    }
+
+    static func isTracking(_ name: String, site: Set<String>) -> Bool {
+        let name = name.lowercased()
+        return trackingParameters.contains(name) || site.contains(name) || trackingPrefixes.contains { name.hasPrefix($0) }
+    }
 
     /// The text with the tracking taken out of its web links.
     static func cleanLinks(_ text: String) -> String {
@@ -195,15 +250,18 @@ enum ClipActions {
     private static func cleanWebLink(_ link: String) -> String? {
         guard var components = URLComponents(string: link), let scheme = components.scheme?.lowercased(),
               scheme == "http" || scheme == "https", let items = components.percentEncodedQueryItems else { return nil }
-        let host = components.host?.lowercased() ?? ""
-        let sites = siteTrackingParameters.filter { host == $0.key || host.hasSuffix("." + $0.key) }.values.reduce(Set()) { $0.union($1) }
-        let kept = items.filter { item in
-            let name = item.name.lowercased()
-            return !name.hasPrefix("utm_") && !trackingParameters.contains(name) && !sites.contains(name)
-        }
+        let site = siteTracking(for: components.host?.lowercased() ?? "")
+        let kept = items.filter { !isTracking($0.name, site: site) }
         guard kept.count != items.count else { return link }
         components.percentEncodedQueryItems = kept.isEmpty ? nil : kept
         return components.string
+    }
+
+    /// The link with nothing after "?" or "#".
+    static func bareLink(_ link: String) -> String {
+        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let cut = trimmed.firstIndex(where: { $0 == "?" || $0 == "#" }) else { return trimmed }
+        return String(trimmed[..<cut])
     }
 
     /// Its lines joined into one, with single spaces.

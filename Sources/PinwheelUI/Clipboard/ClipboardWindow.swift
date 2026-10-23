@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Observation
+import PinwheelCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -69,9 +70,44 @@ final class ClipboardController {
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(3))
                 self?.prepareWindow()
+                try? await Task.sleep(for: .seconds(30))
+                await self?.warmUpReader()
             }
         }
         registerShortcut()
+    }
+
+    /// The first time a new version of Pinwheel reads text in a picture,
+    /// macOS takes about 40 seconds to get Apple's text reading ready for it
+    /// (then it's quick). So that's done once, early, in the background,
+    /// rather than when you copy your first screenshot.
+    func warmUpReader() async {
+        // Per version and per place: macOS gets it ready for each program file.
+        guard let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else { return }
+        let build = version + " " + Bundle.main.bundlePath
+        let key = "readerReadyFor"
+        guard settings.clipboardEnabled, settings.clipboardActions,
+              UserDefaults.standard.string(forKey: key) != build, let picture = Self.wordPicture() else { return }
+        defer { try? FileManager.default.removeItem(at: picture) }
+        if (try? await PictureReader.shared.text(in: picture, recognition: TextRecognition())) != nil {
+            UserDefaults.standard.set(build, forKey: key)
+        }
+    }
+
+    /// A small picture of a word, to read.
+    private static func wordPicture() -> URL? {
+        guard let context = CGContext(data: nil, width: 400, height: 120, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 400, height: 120))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        ("Pinwheel" as NSString).draw(at: NSPoint(x: 30, y: 30), withAttributes: [.font: NSFont.systemFont(ofSize: 48), .foregroundColor: NSColor.black])
+        NSGraphicsContext.restoreGraphicsState()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pinwheel-ready-\(UUID().uuidString).png")
+        guard let image = context.makeImage(), let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]),
+              (try? data.write(to: url)) != nil else { return nil }
+        return url
     }
 
     /// Makes the window and lays out its first copies, out of sight.
@@ -119,8 +155,9 @@ final class ClipboardController {
             while !lookQueue.isEmpty {
                 let id = lookQueue.removeFirst()
                 guard let item = store.items.first(where: { $0.id == id }), let picture = store.picture(of: item) else { continue }
-                let found = await ClipActions.look(at: picture, recognition: settings.resolvedTextRecognition)
-                store.setPictureFindings(of: item, text: found.text, codes: found.codes)
+                if let found = await ClipActions.look(at: picture, recognition: settings.resolvedTextRecognition) {
+                    store.setPictureFindings(of: item, text: found.text, codes: found.codes)
+                }
             }
             isLooking = false
         }
@@ -338,7 +375,8 @@ final class ClipboardPanel: GlassPanel {
         // macOS outlines a window's shadow with a dark line, around the
         // whole window rather than the glass; the view draws a soft one.
         hasShadow = false
-        animationBehavior = .utilityWindow
+        // At once, like Spotlight: a fade in made ⌥⌘V feel slow.
+        animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
     }
 

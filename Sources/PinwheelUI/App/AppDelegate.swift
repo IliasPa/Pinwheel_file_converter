@@ -23,6 +23,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsState: SettingsViewState?
     private var menuBar: MenuBarController?
     private var settingsWindow: SettingsWindowController?
+    /// Counts closings of Settings, so only the latest one frees it.
+    private var settingsClosings = 0
     private var feedbackWindow: FeedbackWindowController?
 
     override public init() {
@@ -192,11 +194,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 clipboard: clipboard
             )
             settingsWindow = SettingsWindowController(view: view) { [weak self] in
-                // Let the window finish closing, then free it: a closed
-                // Settings window used to keep its preview animating unseen.
+                // Kept for a minute, so opening it again is instant, then
+                // freed (its memory goes back to macOS).
+                guard let self else { return }
+                settingsClosings += 1
+                let closing = settingsClosings
                 Task {
-                    guard self?.settingsWindow?.window?.isVisible != true else { return }  // reopened meanwhile
-                    self?.settingsWindow = nil
+                    try? await Task.sleep(for: .seconds(60))
+                    // Reopened (and perhaps closed again) meanwhile: not yet.
+                    guard closing == self.settingsClosings, self.settingsWindow?.window?.isVisible != true else { return }
+                    self.settingsWindow = nil
                 }
             }
         }

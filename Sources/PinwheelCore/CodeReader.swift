@@ -3,7 +3,7 @@ import ImageIO
 import Vision
 
 /// A QR code or barcode found in a picture.
-public struct ReadCode: Sendable, Equatable, Identifiable {
+public struct ReadCode: Codable, Sendable, Equatable, Identifiable {
     public let text: String
     /// "QR code", "EAN-13 barcode"…
     public let kind: String

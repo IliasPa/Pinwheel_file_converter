@@ -53,6 +53,13 @@ stopSignal.setEventHandler { @Sendable [control] in control.stop() }
 stopSignal.resume()
 signal(SIGTERM, SIG_IGN)
 
+// Started with --reader, it reads pictures instead (see PictureReader):
+// one question a line, until Pinwheel ends its input.
+if CommandLine.arguments.contains("--reader") {
+    await PictureReading.serve()
+    exit(0)
+}
+
 let input = FileHandle.standardInput.readDataToEndOfFile()
 await control.run { [writer] in
     await ConversionWorker.serve(input) { writer.send($0) }

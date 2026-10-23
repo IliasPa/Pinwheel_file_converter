@@ -25,6 +25,22 @@ final class SettingsViewState {
     var tableSpot: CompatibilityPane.Spot?
     let shortcutRecorder = ShortcutRecorder()
     var confirmClearClipboard = false
+    /// The kind of file Conversions and Compatibility show (one at a time:
+    /// all of them at once made those pages slow to open).
+    var settingsKind: FileKind = .image
+
+    /// Searching for a format ("webm", "mp3") or a kind ("spread…") shows
+    /// that kind on Conversions and Compatibility.
+    func showKind(for search: String) {
+        let word = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard word.count >= 2 else { return }
+        let kind = Compatibility.sources.first { $0.title.lowercased() == word }?.kind
+            ?? FileKind.allCases.first { $0.pluralTitle.lowercased().hasPrefix(word) }
+            ?? FileKind.allCases.first { kind in
+                FormatCatalog.choices(for: kind, mode: .convert).contains { $0.title(in: .convert).lowercased() == word }
+            }
+        if let kind { settingsKind = kind }
+    }
 }
 
 /// Takes the next keys pressed as a new shortcut (Esc gives up).
@@ -266,6 +282,7 @@ struct SettingsView: View {
             }
         }
         .searchable(text: $state.search, placement: .sidebar, prompt: "Search")
+        .onChange(of: state.search) { state.showKind(for: state.search) }
         .toolbar(removing: .sidebarToggle)
     }
 
@@ -286,7 +303,7 @@ struct SettingsView: View {
                 feedback
             }
         case .conversions:
-            ConversionsPane(settings: settings)
+            ConversionsPane(settings: settings, state: state)
         case .compatibility:
             CompatibilityPane(settings: settings, state: state)
         case .tools:
@@ -790,7 +807,7 @@ struct SettingsView: View {
         } header: {
             Text("Get Text and Searchable")
         } footer: {
-            Footnote("Apple’s text recognition is built in and reads English and many other languages, but not Greek. Tesseract (free, from Homebrew) reads Greek too, once its Greek file is downloaded. Automatic uses Tesseract when it can read Greek, and Apple’s otherwise. Everything happens on this Mac.")
+            Footnote("Apple’s text recognition is built in and reads English and many other languages, but not Greek. Tesseract (free, from Homebrew) reads Greek too, once its Greek file is downloaded. Automatic uses Tesseract when it can read Greek, and Apple’s otherwise; a picture is read by both, and the better reading is kept (Apple’s is far better with photos). Everything happens on this Mac.")
         }
     }
 
@@ -1101,6 +1118,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        // Kept a moment in case it's opened again: its preview mustn't
+        // go on animating unseen meanwhile.
+        state.isWindowVisible = false
         onClose()
     }
 
@@ -1111,5 +1131,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
+        state.isWindowVisible = true
     }
 }

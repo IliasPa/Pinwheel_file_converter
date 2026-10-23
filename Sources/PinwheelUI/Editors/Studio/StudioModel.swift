@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import PinwheelCore
+import UniformTypeIdentifiers
 
 /// Everything the image editor shows and does. It edits a smaller copy of
 /// the picture for speed; Save sends the edit to a job, which draws it again
@@ -871,15 +872,31 @@ final class StudioModel {
         var error: String?
     }
 
-    /// On a thread of its own: Vision blocks its thread until it's done.
+    /// The picture as it's turned, at most 2048 pixels across (the regions
+    /// are shares of it, so that's plenty), goes to Pinwheel's reader: Vision
+    /// runs there and its memory goes back to macOS a minute later.
     private nonisolated static func find(_ request: FindRequest) async -> Found {
         do {
-            return Found(regions: try await Blocking.run { _ in
+            let file = try await Blocking.run { _ in
                 let turned = try StudioRenderer.render(request.source, mask: nil, edit: request.turn)
-                return try PrivacyBlur.regions(in: turned, faces: request.faces, text: request.text)
-            })
+                return try writeForReading(turned)
+            }
+            defer { try? FileManager.default.removeItem(at: file) }
+            return Found(regions: try await PictureReader.shared.regions(in: file, faces: request.faces, text: request.text))
         } catch {
             return Found(error: error.localizedDescription)
         }
+    }
+
+    private nonisolated static func writeForReading(_ image: CGImage) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pinwheel-read-\(UUID().uuidString).jpg")
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw ConversionError.cannotWrite(url.lastPathComponent)
+        }
+        CGImageDestinationAddImage(destination, image, [
+            kCGImageDestinationImageMaxPixelSize: 2048, kCGImageDestinationLossyCompressionQuality: 0.92,
+        ] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw ConversionError.cannotWrite(url.lastPathComponent) }
+        return url
     }
 }

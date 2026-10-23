@@ -172,7 +172,8 @@ in a sidebar with a search field:
   wheel, with each format's settings (JPEG and HEIC quality, GIF size and
   length, PDF page resolution…).
 - **Compatibility:** a table of every kind of file against every format:
-  ✓ it converts, – it's the same format.
+  ✓ it converts (a yellow ✓: something is lost, such as transparency in a
+  JPEG; point at it to see what), – it's the same format.
 - **Tools:** Compress and Resize, which tools and file actions are on
   their wheels, the Terminal app,
   and **custom actions**.
@@ -270,7 +271,7 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 390, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 410, with real conversions). GitHub runs them on every push too. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |
@@ -296,8 +297,9 @@ Access › Certificate Assistant › Create a Certificate…**, name it exactly
 - `PinwheelCore` is the conversion engine (no user interface).
   `PinwheelUI` is the menu-bar app. `PinwheelWorker` is a small helper the
   app starts for each job, so the memory it used goes back to macOS right
-  away and a damaged file can't crash Pinwheel. `PinwheelCLI` is the
-  `pinwheel` command.
+  away and a damaged file can't crash Pinwheel. Started with `--reader`,
+  it reads text and codes in pictures (`PictureReader.swift`) and quits a
+  minute after its last use. `PinwheelCLI` is the `pinwheel` command.
 - The tests make real pictures, videos, songs, PDFs, documents and
   spreadsheets, convert them, and check the results. The ones that use
   Pages, Keynote and Numbers run when asked: `PINWHEEL_IWORK=1 make test`. `Tests/PinwheelUITests/ReadmeImages.swift` draws the

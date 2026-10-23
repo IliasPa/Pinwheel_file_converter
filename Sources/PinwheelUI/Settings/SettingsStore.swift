@@ -337,10 +337,34 @@ final class SettingsStore {
     ]
 
     /// The ffmpeg to use: the custom path if it works, else the usual places.
-    var ffmpegURL: URL? { FFmpeg.locate(customPath: ffmpegPath) }
-    var pngquantURL: URL? { ExternalTool.pngquant.locate() }
-    var cwebpURL: URL? { ExternalTool.cwebp.locate() }
-    var tesseractURL: URL? { ExternalTool.tesseract.locate() }
+    var ffmpegURL: URL? { installed.ffmpeg }
+    var pngquantURL: URL? { installed.pngquant }
+    var cwebpURL: URL? { installed.cwebp }
+    var tesseractURL: URL? { installed.tesseract }
+
+    /// What's on this Mac, looked up again at most every two seconds: a page
+    /// of Settings asks hundreds of times while it's drawn, and each answer
+    /// searches the disk (or asks macOS where Pages is).
+    struct Installed {
+        var at: ContinuousClock.Instant
+        var ffmpegPath: String
+        var ffmpeg, pngquant, cwebp, tesseract: URL?
+        var apps: Set<ExternalTool>
+    }
+
+    @ObservationIgnored private var installedCache: Installed?
+
+    var installed: Installed {
+        let now = ContinuousClock.now
+        if let cache = installedCache, now - cache.at < .seconds(2), cache.ffmpegPath == ffmpegPath { return cache }
+        let found = Installed(
+            at: now, ffmpegPath: ffmpegPath, ffmpeg: FFmpeg.locate(customPath: ffmpegPath),
+            pngquant: ExternalTool.pngquant.locate(), cwebp: ExternalTool.cwebp.locate(), tesseract: ExternalTool.tesseract.locate(),
+            apps: Set([ExternalTool.pages, .keynote, .numbers].filter { $0.locate() != nil })
+        )
+        installedCache = found
+        return found
+    }
 
     /// Tesseract's languages: in its own folder, plus any Pinwheel downloaded.
     var tesseractLanguages: Set<String> {
@@ -350,9 +374,22 @@ final class SettingsStore {
             .union(TesseractData.languages(in: TesseractData.ownFolder))
     }
 
-    /// How text is read, worked out from the choice and what's installed.
-    /// Automatic means Tesseract once it can read Greek, else Apple's.
+    /// How text is read, worked out from the choice and what's installed
+    /// (again at most every two seconds, as above).
     var resolvedTextRecognition: TextRecognition {
+        let key = "\(textRecognition.rawValue) \(languagesChanged)"
+        let now = ContinuousClock.now
+        if let cache = recognitionCache, cache.key == key, now - cache.at < .seconds(2) { return cache.value }
+        let value = workOutTextRecognition()
+        recognitionCache = (now, key, value)
+        return value
+    }
+
+    @ObservationIgnored private var recognitionCache: (at: ContinuousClock.Instant, key: String, value: TextRecognition)?
+
+    /// Automatic means Tesseract once it can read Greek, with pictures read
+    /// by Apple's too (it's far better with photos); else Apple's.
+    private func workOutTextRecognition() -> TextRecognition {
         var recognition = TextRecognition()
         guard let program = tesseractURL, textRecognition != .apple else { return recognition }
         let own = TesseractData.languages(in: TesseractData.ownFolder)
@@ -361,6 +398,7 @@ final class SettingsStore {
         if textRecognition == .automatic && !available.contains("ell") { return recognition }
         recognition.engine = .tesseract
         recognition.tesseractURL = program
+        recognition.checksWithVision = textRecognition == .automatic
         // Pinwheel's folder links Tesseract's own files, so it has them all.
         if !own.isEmpty {
             try? TesseractData.linkBuiltIn(TesseractData.builtInFolder(for: program), into: TesseractData.ownFolder)

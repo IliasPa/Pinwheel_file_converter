@@ -19,6 +19,9 @@ public struct TextRecognition: Codable, Sendable, Equatable {
     public var dataFolder: URL?
     /// Tesseract's language codes, e.g. ["ell", "eng"] for Greek and English.
     public var languages: [String] = ["eng"]
+    /// Automatic: a picture read with Tesseract is read with Vision too,
+    /// and the better reading is kept (see `TextRecognizer.recognizePicture`).
+    public var checksWithVision = false
 
     public init() {}
 
@@ -33,10 +36,13 @@ public struct TextRecognition: Codable, Sendable, Equatable {
 struct RecognizedWord: Sendable, Equatable {
     var text: String
     var box: CGRect
+    /// How sure the engine is (0…1).
+    var confidence = 1.0
 
-    init(text: String, box: CGRect) {
+    init(text: String, box: CGRect, confidence: Double = 1) {
         self.text = text
         self.box = box
+        self.confidence = confidence
     }
 }
 
@@ -77,6 +83,36 @@ enum TextRecognizer {
         }
     }
 
+    /// One picture (not a PDF page). With `checksWithVision`, Vision reads it
+    /// too, and the better reading is kept: Tesseract reads Greek, which
+    /// Vision can't, but finds little in photos, which Vision reads well.
+    static func recognizePicture(_ image: CGImage, settings: TextRecognition) async throws -> RecognizedText {
+        guard settings.engine == .tesseract, settings.checksWithVision else { return try await recognize(image, settings: settings) }
+        async let byVision = Blocking.run { _ in try vision(image) }
+        let tesseract: RecognizedText
+        do {
+            tesseract = try await recognize(image, settings: settings)
+        } catch {
+            if let read = try? await byVision, !read.isEmpty { return read }
+            throw error
+        }
+        guard let read = try? await byVision else { return tesseract }
+        return better(tesseract: tesseract, vision: read)
+    }
+
+    /// Tesseract's reading when it has Greek, or about as much as Vision
+    /// found (its order of blocks suits screenshots); Vision's otherwise.
+    static func better(tesseract: RecognizedText, vision: RecognizedText) -> RecognizedText {
+        // The words an engine is sure of, with two letters or digits or more.
+        func sure(_ text: RecognizedText, from least: Double) -> [String] {
+            text.lines.flatMap(\.words).filter { $0.confidence >= least && $0.text.count(where: { $0.isLetter || $0.isNumber }) >= 2 }.map(\.text)
+        }
+        let tesseractWords = sure(tesseract, from: 0.6)
+        if tesseractWords.count(where: { $0.count(where: \.isGreekLetter) >= 2 }) >= 2 { return tesseract }
+        func characters(_ words: [String]) -> Int { words.reduce(0) { $0 + $1.count(where: { $0.isLetter || $0.isNumber }) } }
+        return characters(tesseractWords) * 10 >= characters(sure(vision, from: 0.3)) * 8 ? tesseract : vision
+    }
+
     // MARK: - Vision
 
     /// Apple's text recognition, the one Live Text uses.
@@ -106,7 +142,7 @@ enum TextRecognizer {
                 guard let start = tokenStart else { return }
                 let range = start..<end
                 let box = (try? candidate.boundingBox(for: range))?.boundingBox ?? observation.boundingBox
-                words.append(RecognizedWord(text: String(string[range]), box: topLeft(box)))
+                words.append(RecognizedWord(text: String(string[range]), box: topLeft(box), confidence: Double(candidate.confidence)))
                 tokenStart = nil
             }
             for index in string.indices {
@@ -183,7 +219,8 @@ enum TextRecognizer {
                 currentKey = key
                 lastParagraph = paragraphKey
             }
-            text.lines[text.lines.count - 1].words.append(RecognizedWord(text: word, box: box))
+            let confidence = (Double(columns[10]) ?? 0) / 100
+            text.lines[text.lines.count - 1].words.append(RecognizedWord(text: word, box: box, confidence: confidence))
         }
         return text
     }

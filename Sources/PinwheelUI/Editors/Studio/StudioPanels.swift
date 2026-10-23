@@ -54,7 +54,49 @@ struct EditSlider: View {
     /// How the value reads, e.g. "+35" or "20%".
     let label: (Double) -> String
     let model: StudioModel
+    /// A value the thumb is pulled to when it comes near (0° for Straighten).
+    var magnet: Double? = nil
+    /// How near counts.
+    var magnetPull: Double = 1.5
     let set: @MainActor (Double) -> Void
+
+    init(
+        title: String, value: Double, range: ClosedRange<Double>, label: @escaping (Double) -> String, model: StudioModel,
+        magnet: Double? = nil, magnetPull: Double = 1.5, set: @escaping @MainActor (Double) -> Void
+    ) {
+        self.title = title
+        self.value = value
+        self.range = range
+        self.label = label
+        self.model = model
+        self.magnet = magnet
+        self.magnetPull = magnetPull
+        self.set = set
+    }
+
+    /// The value, pulled to the magnet when it's near.
+    static func attract(_ value: Double, to magnet: Double?, within pull: Double) -> Double {
+        guard let magnet, abs(value - magnet) <= pull else { return value }
+        return magnet
+    }
+
+    /// Where the magnet is along the track, with a notch there.
+    @ViewBuilder
+    private var notch: some View {
+        if let magnet, range.contains(magnet) {
+            GeometryReader { proxy in
+                // The track starts and ends about half a thumb in.
+                let inset: CGFloat = 8
+                let share = (magnet - range.lowerBound) / (range.upperBound - range.lowerBound)
+                Capsule()
+                    .fill(value == magnet ? Color.accentColor : Color.secondary.opacity(0.6))
+                    .frame(width: 2, height: 5)
+                    .position(x: inset + (proxy.size.width - 2 * inset) * share, y: proxy.size.height / 2)
+            }
+            .frame(height: 5)
+            .allowsHitTesting(false)
+        }
+    }
 
     var body: some View {
         VStack(spacing: 2) {
@@ -66,12 +108,20 @@ struct EditSlider: View {
                     .foregroundStyle(.secondary)
             }
             Slider(
-                value: Binding(get: { value }, set: { set($0) }),
+                value: Binding(get: { value }, set: { newValue in
+                    let pulled = Self.attract(newValue, to: magnet, within: magnetPull)
+                    // A small tap on the trackpad as it snaps into place.
+                    if pulled == magnet, value != magnet {
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                    }
+                    set(pulled)
+                }),
                 in: range
             ) { editing in
                 editing ? model.beginSliding() : model.endSliding()
             }
             .controlSize(.small)
+            notch
         }
         .contextMenu {
             Button("Reset \(title)") {
@@ -178,9 +228,9 @@ private struct CropPanel: View {
         PanelSection(title: "Straighten") {
             EditSlider(
                 title: "Angle", value: model.edit.straighten, range: -45...45,
-                label: { String(format: "%+.1f°", $0) }, model: model, set: model.setStraighten
+                label: { String(format: "%+.1f°", $0) }, model: model, magnet: 0, set: model.setStraighten
             )
-            Text("Levels a tilted horizon. The picture is enlarged just enough to leave no empty corners.")
+            Text("Levels a tilted horizon. The picture is enlarged just enough to leave no empty corners. Near 0° the slider snaps back to straight.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

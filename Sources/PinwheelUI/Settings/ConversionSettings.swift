@@ -9,7 +9,7 @@ extension SettingsStore {
         case .pngquant: pngquantURL != nil
         case .tesseract: tesseractURL != nil
         case .cwebp: cwebpURL != nil
-        case .pages, .keynote, .numbers: tool.locate() != nil
+        case .pages, .keynote, .numbers: installed.apps.contains(tool)
         }
     }
 }
@@ -26,16 +26,18 @@ struct KindAction: Hashable {
 /// format wheel, each with its own settings right under it.
 struct ConversionsPane: View {
     @Bindable var settings: SettingsStore
+    @Bindable var state: SettingsViewState
 
     var body: some View {
         Form {
             Section {
-                Text("Choose what each kind of file can become on the format wheel (\(settings.wheelKeys[.convert].title)), and how each format is made. Switched off, a format stays out of the wheel; custom actions and the `pinwheel` command can still use it.")
+                Text("The format wheel is the ring of formats that opens when you drag a file and hold \(settings.wheelKeys[.convert].title); drop the file on a format to convert it. Choose which formats it shows for each kind of file, and how each one is made. Switched off, a format stays out of the wheel; custom actions and the `pinwheel` command can still use it.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                KindPicker(state: state, kinds: FileKind.allCases)
             }
-            ForEach(FileKind.allCases, id: \.self) { kind in
+            ForEach([state.settingsKind], id: \.self) { kind in
                 Section {
                     if kind == .pdf {
                         Picker("Pages to pictures at", selection: $settings.pdfDPI) {
@@ -182,6 +184,10 @@ struct CompatibilityPane: View {
     var settings: SettingsStore
     @Bindable var state: SettingsViewState
 
+    private var shown: [Compatibility.Section] {
+        Compatibility.sections.filter { $0.kind == state.settingsKind }
+    }
+
     /// A box of a table: its kind, row and column.
     struct Spot: Equatable {
         var kind: FileKind
@@ -195,13 +201,16 @@ struct CompatibilityPane: View {
 
     var body: some View {
         Form {
-            ForEach(Compatibility.sections) { section in
+            Section {
+                KindPicker(state: state, kinds: Compatibility.sections.map(\.kind))
+            }
+            ForEach(shown) { section in
                 Section {
                     ScrollView(.horizontal) {
                         table(section)
                             .padding(.vertical, 4)
                     }
-                    if section.kind == Compatibility.sections.first?.kind || state.tableSpot?.kind == section.kind {
+                    if section.kind == shown.first?.kind || state.tableSpot?.kind == section.kind {
                         Text(spotDescription(in: section))
                             .font(.callout)
                             .foregroundStyle(state.tableSpot?.kind == section.kind ? .primary : .secondary)
@@ -301,13 +310,23 @@ struct CompatibilityPane: View {
         case .converts(let needs):
             Image(systemName: "checkmark")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(tickStyle(onWheel: isOnWheel(section, column: column), missing: needs.map { !settings.isInstalled($0) } ?? false))
+                .foregroundStyle(tickStyle(
+                    onWheel: isOnWheel(section, column: column), missing: needs.map { !settings.isInstalled($0) } ?? false,
+                    limited: Compatibility.limitation(from: section.rows[row].source, to: section.targets[column]) != nil
+                ))
         }
     }
 
-    private func tickStyle(onWheel: Bool, missing: Bool) -> AnyShapeStyle {
+    /// Yellow that reads on a light page too (plain yellow nearly vanishes there).
+    static let limitedYellow = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .systemYellow : NSColor(srgbRed: 0.85, green: 0.65, blue: 0.0, alpha: 1)
+    })
+
+    private func tickStyle(onWheel: Bool, missing: Bool, limited: Bool) -> AnyShapeStyle {
         if !onWheel { return AnyShapeStyle(.tertiary) }
-        return missing ? AnyShapeStyle(.orange) : AnyShapeStyle(.green)
+        if missing { return AnyShapeStyle(.orange) }
+        return limited ? AnyShapeStyle(Self.limitedYellow) : AnyShapeStyle(.green)
     }
 
     private func isOnWheel(_ section: Compatibility.Section, column: Int) -> Bool {
@@ -374,20 +393,26 @@ struct CompatibilityPane: View {
             guard isOnWheel(section, column: column) else {
                 return "switched off for \(section.kind.pluralTitle.lowercased()) in Conversions"
             }
+            let limit = Compatibility.limitation(from: section.rows[row].source, to: target).map { ", but \($0)" } ?? ""
             if let needs {
-                return settings.isInstalled(needs) ? "on the format wheel, made with \(needs.name)" : "needs \(needs.name) (\(needs.installCommand))"
+                return settings.isInstalled(needs) ? "converts, made with \(needs.name)\(limit)" : "needs \(needs.name) (\(needs.installCommand))\(limit)"
             }
-            return "on the format wheel"
+            return "converts\(limit)"
         }
     }
 
     private var legend: some View {
         let missing = [ExternalTool.ffmpeg, .cwebp, .pages, .keynote, .numbers].filter { !settings.isInstalled($0) }
-        return HStack(spacing: 16) {
-            legendItem("checkmark", .green, "Converts")
-            if !missing.isEmpty { legendItem("checkmark", .orange, "Needs " + missing.map(\.name).joined(separator: ", ")) }
-            legendItem("checkmark", .tertiary, "Switched off in Conversions")
-            legendItem("minus", .tertiary, "Same format")
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 16) {
+                legendItem("checkmark", .green, "Converts")
+                legendItem("checkmark", Self.limitedYellow, "Converts, but loses something (point at it to see what)")
+            }
+            HStack(spacing: 16) {
+                if !missing.isEmpty { legendItem("checkmark", .orange, "Needs " + missing.map(\.name).joined(separator: ", ")) }
+                legendItem("checkmark", .tertiary, "Switched off in Conversions")
+                legendItem("minus", .tertiary, "Same format")
+            }
         }
         .font(.caption)
     }
@@ -397,5 +422,26 @@ struct CompatibilityPane: View {
             Image(systemName: symbol).fontWeight(.bold).foregroundStyle(style)
             Text(title).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Which kind of file a page shows, as a row of icons (the page's section
+/// below names it).
+struct KindPicker: View {
+    @Bindable var state: SettingsViewState
+    let kinds: [FileKind]
+
+    var body: some View {
+        Picker("Kind of file", selection: $state.settingsKind) {
+            ForEach(kinds, id: \.self) { kind in
+                Label(kind.pluralTitle, systemImage: kind.symbolName)
+                    .labelStyle(.iconOnly)
+                    .help(kind.pluralTitle)
+                    .tag(kind)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: .infinity)
     }
 }

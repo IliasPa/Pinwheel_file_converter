@@ -18,7 +18,7 @@ enum TextExtractor {
         case .image:
             let image = try await Blocking.run { _ in try picture(file.url) }
             progress(0.2)
-            text = try await TextRecognizer.recognize(image, settings: recognition).string
+            text = try await TextRecognizer.recognizePicture(image, settings: recognition).string
         case .pdf:
             let (pdfText, scanned) = try await pdfText(file.url, recognition: recognition, progress: progress)
             text = pdfText
@@ -112,6 +112,6 @@ public enum PictureText {
     /// In reading order; "" when there are none.
     public static func read(_ url: URL, recognition: TextRecognition) async throws -> String {
         let image = try await Blocking.run { _ in try TextExtractor.picture(url) }
-        return try await TextRecognizer.recognize(image, settings: recognition).string
+        return try await TextRecognizer.recognizePicture(image, settings: recognition).string
     }
 }

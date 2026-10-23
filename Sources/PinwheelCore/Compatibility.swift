@@ -100,6 +100,51 @@ public enum Compatibility {
         return .converts(needs: tool(for: action, file: file))
     }
 
+    /// What a conversion loses, when it isn't as good as the original (a
+    /// yellow tick in the table); nil when nothing that matters is lost.
+    public static func limitation(from source: Source, to target: OutputFormat) -> String? {
+        guard source.sample.format != target else { return nil }  // the same format
+        let from = source.title
+        let lossyAudio: Set<String> = ["MP3", "M4A", "OGG", "Opus", "WMA"]
+        let losslessAudioTargets: Set<OutputFormat> = [.wav, .aiff, .flac]
+        let lossyAudioTargets: Set<OutputFormat> = [.mp3, .m4a, .ogg, .opus, .wma]
+        let canBeSeeThrough: Set<String> = ["PNG", "HEIC", "WebP", "AVIF", "TIFF", "GIF", "SVG"]
+        let richDocuments: Set<String> = ["DOCX", "Pages", "RTF", "ODT", "HTML", "EPUB", "DOC"]
+        switch source.kind {
+        case .image:
+            if from == "GIF", target != .gif { return "only the first frame of an animated GIF" }
+            if target == .gif { return "only 256 colors" }
+            if target == .jpeg, canBeSeeThrough.contains(from) { return "see-through parts become white" }
+            if target == .ico { return "small icon sizes only (up to 256 × 256)" }
+        case .pdf:
+            switch target {
+            case .docx, .pages, .epub: return "the layout is rebuilt from the pages, so it may not look the same"
+            case .md: return "simple formatting only"
+            case .txt: return "text only"
+            case .xlsx: return "only the tables found on its pages"
+            case .pptx: return "each page becomes a picture on a slide (its text can't be edited)"
+            default: break
+            }
+        case .video:
+            if target == .gif { return "no sound and only 256 colors (and a big file)" }
+        case .audio:
+            if lossyAudio.contains(from), lossyAudioTargets.contains(target) { return "it was already compressed: a little more quality is lost" }
+            if lossyAudio.contains(from), losslessAudioTargets.contains(target) { return "a much bigger file that doesn't sound any better" }
+        case .document:
+            if target == .txt, from != "TXT" { return "text only: formatting, pictures and tables are left out" }
+            if target == .md, richDocuments.contains(from) { return "simple formatting only (headings, lists, links, tables)" }
+            if target == .rtf, richDocuments.contains(from) { return "pictures are left out" }
+        case .spreadsheet:
+            if [.csv, .tsv].contains(target), !["CSV", "TSV"].contains(from) { return "only the first sheet, as plain values" }
+        case .subtitle:
+            if target == .txt { return "text only, without the times" }
+            if from == "VTT", target == .srt { return "styling and positions are left out" }
+        case .archive, .presentation:
+            break
+        }
+        return nil
+    }
+
     /// The extra tool (or Apple app) a wedge takes for this file, if any.
     static func tool(for action: WheelAction, file: SourceFile) -> ExternalTool? {
         if action == .convert(.webp) { return .cwebp }

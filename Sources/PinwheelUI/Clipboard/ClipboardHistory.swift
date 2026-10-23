@@ -49,6 +49,9 @@ struct ClipItem: Codable, Identifiable, Equatable, Sendable {
     /// at once, in the background (nil until then).
     var pictureHasText: Bool?
     var pictureHasCode: Bool?
+    /// How it was looked at (`ClipActions.lookVersion`); a look the old way
+    /// is done again.
+    var pictureLook: Int?
 }
 
 /// Copies put together under a name. Like favorites, they're kept for good.
@@ -156,10 +159,13 @@ final class ClipboardStore {
         }
         let text = data(.utf8PlainText, in: first).flatMap { String(data: $0, encoding: .utf8) }
             ?? data(.rtf, in: first).flatMap { NSAttributedString(rtf: $0, documentAttributes: nil)?.string }
-        // A picture (with no text alongside: text copied from a web page
-        // may come with a picture of itself).
+        // A picture: with no text alongside (text copied from a web page may
+        // come with a picture of itself), or offered first, or with just its
+        // address (a browser's Copy Image).
         let imageTypes: [UTType] = [.png, .tiff, .jpeg, .heic]
-        if text == nil || text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true,
+        let trimmedText = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let offeredFirst = first.first.flatMap { UTType($0.type) }?.conforms(to: .image) == true
+        if trimmedText.isEmpty || offeredFirst || isLink(trimmedText),
            let picture = imageTypes.lazy.compactMap({ data($0, in: first) }).first {
             var size = ""
             if let source = CGImageSourceCreateWithData(picture as CFData, nil),
@@ -395,6 +401,7 @@ final class ClipboardStore {
         try? Data(codes.joined(separator: "\n").utf8).write(to: place.appendingPathComponent("picture-codes.txt"))
         items[index].pictureHasText = !text.isEmpty
         items[index].pictureHasCode = !codes.isEmpty
+        items[index].pictureLook = ClipActions.lookVersion
         save()
     }
 

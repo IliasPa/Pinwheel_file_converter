@@ -27,7 +27,7 @@ final class CodesModel {
     func read() async {
         var read: [(URL, [ReadCode]?)] = []
         for url in files {
-            read.append((url, try? await CodeReader.read(url)))
+            read.append((url, try? await PictureReader.shared.codes(in: url)))
         }
         results = read.map { url, codes in
             Found(file: url, codes: codes ?? [], problem: codes == nil ? "Couldn't read this picture." : nil)
