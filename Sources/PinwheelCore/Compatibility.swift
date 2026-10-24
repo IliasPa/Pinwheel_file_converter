@@ -127,7 +127,7 @@ public enum Compatibility {
             case .docx, .pages, .epub: return "the layout is rebuilt from the pages (text, pictures, tables, columns), so it may not look exactly the same"
             case .md: return "simple formatting only"
             case .xlsx: return "only the tables found on its pages"
-            case .pptx: return "each page becomes a picture on a slide (its text can't be edited)"
+            case .pptx: return "the words become text boxes over a picture of the page, so it may not look exactly the same"
             default: break
             }
         case .video:

@@ -23,6 +23,8 @@ enum PDFStructure {
         var table: [[String]]?
         /// A picture on the page, where it is.
         var picture: Document.Picture?
+        /// The font family most of its letters are in ("Helvetica").
+        var font: String?
 
         var text: String { runs.text }
     }
@@ -93,6 +95,7 @@ enum PDFStructure {
             let string = attributed.string as NSString
             var runs: [Document.Run] = []
             var sizes: [CGFloat: Int] = [:]
+            var families: [String: Int] = [:]
             var bold = 0, mono = 0, total = 0
             for range in pieces {
                 attributed.enumerateAttributes(in: range) { attributes, runRange, _ in
@@ -102,6 +105,7 @@ enum PDFStructure {
                     let letters = text.filter { !$0.isWhitespace }.count
                     let size = ((font?.pointSize ?? 0) * 2).rounded() / 2
                     sizes[size, default: 0] += letters
+                    if let family = font?.familyName { families[family, default: 0] += letters }
                     if look.bold { bold += letters }
                     if look.mono { mono += letters }
                     total += letters
@@ -118,7 +122,8 @@ enum PDFStructure {
             while let last = merged.last?.text, last.hasSuffix(" ") { merged[merged.count - 1].text.removeLast() }
             return Line(
                 runs: merged.filter { !$0.text.isEmpty }, size: sizes.max { $0.value < $1.value }?.key ?? 0,
-                bold: bold == total, mono: mono == total, frame: selection.bounds(for: page), page: index, pageSize: pageSize
+                bold: bold == total, mono: mono == total, frame: selection.bounds(for: page), page: index, pageSize: pageSize,
+                font: families.max { $0.value < $1.value }?.key
             )
         }
     }
@@ -239,7 +244,7 @@ enum PDFStructure {
     static func withTables(_ lines: [Line], on page: PDFPage) -> [Line] {
         guard let first = lines.first else { return lines }
         var result = lines
-        for table in layout(words(of: page)) where table.isTable {
+        for table in PDFTables.tables(on: page) {
             let area = table.frame.insetBy(dx: -2, dy: -2)
             result.removeAll { $0.table == nil && area.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
             let line = Line(runs: [], size: 0, bold: false, mono: false, frame: table.frame, page: first.page, pageSize: first.pageSize, table: table.rows)
@@ -531,18 +536,23 @@ enum PDFStructure {
         var pictures: [(Data, CGSize)] = []
         for number in 1...max(document.numberOfPages, 1) {
             try Task.checkCancellation()
-            guard let page = document.page(at: number) else { continue }
-            let image = try PDFConverter.render(page, dpi: dpi)
-            let data = NSMutableData()
-            guard let dest = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { continue }
-            CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
-            CGImageDestinationFinalize(dest)
-            let box = page.getBoxRect(.cropBox)
-            let turned = page.rotationAngle % 180 != 0
-            pictures.append((data as Data, turned ? CGSize(width: box.height, height: box.width) : box.size))
+            guard let page = document.page(at: number), let picture = pagePicture(page, dpi: dpi) else { continue }
+            pictures.append(picture)
             progress(Double(number) / Double(document.numberOfPages))
         }
         return pictures
+    }
+
+    /// One page as a JPEG, upright as it's shown, and its size in points.
+    static func pagePicture(_ page: CGPDFPage, dpi: Double = 150) -> (data: Data, size: CGSize)? {
+        guard let image = try? PDFConverter.render(page, dpi: dpi) else { return nil }
+        let data = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        let box = page.getBoxRect(.cropBox)
+        let turned = page.rotationAngle % 180 != 0
+        return (data as Data, turned ? CGSize(width: box.height, height: box.width) : box.size)
     }
 
     // MARK: - Tables
@@ -553,11 +563,14 @@ enum PDFStructure {
         var frame: CGRect
     }
 
-    /// Each page as a sheet: lines become rows, and words lined up under
-    /// each other become columns.
+    /// Each table as a sheet ("Page 2", or "Page 2, table 1" when the page
+    /// has several), its numbers as numbers. A PDF without tables: each page
+    /// as a sheet, its lines as rows and words lined up under each other as
+    /// columns. Scanned pages are read with text recognition.
     static func workbook(_ url: URL, recognition: TextRecognition, progress: @escaping @Sendable (Double) -> Void) async throws -> Workbook {
         let pdf = try PDFConverter.open(url)
         var words: [Int: [Word]] = [:]
+        var tables: [Int: [Block]] = [:]
         var scans: [Int] = []
         var sizes: [Int: CGSize] = [:]
         for index in 0..<pdf.pageCount {
@@ -565,7 +578,12 @@ enum PDFStructure {
             guard let page = pdf.page(at: index) else { continue }
             sizes[index] = page.bounds(for: .mediaBox).size
             let found = Self.words(of: page)
-            if found.isEmpty { scans.append(index) } else { words[index] = found }
+            if found.isEmpty {
+                scans.append(index)
+            } else {
+                words[index] = found
+                tables[index] = PDFTables.tables(on: page)
+            }
             progress(0.5 * Double(index + 1) / Double(max(pdf.pageCount, 1)))
         }
         let scanCount = scans.count
@@ -574,13 +592,25 @@ enum PDFStructure {
         }
         for (index, text) in recognized {
             let size = sizes[index] ?? PaperSize.current
-            words[index] = text.lines.flatMap(\.words).map { word in
+            let read = text.lines.flatMap(\.words).map { word in
                 Word(text: word.text, frame: CGRect(x: word.box.minX * size.width, y: (1 - word.box.maxY) * size.height,
                                                     width: word.box.width * size.width, height: word.box.height * size.height))
             }
+            words[index] = read
+            tables[index] = layout(read).filter(\.isTable)
         }
-        let sheets = words.keys.sorted().map { page in
-            Workbook.Sheet(name: "Page \(page + 1)", rows: grid(words[page] ?? []))
+        let pages = words.keys.sorted()
+        guard tables.values.contains(where: { !$0.isEmpty }) else {
+            let sheets = pages.map { Workbook.Sheet(name: "Page \($0 + 1)", rows: grid(words[$0] ?? [])) }
+            return Workbook(sheets: sheets.filter { !$0.rows.isEmpty })
+        }
+        var sheets: [Workbook.Sheet] = []
+        for page in pages {
+            let found = tables[page] ?? []
+            for (number, table) in found.enumerated() {
+                let name = found.count == 1 ? "Page \(page + 1)" : "Page \(page + 1), table \(number + 1)"
+                sheets.append(Workbook.Sheet(name: name, rows: PDFTables.cells(table.rows)))
+            }
         }
         return Workbook(sheets: sheets.filter { !$0.rows.isEmpty })
     }
@@ -612,7 +642,7 @@ enum PDFStructure {
                 rows += table.rows
             }
         }
-        return rows.map { $0.map { $0.isEmpty ? .empty : Workbook.Cell.guess($0) } }
+        return PDFTables.cells(rows)
     }
 
     /// Lines on a page, or lines with gaps lined up in columns.

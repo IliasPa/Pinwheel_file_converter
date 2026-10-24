@@ -3,6 +3,26 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.10 (beta) — 2026-10-24
+
+**New**
+- **PDFs into PowerPoint you can edit.** Each page becomes a slide with its
+  words in text boxes (their font, size, color, bold and italics, line
+  spacing and alignment kept), its pictures set on top, to be moved, and
+  the rest of the page (colors, shapes) underneath. Scanned and turned
+  pages stay a picture, and Settings › Wheels › Formats › PDF › Pages as
+  pictures makes every slide a picture, as before.
+
+**Changed**
+- **PDFs into Excel, table by table:** each table is a sheet of its own
+  ("Page 2, table 1"). Ruled tables (lines between the cells, as most
+  invoices and reports have) are read from their lines, so rows, columns
+  and cells whose words wrap come out right. Numbers become numbers
+  whichever way they're written: "1.250,00", "1,250.00", "€ 1 250", and
+  "(300)" for −300. A PDF without tables still gets a sheet per page, and
+  tables on scanned pages are read with text recognition.
+- Ruled tables come out better in PDFs into Word, Pages and EPUB too.
+
 ## v1.9 (beta) — 2026-10-24
 
 **New**

@@ -42,8 +42,13 @@ enum DocumentConverter {
             try ExcelWorkbook.write(workbook, to: destination)
             return Written()
         case .pptx:
-            let pages = try await Blocking.run { _ in try PDFStructure.pagePictures(file.url, progress: progress) }
-            try SlideDeck.write(pages.map { SlideDeck.Slide(data: $0.data, isJPEG: true, size: $0.size) }, to: destination)
+            // Words in text boxes over the page, or (as chosen in Settings) just a picture of each page.
+            let slides = try await Blocking.run { _ in
+                options.pdfPagesAsPictures
+                    ? try PDFStructure.pagePictures(file.url, progress: progress).map { SlideDeck.Slide(data: $0.data, isJPEG: true, size: $0.size) }
+                    : try PDFSlides.slides(file.url, progress: progress)
+            }
+            try SlideDeck.write(slides, to: destination)
             return Written()
         default:
             var note: String?

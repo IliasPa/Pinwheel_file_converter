@@ -126,7 +126,7 @@ struct ConversionsPane: View {
                 Text("Text you can edit").tag(false)
                 Text("Pages as pictures (look the same)").tag(true)
             } label: {
-                Text("Word, Pages, EPUB and HTML get").padding(.leading, SettingsLayout.indent)
+                Text("Word, Pages, EPUB, HTML and PowerPoint get").padding(.leading, SettingsLayout.indent)
             }
         case (.video, .convert(.gif)):
             Picker(selection: $settings.gifWidth) {
@@ -188,7 +188,7 @@ struct ConversionsPane: View {
             return "WAV and AIFF are uncompressed; FLAC is lossless and about half their size; Opus sounds best for its size."
                 + (ffmpeg ? "" : " MP3, OGG, Opus and WMA need ffmpeg: \(FFmpeg.installCommand)")
         case .pdf:
-            return "A PDF with several pages becomes a folder with a picture for each page. Word, Pages, EPUB, Markdown and HTML get its text with headings, paragraphs, lists, colors and pictures, in two columns where the page has them (scanned pages are read with text recognition), or each page as a picture; Excel gets the tables on each page; PowerPoint a slide for each page."
+            return "A PDF with several pages becomes a folder with a picture for each page. Word, Pages, EPUB, Markdown and HTML get its text with headings, paragraphs, lists, colors and pictures, in two columns where the page has them (scanned pages are read with text recognition), or each page as a picture; Excel gets each table as a sheet (ruled tables cell by cell, numbers as numbers); PowerPoint a slide for each page, its words in text boxes you can edit and its pictures to move."
         case .archive:
             return "Extract opens ZIP, RAR, 7Z, TAR and GZ files. Archives are made without the Mac's hidden extras, so they open cleanly on any computer. Files with a password can't be opened yet."
         case .document:
