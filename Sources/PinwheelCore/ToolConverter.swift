@@ -104,7 +104,7 @@ enum ImageTools {
         case .compress where format == .png:
             try await compressPNG(source, src, to: destination, options: options)
         case .compress:
-            try compress(src, to: destination, format: format, quality: options.compressQuality)
+            try compress(src, to: destination, format: format, quality: options.compressQuality, background: options.jpegBackground)
         case .resize:
             try resize(src, to: destination, format: format, options: options)
         case .stripMetadata:
@@ -115,14 +115,14 @@ enum ImageTools {
     }
 
     /// Same pixels, lower quality setting. Metadata is kept.
-    static func compress(_ src: CGImageSource, to url: URL, format: OutputFormat, quality: Double) throws {
+    static func compress(_ src: CGImageSource, to url: URL, format: OutputFormat, quality: Double, background: String = "#FFFFFF") throws {
         let index = CGImageSourceGetPrimaryImageIndex(src)
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
         let settings: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
         let dest = try ImageConverter.makeDestination(url, format: format)
         if format == .jpeg, properties[kCGImagePropertyHasAlpha] as? Bool == true,
            let image = CGImageSourceCreateImageAtIndex(src, index, nil) {
-            let flat = try ImageConverter.flattenOnWhite(image)
+            let flat = try ImageConverter.flatten(image, onto: background)
             CGImageDestinationAddImage(dest, flat, ImageConverter.metadata(from: properties).merging(settings) { $1 } as CFDictionary)
         } else {
             CGImageDestinationAddImageFromSource(dest, src, index, settings as CFDictionary)

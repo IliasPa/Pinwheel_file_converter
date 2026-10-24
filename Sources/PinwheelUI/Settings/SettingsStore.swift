@@ -81,6 +81,7 @@ final class SettingsStore {
         case webpQuality, avifQuality
         case textRecognition
         case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes, clipboardPreview, clipboardActions
+        case jpegBackground, subtitleTimes
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -105,6 +106,8 @@ final class SettingsStore {
 
     // Images and PDFs
     var jpegQuality: Double { didSet { save(jpegQuality, .jpegQuality) } }
+    /// "#RRGGBB": what see-through parts become in a JPEG.
+    var jpegBackground: String { didSet { save(jpegBackground, .jpegBackground) } }
     var heicQuality: Double { didSet { save(heicQuality, .heicQuality) } }
     var webpQuality: Double { didSet { save(webpQuality, .webpQuality) } }
     var avifQuality: Double { didSet { save(avifQuality, .avifQuality) } }
@@ -124,6 +127,8 @@ final class SettingsStore {
     var gifFPS: Int { didSet { save(gifFPS, .gifFPS) } }
     /// 0 means no limit.
     var gifMaxSeconds: Int { didSet { save(gifMaxSeconds, .gifMaxSeconds) } }
+    /// Subtitles into text keep each one's start time.
+    var subtitleTimes: Bool { didSet { save(subtitleTimes, .subtitleTimes) } }
 
     // System
     /// Files converted at the same time; 0 means automatic.
@@ -202,6 +207,8 @@ final class SettingsStore {
             .saveLocation: SaveLocationChoice.nextToOriginal.rawValue,
             .customFolderPath: "",
             .jpegQuality: factory.jpegQuality,
+            .jpegBackground: factory.jpegBackground,
+            .subtitleTimes: factory.subtitleTimes,
             .heicQuality: factory.heicQuality,
             .webpQuality: factory.webpQuality,
             .avifQuality: factory.avifQuality,
@@ -256,6 +263,8 @@ final class SettingsStore {
         saveLocation = SaveLocationChoice(rawValue: string(.saveLocation)) ?? .nextToOriginal
         customFolderPath = string(.customFolderPath)
         jpegQuality = defaults.double(forKey: Key.jpegQuality.rawValue)
+        jpegBackground = string(.jpegBackground)
+        subtitleTimes = defaults.bool(forKey: Key.subtitleTimes.rawValue)
         heicQuality = defaults.double(forKey: Key.heicQuality.rawValue)
         webpQuality = defaults.double(forKey: Key.webpQuality.rawValue)
         avifQuality = defaults.double(forKey: Key.avifQuality.rawValue)
@@ -417,6 +426,8 @@ final class SettingsStore {
     var conversionOptions: ConversionOptions {
         var options = ConversionOptions()
         options.jpegQuality = jpegQuality
+        options.jpegBackground = jpegBackground
+        options.subtitleTimes = subtitleTimes
         options.heicQuality = heicQuality
         options.webpQuality = webpQuality
         options.avifQuality = avifQuality
@@ -460,6 +471,8 @@ final class SettingsStore {
         saveLocation = fresh.saveLocation
         customFolderPath = fresh.customFolderPath
         jpegQuality = fresh.jpegQuality
+        jpegBackground = fresh.jpegBackground
+        subtitleTimes = fresh.subtitleTimes
         heicQuality = fresh.heicQuality
         webpQuality = fresh.webpQuality
         avifQuality = fresh.avifQuality

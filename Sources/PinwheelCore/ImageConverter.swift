@@ -28,12 +28,16 @@ public enum ImageConverter {
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
         let settings = encoderSettings(for: format, options: options)
         let dest = try makeDestination(destination, format: format)
-        if format == .jpeg, properties[kCGImagePropertyHasAlpha] as? Bool == true {
+        if format == .gif {
+            // Upright (GIF has no orientation), in 256 colors of its own, dithered.
+            let image = try orientedImage(src, index: index)
+            CGImageDestinationAddImage(dest, GIFPalette.dithered(image) ?? image, nil)
+        } else if format == .jpeg, properties[kCGImagePropertyHasAlpha] as? Bool == true {
             // JPEG has no transparency. Without this, see-through areas turn black.
             guard let image = CGImageSourceCreateImageAtIndex(src, index, nil) else {
                 throw ConversionError.unreadable(source.lastPathComponent)
             }
-            let flat = try flattenOnWhite(image)
+            let flat = try flatten(image, onto: options.jpegBackground)
             CGImageDestinationAddImage(dest, flat, metadata(from: properties).merging(settings) { $1 } as CFDictionary)
         } else {
             // Copies pixels *and* metadata (date, camera, orientation…).
@@ -173,18 +177,28 @@ public enum ImageConverter {
         return image
     }
 
-    static func flattenOnWhite(_ image: CGImage) throws -> CGImage {
+    /// The picture on a solid color (JPEG has no transparency), given as
+    /// "#RRGGBB" (Settings › Wheels › Formats › JPEG); white if it can't be read.
+    static func flatten(_ image: CGImage, onto background: String = "#FFFFFF") throws -> CGImage {
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         guard let ctx = CGContext(
             data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
             space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) else { throw ConversionError.failed("Not enough memory to process the image.") }
         let rect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+        ctx.setFillColor(color(hex: background) ?? CGColor(gray: 1, alpha: 1))
         ctx.fill(rect)
         ctx.draw(image, in: rect)
         guard let flat = ctx.makeImage() else { throw ConversionError.failed("Couldn't process the image.") }
         return flat
+    }
+
+    /// "#RRGGBB" (or "RRGGBB") as an sRGB color.
+    static func color(hex: String) -> CGColor? {
+        let digits = hex.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "#", with: "")
+        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+        return CGColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
+                       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
     }
 
     /// One PDF page, sized so the image prints at its own resolution.

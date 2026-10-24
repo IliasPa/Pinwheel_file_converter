@@ -446,8 +446,12 @@ struct SpreadsheetTests {
         let folder = try TempFolder()
         let excel = folder.file("book.xlsx")
         try ExcelWorkbook.write(book, to: excel)
+        // Two sheets: a folder with a CSV for each (v1.8; before, only the first).
         let result = try await runRequest(ConversionRequest(file: SourceFile(url: excel), action: .convert(.csv)))
-        #expect(result.note?.contains("Only the sheet “Sales” was saved") == true)
+        let csvFolder = try #require(result.outputs.first)
+        let files = try FileManager.default.contentsOfDirectory(atPath: csvFolder.path).sorted()
+        #expect(result.outputs.count == 1 && files.count == 2 && files.allSatisfy { $0.hasSuffix(".csv") }, "\(files)")
+        #expect(files.contains("Sales.csv"))
         let pdf = try await runConversion(excel, .convert(.pdf))
         let text = try #require(PDFDocument(url: pdf)?.string)
         #expect(text.contains("Second sheet") && text.contains("1234.5"))
@@ -477,7 +481,7 @@ struct SubtitleTests {
         #expect(Subtitles.plainText(cues) == "Hello, world\nGoodbye\n")
         // WebVTT's short times, settings, notes and voices.
         let web = Subtitles.parse("WEBVTT\n\nNOTE made by hand\n\n01:02.500 --> 01:04.000 align:start\n<v Maria>Hi there")
-        #expect(web == [.init(start: 62.5, end: 64, text: "<v Maria>Hi there")])
+        #expect(web == [.init(start: 62.5, end: 64, text: "<v Maria>Hi there", place: .init(column: .left))], "align:start: on the left (v1.8)")
         #expect(Subtitles.srtText(web[0].text) == "Maria: Hi there")
     }
 }

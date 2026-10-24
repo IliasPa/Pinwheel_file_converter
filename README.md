@@ -15,21 +15,26 @@ your Mac: nothing is uploaded.
 - Pictures (JPEG, PNG, HEIC, WebP, AVIF, TIFF, GIF, BMP, SVG, camera RAW…)
   → PNG, JPEG, HEIC, WebP, AVIF, TIFF, GIF, BMP, PDF, or icons (ICO for
   Windows, ICNS for the Mac). Several pictures → one PDF, or a **collage**.
+  GIFs get the 256 colors that suit the picture, finely mixed (no bands);
+  JPEG's see-through parts get the color you choose.
 - Videos (MOV, MP4, M4V; MKV, WebM, AVI, WMV with ffmpeg) → MP4, MOV, MKV,
   WebM, AVI, WMV, GIF, M4A, MP3.
 - Audio (MP3, M4A, WAV, AIFF, FLAC, OGG, Opus, WMA…) → MP3, M4A, WAV, AIFF,
-  FLAC, OGG, Opus, WMA.
+  FLAC, OGG, Opus, WMA. Sound that was already compressed keeps at least
+  its bit rate.
 - PDFs → PNG, JPEG, HEIC or TIFF (one picture per page), a smaller PDF,
   or **Word, Pages, EPUB, Markdown or text** with headings, paragraphs,
   lists and tables you can edit (scans are read too); **Excel** with the
   tables on each page; **PowerPoint** with a slide for each page.
 - Documents (Word, Pages, RTF, ODT, Markdown, text, web pages, EPUB, old
-  .doc) → PDF, Word, Pages, RTF, ODT, Markdown, text, HTML or EPUB.
+  .doc) → PDF, Word, Pages, RTF, ODT, Markdown, text, HTML or EPUB, with
+  their pictures (Markdown keeps them in a folder beside it).
 - Spreadsheets (Excel, Numbers, ODS, CSV, TSV, old .xls) → Excel, ODS, CSV,
-  TSV or PDF.
+  TSV (a file for each sheet) or PDF.
 - Slides (PowerPoint, Keynote) → PDF, PowerPoint, or a picture of each
   slide.
-- Subtitles: SRT ⇄ WebVTT, or just their words.
+- Subtitles: SRT ⇄ WebVTT, with bold, italics, colors and where they go
+  on the screen; or just their words (with their times, if you like).
 - Archives (ZIP, RAR, 7Z, TAR, TAR.GZ, GZ) → **extracted** into a folder, or
   repacked as ZIP, TAR, TAR.GZ or 7Z.
 - Settings › Compatibility has the whole table, and Settings › Wheels
@@ -273,7 +278,7 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 415, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 425, with real conversions). GitHub runs them on every push too. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |

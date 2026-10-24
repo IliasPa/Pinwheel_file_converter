@@ -48,6 +48,15 @@ public final class OutputNaming: @unchecked Sendable {
         if let fileExtension { name += ".\(fileExtension)" }
         return folder.appendingPathComponent(name, isDirectory: fileExtension == nil)
     }
+
+    /// Any name (a sheet's, say) as a file name: no "/" or ":", not hidden,
+    /// not empty.
+    static func safeFileName(_ name: String) -> String {
+        var cleaned = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        while cleaned.hasPrefix(".") { cleaned.removeFirst() }
+        return cleaned.isEmpty ? "Untitled" : String(cleaned.prefix(200))
+    }
 }
 
 /// Sizes of files and folders on disk.

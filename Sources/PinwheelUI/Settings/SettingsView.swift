@@ -147,7 +147,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
             return OutputFormat.allCases.map(\.title)
                 + ["jpg", "formats", "conversions", "convert", "quality", "collage", "combined", "smaller pdf", "dpi", "resolution",
                    "frame rate", "width", "length", "word", "excel", "powerpoint", "keynote", "numbers", "documents",
-                   "spreadsheets", "slides", "subtitles", "editable", "pages as pictures"]
+                   "spreadsheets", "slides", "subtitles", "editable", "pages as pictures", "background", "see-through",
+                   "transparent", "subtitle times"]
         case .tools:
             return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title)
                 + ["tools", "bit rate", "video size", "custom actions", "qr", "barcode", "shelf", "visualizer", "waveform", "faces",

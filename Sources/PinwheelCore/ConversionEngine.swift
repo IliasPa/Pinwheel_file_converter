@@ -177,7 +177,9 @@ public enum ConversionEngine {
                 try await PDFConverter.renderPages(file.url, to: format, destination: destination, options: options, progress: progress)
             case (.pdf, .convert(let format)), (.document, .convert(let format)), (.spreadsheet, .convert(let format)),
                  (.presentation, .convert(let format)), (.subtitle, .convert(let format)):
-                notes.append(try await DocumentConverter.convert(file, to: format, destination: destination, options: options, progress: progress))
+                let written = try await DocumentConverter.convert(file, to: format, destination: destination, options: options, progress: progress)
+                notes.append(written.note)
+                if let written = written.outputs { outputs = written }
             case (.video, .convert(let format)), (.audio, .convert(let format)):
                 notes.append(try await MediaConverter.convert(
                     file, to: format, destination: destination, options: options, part: request.mediaEdit, progress: progress

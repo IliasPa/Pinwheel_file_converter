@@ -14,12 +14,20 @@ enum AttributedDocument {
         var options: [NSAttributedString.DocumentReadingOptionKey: Any] = [:]
         if let type = cocoaTypes[ext] { options[.documentType] = type }
         let attributed: NSAttributedString
+        var pictures: [Document.Picture] = []
         do {
-            attributed = try NSAttributedString(url: url, options: options, documentAttributes: nil)
+            if ext == "rtf" {
+                // macOS skips the pictures in RTF: they're taken out first and put back after.
+                let lifted = RTFPictures.lift(try Data(contentsOf: url))
+                pictures = lifted.pictures
+                attributed = try NSAttributedString(data: lifted.rtf, options: options, documentAttributes: nil)
+            } else {
+                attributed = try NSAttributedString(url: url, options: options, documentAttributes: nil)
+            }
         } catch {
             throw ConversionError.unreadable(url.lastPathComponent)
         }
-        return document(from: attributed)
+        return RTFPictures.place(pictures, in: document(from: attributed))
     }
 
     // MARK: - Attributed text → document
@@ -252,6 +260,31 @@ enum AttributedDocument {
         do {
             let data = try text.data(from: NSRange(location: 0, length: text.length), documentAttributes: attributes)
             try data.write(to: url)
+        } catch {
+            throw ConversionError.cannotWrite(url.lastPathComponent)
+        }
+    }
+
+    /// RTF with its pictures (see `RTFPictures`): each goes in as a mark,
+    /// and the mark is swapped for the picture.
+    static func writeRTF(_ document: Document, to url: URL) throws {
+        var pictures: [Document.Picture] = []
+        var marked = document
+        marked.blocks = document.blocks.map { block in
+            guard case .image(let picture) = block else { return block }
+            pictures.append(picture)
+            return .paragraph([Document.Run(RTFPictures.mark(pictures.count - 1))])
+        }
+        let text = attributed(marked)
+        var attributes: [NSAttributedString.DocumentAttributeKey: Any] = [.documentType: NSAttributedString.DocumentType.rtf]
+        if let title = document.displayTitle { attributes[.title] = title }
+        do {
+            let data = try text.data(from: NSRange(location: 0, length: text.length), documentAttributes: attributes)
+            var rtf = String(decoding: data, as: UTF8.self)  // RTF is plain ASCII
+            for (index, picture) in pictures.enumerated() {
+                rtf = rtf.replacingOccurrences(of: RTFPictures.mark(index), with: RTFPictures.group(picture))
+            }
+            try Data(rtf.utf8).write(to: url)
         } catch {
             throw ConversionError.cannotWrite(url.lastPathComponent)
         }

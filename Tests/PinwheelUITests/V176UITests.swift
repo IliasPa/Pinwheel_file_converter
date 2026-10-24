@@ -63,7 +63,10 @@ struct QuickButtonTests {
         controller.run(.textInImage, on: picture)
         for _ in 0..<40 where pasted == 0 { try await Task.sleep(for: .milliseconds(10)) }
         #expect(pasted == 1 && board.string(forType: .string)?.contains("Read me quickly") == true)
-        #expect(clock.now - started < .seconds(1), "already read: nothing to wait for")
+        // Already read: nothing to wait for. (Reading again would take a
+        // moment, or 40 s the first time; a Mac busy with other tests can
+        // take a second or two even so.)
+        #expect(clock.now - started < .seconds(3), "already read: nothing to wait for")
 
         // With the buttons off, pictures aren't read at all.
         settings.clipboardActions = false

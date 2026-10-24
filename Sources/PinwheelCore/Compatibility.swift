@@ -102,25 +102,27 @@ public enum Compatibility {
 
     /// What a conversion loses, when it isn't as good as the original (a
     /// yellow tick in the table); nil when nothing that matters is lost.
+    /// A format that holds less by its nature (an icon's sizes, plain text,
+    /// lossless sound from compressed sound) isn't a loss: that's the point
+    /// of choosing it.
     public static func limitation(from source: Source, to target: OutputFormat) -> String? {
         guard source.sample.format != target else { return nil }  // the same format
         let from = source.title
         let lossyAudio: Set<String> = ["MP3", "M4A", "OGG", "Opus", "WMA"]
-        let losslessAudioTargets: Set<OutputFormat> = [.wav, .aiff, .flac]
         let lossyAudioTargets: Set<OutputFormat> = [.mp3, .m4a, .ogg, .opus, .wma]
         let canBeSeeThrough: Set<String> = ["PNG", "HEIC", "WebP", "AVIF", "TIFF", "GIF", "SVG"]
         let richDocuments: Set<String> = ["DOCX", "Pages", "RTF", "ODT", "HTML", "EPUB", "DOC"]
         switch source.kind {
         case .image:
             if from == "GIF", target != .gif { return "only the first frame of an animated GIF" }
-            if target == .gif { return "only 256 colors" }
-            if target == .jpeg, canBeSeeThrough.contains(from) { return "see-through parts become white" }
-            if target == .ico { return "small icon sizes only (up to 256 × 256)" }
+            if target == .gif { return "only 256 colors (mixed finely, so shading stays smooth)" }
+            if target == .jpeg, canBeSeeThrough.contains(from) {
+                return "see-through parts get a solid color (white, or the one chosen in Settings › Wheels › Formats)"
+            }
         case .pdf:
             switch target {
             case .docx, .pages, .epub: return "the layout is rebuilt from the pages, so it may not look the same"
             case .md: return "simple formatting only"
-            case .txt: return "text only"
             case .xlsx: return "only the tables found on its pages"
             case .pptx: return "each page becomes a picture on a slide (its text can't be edited)"
             default: break
@@ -128,17 +130,21 @@ public enum Compatibility {
         case .video:
             if target == .gif { return "no sound and only 256 colors (and a big file)" }
         case .audio:
-            if lossyAudio.contains(from), lossyAudioTargets.contains(target) { return "it was already compressed: a little more quality is lost" }
-            if lossyAudio.contains(from), losslessAudioTargets.contains(target) { return "a much bigger file that doesn't sound any better" }
+            if from == "Opus", target == .ogg { return nil }  // the same sound, in an .ogg file
+            if from == "M4A", lossyAudioTargets.contains(target) {
+                return "most M4A files were already compressed (AAC): a little more quality is lost (none from Apple Lossless)"
+            }
+            if lossyAudio.contains(from), lossyAudioTargets.contains(target) {
+                return "it was already compressed: a little more quality is lost (Pinwheel keeps at least its bit rate)"
+            }
         case .document:
-            if target == .txt, from != "TXT" { return "text only: formatting, pictures and tables are left out" }
-            if target == .md, richDocuments.contains(from) { return "simple formatting only (headings, lists, links, tables)" }
-            if target == .rtf, richDocuments.contains(from) { return "pictures are left out" }
+            if target == .md, richDocuments.contains(from) { return "simple formatting only (headings, lists, links, tables, pictures)" }
         case .spreadsheet:
-            if [.csv, .tsv].contains(target), !["CSV", "TSV"].contains(from) { return "only the first sheet, as plain values" }
+            if [.csv, .tsv].contains(target), !["CSV", "TSV"].contains(from) {
+                return "plain values, without formulas or formatting (each sheet a file of its own)"
+            }
         case .subtitle:
-            if target == .txt { return "text only, without the times" }
-            if from == "VTT", target == .srt { return "styling and positions are left out" }
+            if from == "VTT", target == .srt { return "exact positions and sizes become top, middle or bottom, left or right" }
         case .archive, .presentation:
             break
         }

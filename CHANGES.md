@@ -3,6 +3,41 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.8 (beta) — 2026-10-24
+
+What the yellow ticks in Settings › Compatibility lost, kept.
+
+**Changed**
+- **RTF keeps its pictures,** written the way Word writes them, so Word,
+  LibreOffice and Google Docs show them (TextEdit still doesn't: macOS
+  leaves pictures out of RTF). Pictures in an RTF made by Word are kept
+  too when it becomes something else.
+- **A CSV or TSV for every sheet:** a workbook with several sheets becomes
+  a folder with a file for each, named after the sheet (before, only the
+  first sheet was kept).
+- **Subtitles keep their look:** WebVTT into SRT keeps bold, italics,
+  underlines and colors (from its style too), and where each subtitle
+  goes on the screen (top, middle or bottom; left or right), and SRT into
+  WebVTT keeps the place. Subtitles into text can keep each one's time
+  (Settings › Wheels › Formats › Subtitles).
+- **Sound loses as little as it can:** sound that was already compressed
+  keeps at least its bit rate in MP3, OGG, Opus, WMA and M4A (a 320 kbps
+  MP3 into Opus was 128 kbps before), and Opus goes between .opus and
+  .ogg as it is, not compressed again.
+- **JPEG's background, your choice:** see-through parts get the color in
+  Settings › Wheels › Formats › JPEG (white, as before, unless you change
+  it). Compress, Size Limit, the image editor and Collage use it too.
+- **GIFs without bands:** a picture becomes a GIF in the 256 colors that
+  suit it best, mixed finely (dithered), so skies and shadows stay smooth;
+  see-through parts stay see-through.
+- **Markdown's pictures in a folder:** a document with pictures becomes a
+  Markdown file and a folder beside it ("Notes pictures"), linked from the
+  text; most Markdown apps didn't show pictures kept inside the text.
+- **Tables line up in plain text,** in columns, with a line under the
+  header.
+- **Fewer yellow ticks:** what a format holds by its nature isn't a loss
+  (icons up to 256 × 256, plain text, compressed sound into lossless).
+
 ## v1.7.8 (beta) — 2026-10-24
 
 **New**

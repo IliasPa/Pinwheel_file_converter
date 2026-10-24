@@ -105,6 +105,40 @@ public enum FFmpeg {
               ]) else { return nil }
         return Double(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
     }
+
+    /// A file's sound: how it's coded and its bit rate.
+    struct AudioStream: Equatable {
+        var codec: String?
+        /// Bits per second; nil when unknown.
+        var bitRate: Int?
+
+        /// Coded to be small: some of the sound was already left out.
+        var isLossy: Bool {
+            ["mp3", "mp2", "aac", "vorbis", "opus", "wmav1", "wmav2", "wmapro", "ac3", "eac3"].contains(codec ?? "")
+        }
+
+        /// ffprobe's "key=value" lines: the stream's, then the whole file's
+        /// bit rate (used when the stream's isn't known, as with most MP3s).
+        init(probe output: String) {
+            for line in output.split(whereSeparator: \.isNewline) {
+                let parts = line.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { continue }
+                if parts[0] == "codec_name", codec == nil { codec = parts[1] }
+                if parts[0] == "bit_rate", bitRate == nil, let rate = Int(parts[1]), rate > 0 { bitRate = rate }
+            }
+        }
+    }
+
+    static func audioStream(of file: SourceFile, ffmpeg: URL) async -> AudioStream? {
+        let ffprobe = ffmpeg.deletingLastPathComponent().appendingPathComponent("ffprobe")
+        guard FileManager.default.isExecutableFile(atPath: ffprobe.path),
+              let result = try? await ProcessRunner.run(ffprobe, [
+                  "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name,bit_rate:format=bit_rate",
+                  "-of", "default=noprint_wrappers=1", file.url.path,
+              ]) else { return nil }
+        let stream = AudioStream(probe: result.stdout)
+        return stream.codec == nil ? nil : stream
+    }
 }
 
 /// Runs a command-line tool and collects its output. Cancelling the Swift

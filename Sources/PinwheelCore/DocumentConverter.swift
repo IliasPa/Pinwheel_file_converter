@@ -4,20 +4,27 @@ import Foundation
 /// (and PDFs into documents). Each is read into Pinwheel's own model and
 /// written out of it; Pages, Keynote and Numbers do what only they can.
 enum DocumentConverter {
-    /// Returns a note for the progress window, if any.
+    /// What a conversion wrote: a note for the progress window, and the
+    /// files when they aren't just `destination` (a folder of CSV files, or
+    /// a Markdown file and the folder of its pictures).
+    struct Written: Sendable {
+        var note: String?
+        var outputs: [URL]?
+    }
+
     static func convert(
         _ file: SourceFile, to format: OutputFormat, destination: URL, options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
-    ) async throws -> String? {
+    ) async throws -> Written {
         switch file.kind {
         case .pdf: return try await fromPDF(file, to: format, destination: destination, options: options, progress: progress)
-        case .document: try await fromDocument(file.url, to: format, destination: destination, progress: progress)
+        case .document: return try await fromDocument(file.url, to: format, destination: destination, progress: progress)
         case .spreadsheet: return try await fromSpreadsheet(file.url, to: format, destination: destination, progress: progress)
         case .presentation: try await fromSlides(file.url, to: format, destination: destination, options: options, progress: progress)
-        case .subtitle: try Subtitles.convert(file.url, to: format, destination: destination)
+        case .subtitle: try Subtitles.convert(file.url, to: format, destination: destination, options: options)
         default: throw ConversionError.unsupported("\(format.title) from \(file.url.lastPathComponent)")
         }
-        return nil
+        return Written()
     }
 
     // MARK: - PDFs
@@ -25,19 +32,19 @@ enum DocumentConverter {
     private static func fromPDF(
         _ file: SourceFile, to format: OutputFormat, destination: URL, options: ConversionOptions,
         progress: @escaping @Sendable (Double) -> Void
-    ) async throws -> String? {
+    ) async throws -> Written {
         switch format {
         case .txt:
-            return try await TextExtractor.write(file, to: destination, recognition: options.textRecognition, progress: progress)
+            return Written(note: try await TextExtractor.write(file, to: destination, recognition: options.textRecognition, progress: progress))
         case .xlsx:
             let workbook = try await PDFStructure.workbook(file.url, recognition: options.textRecognition, progress: progress)
             guard !workbook.sheets.isEmpty else { throw NothingToDo(reason: "No text was found, so nothing was saved.") }
             try ExcelWorkbook.write(workbook, to: destination)
-            return nil
+            return Written()
         case .pptx:
             let pages = try await Blocking.run { _ in try PDFStructure.pagePictures(file.url, progress: progress) }
             try SlideDeck.write(pages.map { SlideDeck.Slide(data: $0.data, isJPEG: true, size: $0.size) }, to: destination)
-            return nil
+            return Written()
         default:
             var note: String?
             let document: Document
@@ -59,8 +66,9 @@ enum DocumentConverter {
                     note = scanned == 1 ? "1 scanned page was read with text recognition." : "\(scanned) scanned pages were read with text recognition."
                 }
             }
-            try await write(document, as: format, to: destination)
-            return note
+            var written = try await write(document, as: format, to: destination)
+            written.note = note
+            return written
         }
     }
 
@@ -68,25 +76,24 @@ enum DocumentConverter {
 
     private static func fromDocument(
         _ url: URL, to format: OutputFormat, destination: URL, progress: @escaping @Sendable (Double) -> Void
-    ) async throws {
+    ) async throws -> Written {
         let ext = url.pathExtension.lowercased()
         // Pages files: Pages itself exports what it can, exactly.
         if ext == "pages" {
             let direct: [OutputFormat: IWork.Export] = [.pdf: .pdf, .docx: .word, .epub: .epub, .txt: .text, .rtf: .richText]
             if let export = direct[format] {
                 try await IWork.export(url, with: .pages, as: export, to: destination)
-                return
+                return Written()
             }
-            try await withTemporaryFile("docx") { word in
+            return try await withTemporaryFile("docx") { word in
                 try await IWork.export(url, with: .pages, as: .word, to: word)
-                try await write(try WordDocument.read(word), as: format, to: destination)
+                return try await write(try WordDocument.read(word), as: format, to: destination)
             }
-            return
         }
         progress(0.1)
         let document = try read(url)
         progress(0.5)
-        try await write(document, as: format, to: destination)
+        return try await write(document, as: format, to: destination)
     }
 
     /// Any document format Pinwheel reads, into its model.
@@ -106,7 +113,8 @@ enum DocumentConverter {
     }
 
     /// The model, written as `format`.
-    static func write(_ document: Document, as format: OutputFormat, to url: URL) async throws {
+    @discardableResult
+    static func write(_ document: Document, as format: OutputFormat, to url: URL) async throws -> Written {
         switch format {
         case .pdf: try AttributedDocument.writePDF(document, to: url)
         case .docx: try WordDocument.write(document, to: url)
@@ -115,13 +123,54 @@ enum DocumentConverter {
                 try WordDocument.write(document, to: word)
                 try await IWork.export(word, with: .pages, as: .native, to: url)
             }
-        case .rtf: try AttributedDocument.write(document, to: url, type: .rtf)
+        case .rtf: try AttributedDocument.writeRTF(document, to: url)
         case .odt: try AttributedDocument.write(document, to: url, type: .openDocument)
         case .epub: try EPUBBook.write(document, to: url)
-        case .md: try writeText(document.markdown, to: url)
+        case .md: return try writeMarkdown(document, to: url)
         case .txt: try writeText(document.plainText, to: url)
         case .html: try writeText(document.html, to: url)
         default: throw ConversionError.unsupported("\(format.title) from a document")
+        }
+        return Written()
+    }
+
+    /// Markdown, with its pictures as files in a folder beside it ("Notes
+    /// pictures"), linked from the text: most Markdown apps don't show
+    /// pictures kept inside the text itself.
+    static func writeMarkdown(_ document: Document, to url: URL) throws -> Written {
+        let pictures = document.blocks.compactMap { block -> Document.Picture? in
+            if case .image(let picture) = block { return picture }
+            return nil
+        }
+        guard !pictures.isEmpty else {
+            try writeText(document.markdown, to: url)
+            return Written()
+        }
+        let folder = uniqueURL(url.deletingPathExtension(), suffix: " pictures")
+        let names = pictures.indices.map { "picture \($0 + 1).\(pictures[$0].fileExtension)" }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+            for (picture, name) in zip(pictures, names) {
+                try picture.data.write(to: folder.appendingPathComponent(name))
+            }
+            try writeText(document.markdown(picturesIn: folder.lastPathComponent, named: names), to: url)
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw ConversionError.cannotWrite(url.lastPathComponent)
+        }
+        return Written(outputs: [url, folder])
+    }
+
+    /// `base` + `suffix`, or with " 2", " 3"… when that's taken.
+    static func uniqueURL(_ base: URL, suffix: String, fileExtension: String? = nil) -> URL {
+        let folder = base.deletingLastPathComponent()
+        let name = base.lastPathComponent + suffix
+        var attempt = 1
+        while true {
+            var candidate = folder.appendingPathComponent(attempt == 1 ? name : "\(name) \(attempt)")
+            if let fileExtension { candidate.appendPathExtension(fileExtension) }
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            attempt += 1
         }
     }
 
@@ -129,13 +178,13 @@ enum DocumentConverter {
 
     private static func fromSpreadsheet(
         _ url: URL, to format: OutputFormat, destination: URL, progress: @escaping @Sendable (Double) -> Void
-    ) async throws -> String? {
+    ) async throws -> Written {
         let ext = url.pathExtension.lowercased()
         // Numbers files and old Excel files: Numbers reads them.
         if ext == "numbers" || ext == "xls" {
             if format == .pdf {
                 try await IWork.export(url, with: .numbers, as: .pdf, to: destination)
-                return nil
+                return Written()
             }
             return try await withTemporaryFile("xlsx") { excel in
                 try await IWork.export(url, with: .numbers, as: .excel, to: excel)
@@ -154,22 +203,39 @@ enum DocumentConverter {
         return try write(workbook, as: format, to: destination)
     }
 
-    /// Returns a note when only the first sheet could be kept.
-    static func write(_ workbook: Workbook, as format: OutputFormat, to url: URL) throws -> String? {
+    /// CSV and TSV hold one sheet: a workbook with several becomes a folder
+    /// with a file for each (named after the sheet).
+    static func write(_ workbook: Workbook, as format: OutputFormat, to url: URL) throws -> Written {
         switch format {
         case .xlsx: try ExcelWorkbook.write(workbook, to: url)
         case .ods: try OpenDocumentSheet.write(workbook, to: url)
         case .pdf: try AttributedDocument.writePDF(workbook, to: url)
         case .csv, .tsv:
-            guard let sheet = workbook.firstSheet else { throw NothingToDo(reason: "The spreadsheet is empty, so nothing was saved.") }
-            try DelimitedText.write(sheet, to: url, tabs: format == .tsv)
-            let others = workbook.sheets.filter { !$0.trimmed.rows.isEmpty }.count - 1
-            if others > 0 {
-                return "Only the sheet “\(sheet.name)” was saved: \(format.title) holds one sheet (\(others) more in the original)."
+            let sheets = workbook.sheets.filter { !$0.trimmed.rows.isEmpty }
+            guard let first = sheets.first ?? workbook.sheets.first else {
+                throw NothingToDo(reason: "The spreadsheet is empty, so nothing was saved.")
             }
+            guard sheets.count > 1 else {
+                try DelimitedText.write(first, to: url, tabs: format == .tsv)
+                return Written()
+            }
+            let folder = uniqueURL(url.deletingPathExtension(), suffix: "")
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+                var used: Set<String> = []
+                for (index, sheet) in sheets.enumerated() {
+                    var name = OutputNaming.safeFileName(sheet.name.isEmpty ? "Sheet \(index + 1)" : sheet.name)
+                    while !used.insert(name.lowercased()).inserted { name += " \(index + 1)" }
+                    try DelimitedText.write(sheet, to: folder.appendingPathComponent(name).appendingPathExtension(format.fileExtension), tabs: format == .tsv)
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: folder)
+                throw error
+            }
+            return Written(note: "\(format.title) holds one sheet, so each of the \(sheets.count) sheets is a file of its own, in a folder.", outputs: [folder])
         default: throw ConversionError.unsupported("\(format.title) from a spreadsheet")
         }
-        return nil
+        return Written()
     }
 
     // MARK: - Slides

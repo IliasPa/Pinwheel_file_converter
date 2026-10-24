@@ -66,6 +66,10 @@ enum MediaConverter {
         options: ConversionOptions, progress: @escaping @Sendable (Double) -> Void
     ) async throws -> String? {
         var arguments = ffmpegArguments(for: format, options: options)
+        if format.kind == .audio, let stream = await FFmpeg.audioStream(of: file, ffmpeg: ffmpeg),
+           let kept = audioArguments(for: format, source: stream) {
+            arguments = kept
+        }
         var duration = await FFmpeg.duration(of: file, ffmpeg: ffmpeg)
         var note: String?
         if format == .gif, let limit = options.gifMaxSeconds {
@@ -93,6 +97,32 @@ enum MediaConverter {
             )
         }
         return note
+    }
+
+    /// Sound that was already compressed keeps at least its own bit rate,
+    /// up to what the format holds, so as little as possible is lost again;
+    /// Opus goes between .opus and .ogg as it is, not compressed again.
+    /// nil: the usual settings do.
+    static func audioArguments(for format: OutputFormat, source: FFmpeg.AudioStream) -> [String]? {
+        if source.codec == "opus", format == .opus || format == .ogg { return ["-vn", "-c:a", "copy"] }
+        guard source.isLossy, let rate = source.bitRate else { return nil }
+        let kbps = rate / 1000
+        switch format {
+        case .mp3 where kbps > 190:
+            let kept = [224, 256, 320].first { $0 >= kbps } ?? 320
+            return ["-vn", "-c:a", "libmp3lame", "-b:a", "\(kept)k", "-id3v2_version", "3"]
+        case .ogg where kbps > 160:
+            let quality = kbps <= 192 ? 6 : kbps <= 224 ? 7 : kbps <= 256 ? 8 : 9
+            return ["-vn", "-c:a", "libvorbis", "-q:a", "\(quality)"]
+        case .opus where kbps > 128:
+            return ["-vn", "-c:a", "libopus", "-b:a", "\(min(256, kbps))k"]
+        case .wma where kbps > 192:
+            return ["-vn", "-c:a", "wmav2", "-b:a", "\(min(320, kbps))k"]
+        case .m4a where kbps > 256:
+            return ["-vn", "-c:a", "aac", "-b:a", "320k"]
+        default:
+            return nil
+        }
     }
 
     /// What to try when the first ffmpeg arguments fail, if anything.

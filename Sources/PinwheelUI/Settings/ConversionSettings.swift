@@ -107,6 +107,10 @@ struct ConversionsPane: View {
         switch (kind, action) {
         case (.image, .convert(.jpeg)):
             PercentSlider("Quality", value: $settings.jpegQuality, range: 0.5...1, indented: true)
+            ColorPicker(selection: jpegBackground, supportsOpacity: false) {
+                Text("See-through parts become").padding(.leading, SettingsLayout.indent)
+            }
+            .help("JPEG can't be see-through: what's behind the picture there")
         case (.image, .convert(.heic)):
             PercentSlider("Quality", value: $settings.heicQuality, range: 0.5...1, indented: true)
         case (.image, .convert(.webp)):
@@ -141,16 +145,41 @@ struct ConversionsPane: View {
             } label: {
                 Text("Length").padding(.leading, SettingsLayout.indent)
             }
+        case (.subtitle, .convert(.txt)):
+            Toggle(isOn: $settings.subtitleTimes) {
+                Text("With each subtitle's time").padding(.leading, SettingsLayout.indent)
+            }
         default:
             EmptyView()
         }
+    }
+
+    /// The JPEG background ("#RRGGBB" in the settings) as a color well's color.
+    private var jpegBackground: Binding<Color> {
+        Binding(
+            get: { Color(nsColor: Self.color(hex: settings.jpegBackground) ?? .white) },
+            set: { settings.jpegBackground = Self.hex(NSColor($0)) }
+        )
+    }
+
+    static func color(hex: String) -> NSColor? {
+        let digits = hex.replacingOccurrences(of: "#", with: "")
+        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+        return NSColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
+                       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
+    }
+
+    static func hex(_ color: NSColor) -> String {
+        guard let rgb = color.usingColorSpace(.sRGB) else { return "#FFFFFF" }
+        func byte(_ value: CGFloat) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
+        return String(format: "#%02X%02X%02X", byte(rgb.redComponent), byte(rgb.greenComponent), byte(rgb.blueComponent))
     }
 
     private func footer(_ kind: FileKind) -> String {
         let ffmpeg = settings.isInstalled(.ffmpeg)
         switch kind {
         case .image:
-            return "A picture's own format is left out: a JPEG isn't offered JPEG. SVG drawings become pictures \(Int(2048)) pixels across, or stay drawings in a PDF. ICO and ICNS are icons with every size inside. A combined PDF has a page for each picture, in name order."
+            return "A picture's own format is left out: a JPEG isn't offered JPEG. SVG drawings become pictures \(Int(2048)) pixels across, or stay drawings in a PDF. ICO and ICNS are icons with every size inside. A GIF gets the 256 colors that suit the picture best, mixed finely so shading stays smooth. A combined PDF has a page for each picture, in name order."
                 + (settings.isInstalled(.cwebp) ? "" : " WebP needs cwebp: \(ExternalTool.cwebp.installCommand)")
         case .video:
             return "MP4, MOV and MKV copy the picture and sound as they are when they can: quick, and nothing is lost. WebM takes longest to make. GIFs grow fast: a long one can be hundreds of megabytes."
@@ -163,13 +192,13 @@ struct ConversionsPane: View {
         case .archive:
             return "Extract opens ZIP, RAR, 7Z, TAR and GZ files. Archives are made without the Mac's hidden extras, so they open cleanly on any computer. Files with a password can't be opened yet."
         case .document:
-            return "Word, RTF, ODT, Markdown, text, web pages and EPUBs become any of these. Pages files are opened by Pages, and Pages files are made by it (it's free on the App Store); macOS asks once whether Pinwheel may use it."
+            return "Word, RTF, ODT, Markdown, text, web pages and EPUBs become any of these, pictures included (Markdown keeps them in a folder beside it). Pages files are opened by Pages, and Pages files are made by it (it's free on the App Store); macOS asks once whether Pinwheel may use it."
         case .spreadsheet:
-            return "Excel, ODS, CSV and TSV become any of these; CSV and TSV hold one sheet. Numbers files and old Excel (.xls) files are opened by Numbers."
+            return "Excel, ODS, CSV and TSV become any of these. CSV and TSV hold one sheet, so a workbook with several becomes a folder with a file for each. Numbers files and old Excel (.xls) files are opened by Numbers."
         case .presentation:
             return "Keynote draws the slides (PowerPoint and Keynote files), so it's needed for these. Each slide becomes a picture in a folder for PNG and JPEG."
         case .subtitle:
-            return "SRT and WebVTT become each other, or just their words."
+            return "SRT and WebVTT become each other, with bold, italics, underlines, colors and each subtitle's place on the screen; or just their words."
         }
     }
 

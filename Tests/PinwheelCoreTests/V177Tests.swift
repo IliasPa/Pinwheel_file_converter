@@ -16,18 +16,18 @@ struct ConversionLimitTests {
     }
 
     @Test func whatEachConversionLoses() throws {
-        #expect(try limit("PNG", .jpeg) == "see-through parts become white")
+        #expect(try limit("PNG", .jpeg)?.hasPrefix("see-through parts get a solid color") == true)
         #expect(try limit("JPEG", .png) == nil, "nothing lost")
-        #expect(try limit("JPEG", .gif) == "only 256 colors")
+        #expect(try limit("JPEG", .gif)?.hasPrefix("only 256 colors") == true)
         #expect(try limit("GIF", .png) == "only the first frame of an animated GIF")
-        #expect(try limit("PNG", .ico) != nil && limit("PNG", .icns) == nil)
-        #expect(try limit("PDF", .png) == nil && limit("PDF", .docx) != nil && limit("PDF", .txt) == "text only")
+        #expect(try limit("PNG", .ico) == nil && limit("PNG", .icns) == nil, "an icon holds what it holds (v1.8)")
+        #expect(try limit("PDF", .png) == nil && limit("PDF", .docx) != nil && limit("PDF", .txt) == nil)
         #expect(try limit("MP4", .gif) != nil && limit("MP4", .mov) == nil && limit("MP4", .mp3) == nil)
         #expect(try limit("MP3", .m4a) != nil, "lossy again")
-        #expect(try limit("MP3", .flac) != nil && limit("WAV", .mp3) == nil && limit("FLAC", .wav) == nil)
-        #expect(try limit("DOCX", .txt) != nil && limit("TXT", .docx) == nil && limit("MD", .docx) == nil)
-        #expect(try limit("XLSX", .csv) == "only the first sheet, as plain values" && limit("CSV", .tsv) == nil)
-        #expect(try limit("SRT", .vtt) == nil && limit("VTT", .srt) != nil && limit("SRT", .txt) != nil)
+        #expect(try limit("MP3", .flac) == nil && limit("WAV", .mp3) == nil && limit("FLAC", .wav) == nil)
+        #expect(try limit("DOCX", .txt) == nil && limit("DOCX", .md) != nil && limit("TXT", .docx) == nil && limit("MD", .docx) == nil)
+        #expect(try limit("XLSX", .csv)?.hasPrefix("plain values") == true && limit("CSV", .tsv) == nil)
+        #expect(try limit("SRT", .vtt) == nil && limit("VTT", .srt) != nil && limit("SRT", .txt) == nil)
         #expect(try limit("ZIP", .tar) == nil)
         // Every limit is for a conversion the table has.
         for section in Compatibility.sections {

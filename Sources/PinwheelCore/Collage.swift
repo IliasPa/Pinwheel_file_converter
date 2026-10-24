@@ -250,7 +250,7 @@ public enum CollageRenderer {
         try Task.checkCancellation()
         progress(0.7)
         var image = try render(pictures, names: urls.map(\.lastPathComponent), spec: spec, layout: layout)
-        if format == .jpeg, spec.background.alpha < 1 { image = try ImageConverter.flattenOnWhite(image) }
+        if format == .jpeg, spec.background.alpha < 1 { image = try ImageConverter.flatten(image, onto: options.jpegBackground) }
         try ImageConverter.write(image, to: destination, format: format, options: options)
     }
 }

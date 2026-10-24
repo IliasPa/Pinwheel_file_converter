@@ -124,7 +124,7 @@ struct ListNumbers {
 
 extension Document {
     /// Plain text: blank lines between paragraphs, "•" before list items,
-    /// tables as tab-separated lines.
+    /// tables as lined-up columns.
     public var plainText: String {
         var parts: [String] = []
         var numbers = ListNumbers()
@@ -138,7 +138,7 @@ extension Document {
                 let marker = ordered ? "\(number)." : "•"
                 parts.append(String(repeating: "  ", count: level) + "\(marker) \(runs.text)")
             case .code(let text): parts.append(text)
-            case .table(let rows): parts.append(rows.map { $0.joined(separator: "\t") }.joined(separator: "\n"))
+            case .table(let rows): parts.append(Self.alignedTable(rows))
             case .image(let picture): if let description = picture.description { parts.append("[\(description)]") }
             case .pageBreak: parts.append("\u{0C}")
             case .rule: parts.append("———")
@@ -157,6 +157,24 @@ extension Document {
             text += part
         }
         return text + "\n"
+    }
+
+    /// A table as columns lined up with spaces, a line under the header.
+    static func alignedTable(_ rows: [[String]]) -> String {
+        let cells = rows.map { $0.map { $0.replacingOccurrences(of: "\n", with: " ") } }
+        let width = cells.map(\.count).max() ?? 0
+        let widths = (0..<width).map { column in cells.map { column < $0.count ? $0[column].count : 0 }.max() ?? 0 }
+        func line(_ row: [String]) -> String {
+            (0..<width).map { column in
+                let text = column < row.count ? row[column] : ""
+                return column == width - 1 ? text : text + String(repeating: " ", count: widths[column] - text.count)
+            }.joined(separator: "  ").replacing(/\s+$/, with: "")
+        }
+        var lines = cells.map(line)
+        if lines.count > 1 {
+            lines.insert(widths.map { String(repeating: "─", count: max($0, 1)) }.joined(separator: "  "), at: 1)
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// Plain text: paragraphs are separated by blank lines; single line
@@ -179,8 +197,23 @@ extension Document {
 // MARK: - Markdown
 
 extension Document {
+    /// Markdown in one file: pictures are kept in the text itself.
     public var markdown: String {
+        markdown { picture, _ in "data:\(picture.mimeType);base64,\(picture.data.base64EncodedString())" }
+    }
+
+    /// Markdown linking its pictures, as files `named` in the folder beside it.
+    func markdown(picturesIn folder: String, named names: [String]) -> String {
+        markdown { _, index in
+            let path = "\(folder)/\(names[index])"
+            return path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+        }
+    }
+
+    /// `link` gives each picture's address (and is told which picture it is).
+    private func markdown(link: (Picture, Int) -> String) -> String {
         var lines: [String] = []
+        var pictureIndex = 0
         var numbers = ListNumbers()
         var previousWasList = false
         for block in blocks {
@@ -213,8 +246,8 @@ extension Document {
                 table += rows.dropFirst().map(row)
                 lines.append(table.joined(separator: "\n"))
             case .image(let picture):
-                // Kept in the file itself, so the Markdown stays one file.
-                lines.append("![\(picture.description ?? "")](data:\(picture.mimeType);base64,\(picture.data.base64EncodedString()))")
+                lines.append("![\(picture.description ?? "")](\(link(picture, pictureIndex)))")
+                pictureIndex += 1
             case .pageBreak, .rule:
                 lines.append("---")
             }

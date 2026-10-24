@@ -530,7 +530,7 @@ enum StudioExporter {
         try Task.checkCancellation()
         var image = try StudioRenderer.render(source, mask: mask, edit: edit)
         if format == .jpeg, StudioRenderer.hasAlpha(image) {
-            image = try ImageConverter.flattenOnWhite(image)  // JPEG has no transparency
+            image = try ImageConverter.flatten(image, onto: options.jpegBackground)  // JPEG has no transparency
         }
         try Task.checkCancellation()
 

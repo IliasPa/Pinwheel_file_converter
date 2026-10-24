@@ -128,6 +128,8 @@ public enum VideoMaxSize: String, CaseIterable, Codable, Sendable {
 public struct ConversionOptions: Sendable, Equatable, Codable {
     /// 0...1 quality for JPEG output.
     public var jpegQuality: Double = 0.85
+    /// What a JPEG gets behind see-through parts (it has no transparency), as "#RRGGBB".
+    public var jpegBackground = "#FFFFFF"
     /// 0...1 quality for HEIC output.
     public var heicQuality: Double = 0.80
     /// 0...1 quality for WebP output.
@@ -149,6 +151,8 @@ public struct ConversionOptions: Sendable, Equatable, Codable {
     public var gifFPS: Int = 15
     /// Only the first this-many seconds of a video become a GIF (nil: all of it).
     public var gifMaxSeconds: Int? = 15
+    /// Subtitles into plain text: each one's start time before it.
+    public var subtitleTimes = false
     /// Resolution when turning PDF pages into images.
     public var pdfDPI: Double = 150
     /// Resolution of the pictures inside a PDF after Compress.

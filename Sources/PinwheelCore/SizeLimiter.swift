@@ -43,7 +43,7 @@ enum SizeLimiter {
         switch file.kind {
         case .image:
             let target = format ?? .jpeg
-            return try await Blocking.run { _ in try image(file.url, limit: limit, format: target, destination: destination, progress: progress) }
+            return try await Blocking.run { _ in try image(file.url, limit: limit, format: target, destination: destination, background: options.jpegBackground, progress: progress) }
         case .pdf:
             return try await Blocking.run { isCancelled in try pdf(file.url, limit: limit, destination: destination, isCancelled: isCancelled, progress: progress) }
         case .video:
@@ -60,7 +60,7 @@ enum SizeLimiter {
     /// First the highest quality that fits; when even a low quality is too
     /// big, a smaller picture at a good quality.
     static func image(
-        _ source: URL, limit: Int64, format: OutputFormat, destination: URL,
+        _ source: URL, limit: Int64, format: OutputFormat, destination: URL, background: String = "#FFFFFF",
         progress: @Sendable (Double) -> Void
     ) throws -> String? {
         let src = try ImageConverter.open(source)
@@ -76,7 +76,7 @@ enum SizeLimiter {
             try encode(format: format) { dest in
                 let settings: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
                 if format == .jpeg && hasAlpha, let image = CGImageSourceCreateImageAtIndex(src, index, nil) {
-                    let flat = try ImageConverter.flattenOnWhite(image)
+                    let flat = try ImageConverter.flatten(image, onto: background)
                     CGImageDestinationAddImage(dest, flat, ImageConverter.metadata(from: properties).merging(settings) { $1 } as CFDictionary)
                 } else {
                     CGImageDestinationAddImageFromSource(dest, src, index, settings as CFDictionary)
@@ -101,7 +101,7 @@ enum SizeLimiter {
             if round > 0 { longSide *= 0.85 }
             longSide = max(longSide.rounded(), 16)
             let image = try ImageConverter.orientedImage(src, index: index, maxPixelSize: Int(longSide))
-            let flat = format == .jpeg && hasAlpha ? try ImageConverter.flattenOnWhite(image) : image
+            let flat = format == .jpeg && hasAlpha ? try ImageConverter.flatten(image, onto: background) : image
             let smaller: (Double) throws -> Data = { quality in
                 try encode(format: format) { dest in
                     let settings = metadata.merging([kCGImageDestinationLossyCompressionQuality: quality]) { $1 }
