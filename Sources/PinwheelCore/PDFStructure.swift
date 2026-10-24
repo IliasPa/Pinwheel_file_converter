@@ -21,6 +21,8 @@ enum PDFStructure {
         var startsParagraph = false
         /// A table found on the page, standing in for its lines.
         var table: [[String]]?
+        /// A picture on the page, where it is.
+        var picture: Document.Picture?
 
         var text: String { runs.text }
     }
@@ -36,12 +38,25 @@ enum PDFStructure {
         var lines: [Line] = []
         var scans: [Int] = []
         var sizes: [Int: CGSize] = [:]
+        var twoColumns: Set<Int> = []
         for index in 0..<count {
             try Task.checkCancellation()
             guard let page = pdf.page(at: index) else { continue }
             sizes[index] = page.bounds(for: .mediaBox).size
             let found = Self.lines(of: page, index: index)
-            if found.isEmpty { scans.append(index) } else { lines += inReadingOrder(withTables(joiningPieces(found), on: page)) }
+            if found.isEmpty {
+                scans.append(index)
+            } else {
+                var pageLines = withTables(joiningPieces(found), on: page)
+                let pictures = page.pageRef.map { PDFPictures.find(on: $0) } ?? []
+                // Words drawn on a picture are part of it (a chart's labels).
+                pageLines.removeAll { line in
+                    line.table == nil && pictures.contains { $0.frame.insetBy(dx: -2, dy: -2).contains(CGPoint(x: line.frame.midX, y: line.frame.midY)) }
+                }
+                let columns = columnCount(of: pageLines)
+                if columns == 2 { twoColumns.insert(index) }
+                lines += placing(pictures, among: columns == 2 ? inColumns(pageLines) : inReadingOrder(pageLines), page: index, pageSize: sizes[index]!)
+            }
             progress(0.6 * Double(index + 1) / Double(max(count, 1)))
         }
         let scanCount = scans.count
@@ -53,7 +68,8 @@ enum PDFStructure {
         }
         lines.sort { $0.page < $1.page }  // stable: each page keeps its own order
         let title = pdf.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String
-        return (Document(title: title?.isEmpty == false ? title : nil, blocks: assemble(lines)), recognized.values.filter { !$0.isEmpty }.count)
+        let blocks = assemble(lines, twoColumns: twoColumns)
+        return (Document(title: title?.isEmpty == false ? title : nil, blocks: blocks), recognized.values.filter { !$0.isEmpty }.count)
     }
 
     /// The lines of a page with text, with their fonts. (Line by line as
@@ -79,16 +95,18 @@ enum PDFStructure {
             var sizes: [CGFloat: Int] = [:]
             var bold = 0, mono = 0, total = 0
             for range in pieces {
-                attributed.enumerateAttribute(.font, in: range) { value, runRange, _ in
+                attributed.enumerateAttributes(in: range) { attributes, runRange, _ in
                     let text = withoutLigatures(string.substring(with: runRange)).filter { !$0.isNewline }
-                    let font = value as? NSFont
+                    let font = attributes[.font] as? NSFont
                     let look = Self.look(of: font)
                     let letters = text.filter { !$0.isWhitespace }.count
-                    sizes[((font?.pointSize ?? 0) * 2).rounded() / 2, default: 0] += letters
+                    let size = ((font?.pointSize ?? 0) * 2).rounded() / 2
+                    sizes[size, default: 0] += letters
                     if look.bold { bold += letters }
                     if look.mono { mono += letters }
                     total += letters
-                    runs.append(Document.Run(text, bold: look.bold, italic: look.italic, code: look.mono))
+                    runs.append(Document.Run(text, bold: look.bold, italic: look.italic, code: look.mono,
+                                             color: Self.hex(attributes[.foregroundColor] as? NSColor), size: size > 0 ? Double(size) : nil))
                 }
             }
             guard total > 0 else { return nil }
@@ -103,6 +121,51 @@ enum PDFStructure {
                 bold: bold == total, mono: mono == total, frame: selection.bounds(for: page), page: index, pageSize: pageSize
             )
         }
+    }
+
+    /// A text color worth keeping, as "#RRGGBB": nil for black and near-black.
+    static func hex(_ color: NSColor?) -> String? {
+        guard let rgb = color?.usingColorSpace(.sRGB) else { return nil }
+        let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent].map { min(max($0, 0), 1) }
+        guard channels.max()! > 0.3 else { return nil }
+        return "#" + channels.map { String(format: "%02X", Int(($0 * 255).rounded())) }.joined()
+    }
+
+    // MARK: - Columns and pictures
+
+    /// 2 when the page's text is set in two columns: plenty of lines in
+    /// each half, few across both.
+    static func columnCount(of lines: [Line]) -> Int {
+        let text = lines.filter { $0.table == nil && $0.text.count > 15 }
+        guard text.count >= 10, let width = text.first?.pageSize.width else { return 1 }
+        let left = text.filter { $0.frame.maxX < width * 0.55 }.count, right = text.filter { $0.frame.minX > width * 0.45 }.count
+        return left >= 4 && right >= 4 && text.count - left - right <= text.count / 5 ? 2 : 1
+    }
+
+    /// A two-column page in reading order: what goes across above the
+    /// columns, the left column, the right one, then what's across below.
+    static func inColumns(_ lines: [Line]) -> [Line] {
+        guard let width = lines.first?.pageSize.width else { return lines }
+        let left = lines.filter { $0.frame.maxX < width * 0.55 }.sorted { $0.frame.midY > $1.frame.midY }
+        let right = lines.filter { $0.frame.minX > width * 0.45 && $0.frame.maxX >= width * 0.55 }.sorted { $0.frame.midY > $1.frame.midY }
+        let columnsTop = max(left.first?.frame.maxY ?? 0, right.first?.frame.maxY ?? 0)
+        let across = lines.filter { $0.frame.maxX >= width * 0.55 && $0.frame.minX <= width * 0.45 }.sorted { $0.frame.midY > $1.frame.midY }
+        return across.filter { $0.frame.midY >= columnsTop } + left + right + across.filter { $0.frame.midY < columnsTop }
+    }
+
+    /// Each picture before the first line below it that it's above (in
+    /// reading order), or at the page's end.
+    static func placing(_ pictures: [PDFPictures.Found], among lines: [Line], page: Int, pageSize: CGSize) -> [Line] {
+        var result = lines
+        for found in pictures {
+            let line = Line(runs: [], size: 0, bold: false, mono: false, frame: found.frame, page: page, pageSize: pageSize, picture: found.picture)
+            let position = result.firstIndex { other in
+                other.picture == nil && other.frame.maxY <= found.frame.midY
+                    && other.frame.maxX > found.frame.minX && other.frame.minX < found.frame.maxX
+            } ?? result.endIndex
+            result.insert(line, at: position)
+        }
+        return result
     }
 
     /// "ﬁ" and its kind, as the letters they join.
@@ -210,8 +273,9 @@ enum PDFStructure {
         }
     }
 
-    /// Lines into headings, paragraphs, list items and code.
-    static func assemble(_ all: [Line]) -> [Document.Block] {
+    /// Lines into headings, paragraphs, list items and code (and pictures,
+    /// and where two columns start and end).
+    static func assemble(_ all: [Line], twoColumns: Set<Int> = []) -> [Document.Block] {
         let lines = withoutFurniture(all)
         guard !lines.isEmpty else { return [] }
         var sizeCounts: [CGFloat: Int] = [:]
@@ -241,9 +305,19 @@ enum PDFStructure {
         /// Where the open list item's marker is.
         var markerX: CGFloat = 0
 
+        /// Each run's color, and its size only when it stands out from the
+        /// body's (small print); a heading's comes with its level.
+        func styled(_ runs: [Document.Run], heading: Bool = false) -> [Document.Run] {
+            runs.map { run in
+                var run = run
+                if heading || run.size.map({ abs($0 - Double(body)) < 1.5 }) ?? true { run.size = nil }
+                return run
+            }.merged
+        }
+
         func close() {
             guard let current = open else { return }
-            let runs = current.runs.merged
+            let runs = styled(current.runs, heading: current.kind.isHeading)
             switch current.kind {
             case .paragraph: blocks.append(.paragraph(runs))
             case .listItem(let ordered, let level):
@@ -270,14 +344,26 @@ enum PDFStructure {
             runs += newRuns
         }
 
+        var columns = 1
         for (index, line) in lines.enumerated() {
             let text = line.text.trimmingCharacters(in: .whitespaces)
             let next = index + 1 < lines.count ? lines[index + 1] : nil
             defer { previous = line }
 
+            let wanted = twoColumns.contains(line.page) ? 2 : 1
+            if wanted != columns {
+                close()
+                blocks.append(.columns(wanted))
+                columns = wanted
+            }
             if let table = line.table {
                 close()
                 blocks.append(.table(table))
+                continue
+            }
+            if let picture = line.picture {
+                close()
+                blocks.append(.image(picture))
                 continue
             }
 
@@ -296,7 +382,7 @@ enum PDFStructure {
             }
             if line.bold && text.count < 80 && !text.hasSuffix(".") && !text.hasSuffix(",") && next.map({ !$0.bold }) ?? true {
                 close()
-                blocks.append(.heading(min(headingSizes.count + 1, 6), line.runs))
+                blocks.append(.heading(min(headingSizes.count + 1, 6), styled(line.runs, heading: true)))
                 continue
             }
             if let (ordered, rest) = listMarker(text) {
@@ -315,7 +401,7 @@ enum PDFStructure {
             // The paragraph (or list item) before goes on, or a new one starts.
             // A list item's next lines are set in, past its marker.
             let isItem = if case .listItem? = open?.kind { true } else { false }
-            if let current = open, let previous, previous.table == nil, current.kind != .code, !current.kind.isHeading,
+            if let current = open, let previous, previous.table == nil, previous.picture == nil, current.kind != .code, !current.kind.isHeading,
                !isItem || line.frame.minX > markerX + line.size * 0.5,
                continues(previous, line, left: left[line.page] ?? 0, body: body, inItem: isItem) {
                 append(line, to: &open!.runs)
@@ -325,6 +411,7 @@ enum PDFStructure {
             }
         }
         close()
+        if columns != 1 { blocks.append(.columns(1)) }
         return finishingLists(blocks, numbers: numbers, markers: markers)
     }
 
@@ -419,7 +506,10 @@ enum PDFStructure {
             line.frame.minY > line.pageSize.height * 0.9 || line.frame.maxY < line.pageSize.height * 0.1
         }
         func key(_ line: Line) -> String {
-            line.text.trimmingCharacters(in: .whitespaces).replacing(/\d+/, with: "#").lowercased()
+            if line.picture != nil {
+                return "picture \(Int(line.frame.minX / 8)) \(Int(line.frame.minY / 8)) \(Int(line.frame.width / 8))"
+            }
+            return line.text.trimmingCharacters(in: .whitespaces).replacing(/\d+/, with: "#").lowercased()
         }
         var counts: [String: Set<Int>] = [:]
         for line in lines where isEdge(line) { counts[key(line), default: []].insert(line.page) }

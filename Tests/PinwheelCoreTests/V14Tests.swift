@@ -55,11 +55,13 @@ struct V14WheelTests {
         #expect(FormatCatalog.maxWedges(in: .tools) == 9)
         #expect(FormatCatalog.maxWedges(in: .actions) == 9)
         for kind in FileKind.allCases {
-            #expect(FormatCatalog.choices(for: kind, mode: .convert).count <= FormatCatalog.maxFormats, "\(kind)")
+            // Videos of animated pictures take the place of other wedges (v1.9).
+            #expect(FormatCatalog.choices(for: kind, mode: .convert).filter { !FormatCatalog.forAnimations.contains($0) || kind != .image }.count
+                    <= FormatCatalog.maxFormats, "\(kind)")
         }
         // Several pictures: eleven formats and Collage, all on one wheel.
         #expect(FormatCatalog.actions(for: files("a.png", "b.jpg"), mode: .convert).count == 12)
-        #expect(FormatCatalog.actions(for: files("a.mov"), mode: .convert).count == 8)
+        #expect(FormatCatalog.actions(for: files("a.mov"), mode: .convert).count == 9, "with animated WebP (v1.9)")
     }
 
     @Test func formatsAreKnownByTheirFiles() {

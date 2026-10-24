@@ -145,7 +145,7 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
             }
         case .heic: "Half the size of JPEG, same quality"
         case .tiff: "Lossless, for print and editing"
-        case .gif: kind == .video ? "Animated GIF of the clip" : "Works in any browser or chat"
+        case .gif: kind == .video ? "Animated GIF of the clip" : "Works in any browser or chat; animations keep moving"
         case .pdf:
             switch kind {
             case .document: "Looks the same everywhere, ready to print"
@@ -153,20 +153,20 @@ public enum OutputFormat: String, CaseIterable, Codable, Sendable {
             case .presentation: "A page for each slide"
             default: "A PDF page for each image"
             }
-        case .mp4: "Plays everywhere"
+        case .mp4: kind == .image ? "Animated pictures only: a video of it, often 10 times smaller" : "Plays everywhere"
         case .mov: "QuickTime movie"
         case .m4a: kind == .video ? "Just the sound, AAC" : "AAC, small and good quality"
         case .mp3: kind == .video ? "Just the sound, MP3" : "Plays on any device"
         case .wav: "Uncompressed, universal"
         case .aiff: "Uncompressed, Apple"
         case .flac: "Lossless and compressed"
-        case .webp: "Small files for websites"
+        case .webp: kind == .video ? "Animated, in full colors and much smaller than a GIF (the GIF settings below)" : "Small files for websites; animations keep moving"
         case .avif: "The smallest files, sharp details"
         case .bmp: "Uncompressed, for older apps"
         case .ico: "Windows icon, 16 to 256 pixels"
         case .icns: "Mac icon, 16 to 1024 pixels"
         case .mkv: "Keeps every track; plays in VLC and IINA"
-        case .webm: "For websites: VP9 picture, Opus sound"
+        case .webm: kind == .image ? "Animated pictures only: a video for websites, see-through parts kept" : "For websites: VP9 picture, Opus sound"
         case .avi: "For older players and TVs"
         case .wmv: "For Windows Media Player"
         case .ogg: "Ogg Vorbis, an open format"

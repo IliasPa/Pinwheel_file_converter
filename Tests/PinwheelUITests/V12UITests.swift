@@ -18,7 +18,9 @@ struct FormatWheelSettingsTests {
         let store = SettingsStore(defaults: freshDefaults())
         #expect(store.hiddenFormats.isEmpty)
         for kind in FileKind.allCases {
-            #expect(store.shownCount(for: kind, in: .convert) == FormatCatalog.choices(for: kind, mode: .convert).count)
+            // Videos of animated pictures come in place of other wedges, so they don't count (v1.9).
+            let counted = FormatCatalog.choices(for: kind, mode: .convert).filter { kind != .image || !FormatCatalog.forAnimations.contains($0) }
+            #expect(store.shownCount(for: kind, in: .convert) == counted.count)
         }
         #expect(store.shownCount(for: .image, in: .convert) == 12, "eleven formats and Collage")
     }

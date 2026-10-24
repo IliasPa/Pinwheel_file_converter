@@ -11,6 +11,9 @@ public enum FormatCatalog {
         mode == .convert ? maxFormats : maxWedges
     }
 
+    /// Wedges only animated pictures get (GIF and the like): videos of them.
+    public static let forAnimations: [WheelAction] = [.convert(.mp4), .convert(.webm)]
+
     /// The file actions wheel: the same for any files and folders.
     public static let fileActions: [WheelAction] = FileAction.allCases.map(WheelAction.file) + [.tool(.archive)]
 
@@ -28,7 +31,7 @@ public enum FormatCatalog {
         case (.video, .convert):
             [
                 .convert(.mp4), .convert(.mov), .convert(.mkv), .convert(.webm), .convert(.avi), .convert(.wmv),
-                .convert(.gif), .convert(.m4a), .convert(.mp3),
+                .convert(.gif), .convert(.webp), .convert(.m4a), .convert(.mp3),
             ]
         case (.audio, .convert):
             [
@@ -97,7 +100,7 @@ public enum FormatCatalog {
     /// Everything Settings lists for a kind's wheel: its wedges, plus
     /// Collage for pictures (it shows only when several are dropped).
     public static func choices(for kind: FileKind, mode: WheelMode) -> [WheelAction] {
-        actions(for: kind, mode: mode) + (kind == .image && mode == .convert ? [.open(.collage)] : [])
+        actions(for: kind, mode: mode) + (kind == .image && mode == .convert ? [.open(.collage)] + forAnimations : [])
     }
 
     /// How a hidden tool or format is remembered: "image:tool.stripMetadata".
@@ -134,6 +137,10 @@ public enum FormatCatalog {
             let formats = Set(files.map(\.format))
             if formats.count == 1, let only = formats.first! {
                 result.removeAll { $0 == .convert(only) }
+            }
+            // Animated pictures can also become videos.
+            if kinds.allSatisfy({ $0 == .image }) && files.allSatisfy(\.isAnimated) {
+                result += forAnimations.filter { !hidden.contains(hiddenKey(.image, $0)) }
             }
             // Several pictures can also become one.
             if files.count > 1 && kinds.allSatisfy({ $0 == .image }) && !hidden.contains(hiddenKey(.image, .open(.collage))) {

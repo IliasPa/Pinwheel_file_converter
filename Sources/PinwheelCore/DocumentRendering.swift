@@ -130,6 +130,11 @@ enum AttributedDocument {
         fontLock.withLock { NSFont(name: "Menlo-Regular", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular) }
     }
 
+    /// The font at another size.
+    private static func resized(_ font: NSFont, to size: CGFloat) -> NSFont {
+        fontLock.withLock { NSFont(descriptor: font.fontDescriptor, size: size) ?? font }
+    }
+
     /// The font in bold or italic too.
     private static func font(_ font: NSFont, with traits: NSFontDescriptor.SymbolicTraits) -> NSFont {
         fontLock.withLock { NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(traits), size: font.pointSize) ?? font }
@@ -190,6 +195,8 @@ enum AttributedDocument {
                 result.append(line)
             case .pageBreak:
                 result.append(NSAttributedString(string: "\u{0C}"))
+            case .columns:
+                break
             case .rule:
                 result.append(NSAttributedString(string: String(repeating: "─", count: 40) + "\n", attributes: [
                     .font: bodyFont, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraphStyle(after: 8),
@@ -213,12 +220,14 @@ enum AttributedDocument {
         _ runs: [Document.Run], to result: NSMutableAttributedString, font: NSFont, style: NSParagraphStyle, color: NSColor = .black
     ) {
         for run in runs.merged {
-            var runFont = run.code ? codeFont(ofSize: font.pointSize * 0.92) : font
+            let size = run.size.map { CGFloat($0) } ?? font.pointSize
+            var runFont = run.code ? codeFont(ofSize: size * 0.92) : (run.size == nil ? font : resized(font, to: size))
             var traits: NSFontDescriptor.SymbolicTraits = runFont.fontDescriptor.symbolicTraits
             if run.bold { traits.insert(.bold) }
             if run.italic { traits.insert(.italic) }
             if traits != runFont.fontDescriptor.symbolicTraits { runFont = Self.font(runFont, with: traits) }
-            var attributes: [NSAttributedString.Key: Any] = [.font: runFont, .paragraphStyle: style, .foregroundColor: color]
+            let runColor = run.color.flatMap { ImageConverter.color(hex: $0) }.flatMap { NSColor(cgColor: $0) } ?? color
+            var attributes: [NSAttributedString.Key: Any] = [.font: runFont, .paragraphStyle: style, .foregroundColor: runColor]
             if let link = run.link, let url = URL(string: link) {
                 attributes[.link] = url
                 attributes[.foregroundColor] = NSColor.linkColor

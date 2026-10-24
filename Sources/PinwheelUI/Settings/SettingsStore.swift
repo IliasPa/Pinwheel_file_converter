@@ -558,8 +558,9 @@ final class SettingsStore {
     }
 
     /// Wedges on a kind's wheel: formats, tools and custom actions, or file actions.
+    /// (Videos of animated pictures don't count: they come in place of other wedges.)
     func shownCount(for kind: FileKind, in mode: WheelMode = .tools) -> Int {
-        let wedges = FormatCatalog.choices(for: kind, mode: mode)
+        let wedges = FormatCatalog.choices(for: kind, mode: mode).filter { !FormatCatalog.forAnimations.contains($0) || kind != .image }
         let custom = mode == .tools ? recipes.filter { $0.kind == kind }.map(WheelAction.recipe) : []
         return (wedges + custom).filter { isOnWheel($0, for: kind, in: mode) }.count
     }

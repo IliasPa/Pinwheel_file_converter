@@ -21,6 +21,9 @@ enum MediaConverter {
                 try await gif(of: file, part: part, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
                 return nil
             }
+            if format == .webp {
+                return try await AnimatedPicture.webp(fromVideo: file, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
+            }
             return try await convertWithFFmpeg(file, to: format, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
         }
         var note: String?

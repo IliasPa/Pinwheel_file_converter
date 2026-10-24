@@ -76,7 +76,7 @@ struct ConversionsPane: View {
         let isOn = settings.isOnWheel(action, for: kind, in: .convert)
         let shown = settings.shownCount(for: kind, in: .convert)
         let isLast = isOn && shown == 1
-        let isFull = !isOn && shown >= FormatCatalog.maxFormats
+        let isFull = !isOn && shown >= FormatCatalog.maxFormats && !(kind == .image && FormatCatalog.forAnimations.contains(action))
         let missing = Compatibility.tool(for: action, kind: kind).flatMap { settings.isInstalled($0) ? nil : $0 }
         return Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, in: .convert, $0) })) {
             Label(action.title(in: .convert), systemImage: action.symbolName(in: .convert))
@@ -179,7 +179,7 @@ struct ConversionsPane: View {
         let ffmpeg = settings.isInstalled(.ffmpeg)
         switch kind {
         case .image:
-            return "A picture's own format is left out: a JPEG isn't offered JPEG. SVG drawings become pictures \(Int(2048)) pixels across, or stay drawings in a PDF. ICO and ICNS are icons with every size inside. A GIF gets the 256 colors that suit the picture best, mixed finely so shading stays smooth. A combined PDF has a page for each picture, in name order."
+            return "A picture's own format is left out: a JPEG isn't offered JPEG. SVG drawings become pictures \(Int(2048)) pixels across, or stay drawings in a PDF. ICO and ICNS are icons with every size inside. A GIF gets the 256 colors that suit the picture best, mixed finely so shading stays smooth. Animated pictures keep moving as GIF, PNG, HEIC and WebP, and can become MP4 or WebM videos (those two show only for them); other formats get the first frame. A combined PDF has a page for each picture, in name order."
                 + (settings.isInstalled(.cwebp) ? "" : " WebP needs cwebp: \(ExternalTool.cwebp.installCommand)")
         case .video:
             return "MP4, MOV and MKV copy the picture and sound as they are when they can: quick, and nothing is lost. WebM takes longest to make. GIFs grow fast: a long one can be hundreds of megabytes."
@@ -188,7 +188,7 @@ struct ConversionsPane: View {
             return "WAV and AIFF are uncompressed; FLAC is lossless and about half their size; Opus sounds best for its size."
                 + (ffmpeg ? "" : " MP3, OGG, Opus and WMA need ffmpeg: \(FFmpeg.installCommand)")
         case .pdf:
-            return "A PDF with several pages becomes a folder with a picture for each page. Word, Pages, EPUB, Markdown and HTML get its text with headings, paragraphs and lists (scanned pages are read with text recognition), or each page as a picture; Excel gets the tables on each page; PowerPoint a slide for each page."
+            return "A PDF with several pages becomes a folder with a picture for each page. Word, Pages, EPUB, Markdown and HTML get its text with headings, paragraphs, lists, colors and pictures, in two columns where the page has them (scanned pages are read with text recognition), or each page as a picture; Excel gets the tables on each page; PowerPoint a slide for each page."
         case .archive:
             return "Extract opens ZIP, RAR, 7Z, TAR and GZ files. Archives are made without the Mac's hidden extras, so they open cleanly on any computer. Files with a password can't be opened yet."
         case .document:

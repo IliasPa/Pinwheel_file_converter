@@ -51,11 +51,17 @@ enum WordDocument {
 
         func runs(_ runs: [Document.Run], bold: Bool = false) -> String {
             runs.merged.map { run in
+                // In the order Word's schema has them.
                 var properties = ""
+                if run.link != nil { properties += "<w:rStyle w:val=\"Hyperlink\"/>" }
+                if run.code { properties += "<w:rFonts w:ascii=\"Menlo\" w:hAnsi=\"Menlo\" w:cs=\"Menlo\"/>" }
                 if run.bold || bold { properties += "<w:b/>" }
                 if run.italic { properties += "<w:i/>" }
-                if run.code { properties += "<w:rFonts w:ascii=\"Menlo\" w:hAnsi=\"Menlo\" w:cs=\"Menlo\"/>" }
-                if run.link != nil { properties += "<w:rStyle w:val=\"Hyperlink\"/>" }
+                if let color = run.color, run.link == nil { properties += "<w:color w:val=\"\(color.replacingOccurrences(of: "#", with: ""))\"/>" }
+                if let size = run.size {
+                    let halfPoints = Int((size * 2).rounded())
+                    properties += "<w:sz w:val=\"\(halfPoints)\"/><w:szCs w:val=\"\(halfPoints)\"/>"
+                }
                 var parts: [String] = []
                 for (index, line) in run.text.components(separatedBy: "\n").enumerated() {
                     if index > 0 { parts.append("<w:br/>") }
@@ -78,8 +84,20 @@ enum WordDocument {
             return "<w:p>" + (properties.isEmpty ? "" : "<w:pPr>\(properties)</w:pPr>") + content + "</w:p>"
         }
 
+        // A page's look, ending each section; columns start a new one.
+        let page = PaperSize.current
+        func section(columns: Int, continuous: Bool) -> String {
+            "<w:sectPr>" + (continuous ? "<w:type w:val=\"continuous\"/>" : "")
+                + "<w:pgSz w:w=\"\(Int(page.width * 20))\" w:h=\"\(Int(page.height * 20))\"/>"
+                + "<w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/>"
+                + "<w:cols w:num=\"\(columns)\" w:space=\"720\"/></w:sectPr>"
+        }
+        var columns = 1
+        var sectionStarted = false
+
         for block in document.blocks {
             var listKind: Bool?
+            if case .columns = block {} else { sectionStarted = true }
             switch block {
             case .heading(let level, let content):
                 body += paragraph("Heading\(min(max(level, 1), 6))", runs(content))
@@ -107,20 +125,26 @@ enum WordDocument {
                 body += "<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>"
             case .rule:
                 body += paragraph(nil, "", extra: "<w:pBdr><w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"1\" w:color=\"999999\"/></w:pBdr>")
+            case .columns(let count):
+                // The section so far ends here (a paragraph with its settings);
+                // the next goes on the same page, in `count` columns.
+                let count = min(max(count, 1), 4)
+                if sectionStarted && count != columns {
+                    body += paragraph(nil, "", extra: section(columns: columns, continuous: true))
+                }
+                columns = count
             }
             previousList = listKind
         }
 
-        let page = PaperSize.current
-        let section = "<w:sectPr><w:pgSz w:w=\"\(Int(page.width * 20))\" w:h=\"\(Int(page.height * 20))\"/>"
-            + "<w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/></w:sectPr>"
+        let lastSection = section(columns: columns, continuous: body.contains("<w:sectPr>"))
         let documentXML = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" \
         xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" \
         xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" \
         xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" \
-        xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>\(body)\(section)</w:body></w:document>
+        xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>\(body)\(lastSection)</w:body></w:document>
         """
 
         zip.add("[Content_Types].xml", """

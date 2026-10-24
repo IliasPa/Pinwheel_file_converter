@@ -3,6 +3,27 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.9 (beta) — 2026-10-24
+
+**New**
+- **Animations keep moving.** An animated GIF (or animated PNG, WebP or
+  HEIC) stays animated as GIF, PNG (an animated PNG), HEIC (an image
+  sequence) and WebP (with Homebrew's webp tools); before, only its first
+  frame was kept. AVIF, JPEG, TIFF and the rest still get the first frame.
+- **Animated pictures into videos:** MP4 (made by macOS, often 10 times
+  smaller than the GIF) or WebM (with ffmpeg; see-through parts kept). The
+  two wedges show only for pictures that move.
+- **Videos into animated WebP:** full colors and much smaller than a GIF,
+  at the GIF settings (size, frames per second, length). It needs ffmpeg
+  and Homebrew's webp tools.
+
+**Changed**
+- **PDFs into Word, Pages, EPUB, Markdown and HTML keep their pictures,**
+  each where it was on the page, and the text's **colors** and **small
+  print**. Pages set in **two columns** stay in two columns in Word and
+  Pages. A logo repeated at the top of every page is left out, as
+  repeated headers and page numbers already were.
+
 ## v1.8 (beta) — 2026-10-24
 
 What the yellow ticks in Settings › Compatibility lost, kept.

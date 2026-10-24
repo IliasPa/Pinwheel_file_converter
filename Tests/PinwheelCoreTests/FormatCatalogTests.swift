@@ -40,7 +40,7 @@ struct FormatCatalogTests {
     }
 
     @Test func mixedKindsShowOnlyWhatAllShare() {
-        #expect(FormatCatalog.actions(for: files("a.png", "b.mov"), mode: .convert) == [.convert(.gif)])
+        #expect(FormatCatalog.actions(for: files("a.png", "b.mov"), mode: .convert) == [.convert(.webp), .convert(.gif)], "in the pictures' order")
         #expect(FormatCatalog.actions(for: files("a.mov", "b.wav"), mode: .convert) == [.convert(.m4a), .convert(.mp3)])
         #expect(FormatCatalog.actions(for: files("a.png", "b.pdf"), mode: .convert)
                 == [.convert(.png), .convert(.jpeg), .convert(.heic), .convert(.tiff)])

@@ -61,7 +61,9 @@ struct CompatibilityTests {
     @Test func ticksAreWhatTheFormatWheelOffers() {
         for section in Compatibility.sections {
             for row in section.rows {
-                let wheel = FormatCatalog.actions(for: [row.source.sample], mode: .convert)
+                var wheel = FormatCatalog.actions(for: [row.source.sample], mode: .convert)
+                // An animated GIF gets videos too (v1.9; the pretend file can't be looked into).
+                if row.source.title == "GIF" { wheel += FormatCatalog.forAnimations }
                 for (column, target) in section.targets.enumerated() {
                     let converts = if case .converts = row.cells[column] { true } else { false }
                     #expect(converts == wheel.contains(.convert(target)), "\(row.source.title) → \(target.title)")
@@ -165,7 +167,7 @@ struct V12FormatWheelTests {
     }
 
     @Test func settingsListCollageWithTheImageFormats() {
-        #expect(FormatCatalog.choices(for: .image, mode: .convert) == FormatCatalog.actions(for: .image, mode: .convert) + [.open(.collage)])
+        #expect(FormatCatalog.choices(for: .image, mode: .convert) == FormatCatalog.actions(for: .image, mode: .convert) + [.open(.collage)] + FormatCatalog.forAnimations)
         for kind in [FileKind.video, .audio, .pdf] {
             #expect(FormatCatalog.choices(for: kind, mode: .convert) == FormatCatalog.actions(for: kind, mode: .convert))
         }

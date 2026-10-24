@@ -16,15 +16,17 @@ your Mac: nothing is uploaded.
   → PNG, JPEG, HEIC, WebP, AVIF, TIFF, GIF, BMP, PDF, or icons (ICO for
   Windows, ICNS for the Mac). Several pictures → one PDF, or a **collage**.
   GIFs get the 256 colors that suit the picture, finely mixed (no bands);
-  JPEG's see-through parts get the color you choose.
+  JPEG's see-through parts get the color you choose. Animated pictures keep
+  moving as GIF, PNG, HEIC or WebP, or become an **MP4** or **WebM** video.
 - Videos (MOV, MP4, M4V; MKV, WebM, AVI, WMV with ffmpeg) → MP4, MOV, MKV,
-  WebM, AVI, WMV, GIF, M4A, MP3.
+  WebM, AVI, WMV, GIF, animated WebP, M4A, MP3.
 - Audio (MP3, M4A, WAV, AIFF, FLAC, OGG, Opus, WMA…) → MP3, M4A, WAV, AIFF,
   FLAC, OGG, Opus, WMA. Sound that was already compressed keeps at least
   its bit rate.
 - PDFs → PNG, JPEG, HEIC or TIFF (one picture per page), a smaller PDF,
   or **Word, Pages, EPUB, Markdown or text** with headings, paragraphs,
-  lists and tables you can edit (scans are read too); **Excel** with the
+  lists, tables, pictures and colors you can edit, two columns where the
+  page has them (scans are read too); **Excel** with the
   tables on each page; **PowerPoint** with a slide for each page.
 - Documents (Word, Pages, RTF, ODT, Markdown, text, web pages, EPUB, old
   .doc) → PDF, Word, Pages, RTF, ODT, Markdown, text, HTML or EPUB, with
@@ -278,7 +280,7 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 425, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 435, with real conversions). GitHub runs them on every push too. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |

@@ -25,7 +25,7 @@ public enum ConversionEngine {
             false  // the window says what it can do; Info works without ffmpeg
         case (_, .recipe), (_, .file):
             false  // each step is checked on its own (see `availability`); file actions need nothing
-        case (.video, .convert(.gif)):
+        case (.video, .convert(.gif)), (.video, .convert(.webp)), (.image, .convert(.webm)):
             true
         case (.video, .convert(let format)) where format.needsFFmpeg, (.audio, .convert(let format)) where format.needsFFmpeg:
             true
@@ -164,6 +164,8 @@ public enum ConversionEngine {
             switch (file.kind, request.action) {
             case (.image, .convert) where request.isCombinedPDF:
                 try ImageConverter.combineIntoPDF(request.files.map(\.url), destination: destination, progress: progress)
+            case (.image, .convert(let format)) where AnimatedPicture.keepsMotion.contains(format) && file.isAnimated:
+                try await AnimatedPicture.convert(file.url, to: format, destination: destination, options: options, progress: progress)
             case (.image, .convert(.webp)):
                 progress(0.1)
                 try await ImageConverter.writeWebP(file.url, destination: destination, options: options)

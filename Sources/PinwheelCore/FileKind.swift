@@ -110,6 +110,12 @@ public struct SourceFile: Sendable, Hashable, Codable {
         }
     }
 
+    /// A picture that moves (an animated GIF, PNG, WebP or HEIC). Read
+    /// from the file each time it's asked.
+    public var isAnimated: Bool {
+        kind == .image && AnimatedPicture.isAnimated(url)
+    }
+
     private static let avTypes: [UTType] = AVURLAsset.audiovisualTypes().compactMap { UTType($0.rawValue) }
 
     static func avFoundationCanRead(_ url: URL) -> Bool {

@@ -19,7 +19,7 @@ struct ConversionLimitTests {
         #expect(try limit("PNG", .jpeg)?.hasPrefix("see-through parts get a solid color") == true)
         #expect(try limit("JPEG", .png) == nil, "nothing lost")
         #expect(try limit("JPEG", .gif)?.hasPrefix("only 256 colors") == true)
-        #expect(try limit("GIF", .png) == "only the first frame of an animated GIF")
+        #expect(try limit("GIF", .png) == nil && limit("GIF", .jpeg) == "only the first frame of an animated GIF", "PNG keeps the motion (v1.9)")
         #expect(try limit("PNG", .ico) == nil && limit("PNG", .icns) == nil, "an icon holds what it holds (v1.8)")
         #expect(try limit("PDF", .png) == nil && limit("PDF", .docx) != nil && limit("PDF", .txt) == nil)
         #expect(try limit("MP4", .gif) != nil && limit("MP4", .mov) == nil && limit("MP4", .mp3) == nil)

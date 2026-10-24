@@ -25,6 +25,9 @@ public struct Document: Sendable, Equatable {
         case image(Picture)
         case pageBreak
         case rule
+        /// From here on, the text is set in this many columns (Word and
+        /// Pages; the other formats flow in one).
+        case columns(Int)
     }
 
     /// Text with one look all along.
@@ -34,17 +37,25 @@ public struct Document: Sendable, Equatable {
         public var italic = false
         public var code = false
         public var link: String?
+        /// "#RRGGBB"; nil for the usual (black) text.
+        public var color: String?
+        /// Points; nil for the size its kind of block has.
+        public var size: Double?
 
-        public init(_ text: String, bold: Bool = false, italic: Bool = false, code: Bool = false, link: String? = nil) {
+        public init(_ text: String, bold: Bool = false, italic: Bool = false, code: Bool = false, link: String? = nil,
+                    color: String? = nil, size: Double? = nil) {
             self.text = text
             self.bold = bold
             self.italic = italic
             self.code = code
             self.link = link
+            self.color = color
+            self.size = size
         }
 
         func sameLook(as other: Run) -> Bool {
             bold == other.bold && italic == other.italic && code == other.code && link == other.link
+                && color == other.color && size == other.size
         }
     }
 
@@ -72,7 +83,7 @@ public struct Document: Sendable, Equatable {
     var isEmpty: Bool {
         blocks.allSatisfy { block in
             switch block {
-            case .pageBreak, .rule: true
+            case .pageBreak, .rule, .columns: true
             case .paragraph(let runs), .heading(_, let runs), .quote(let runs), .listItem(_, _, let runs): runs.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             case .code(let text): text.isEmpty
             case .table(let rows): rows.isEmpty
@@ -126,22 +137,23 @@ extension Document {
     /// Plain text: blank lines between paragraphs, "•" before list items,
     /// tables as lined-up columns.
     public var plainText: String {
-        var parts: [String] = []
+        var parts: [(block: Block, text: String)] = []
         var numbers = ListNumbers()
         for block in blocks {
             if case .listItem = block {} else { numbers = ListNumbers() }
             switch block {
-            case .heading(_, let runs), .paragraph(let runs): parts.append(runs.text)
-            case .quote(let runs): parts.append(runs.text.split(separator: "\n", omittingEmptySubsequences: false).map { "  \($0)" }.joined(separator: "\n"))
+            case .heading(_, let runs), .paragraph(let runs): parts.append((block, runs.text))
+            case .quote(let runs): parts.append((block, runs.text.split(separator: "\n", omittingEmptySubsequences: false).map { "  \($0)" }.joined(separator: "\n")))
             case .listItem(let ordered, let level, let runs):
                 let number = numbers.next(ordered: ordered, level: level)
                 let marker = ordered ? "\(number)." : "•"
-                parts.append(String(repeating: "  ", count: level) + "\(marker) \(runs.text)")
-            case .code(let text): parts.append(text)
-            case .table(let rows): parts.append(Self.alignedTable(rows))
-            case .image(let picture): if let description = picture.description { parts.append("[\(description)]") }
-            case .pageBreak: parts.append("\u{0C}")
-            case .rule: parts.append("———")
+                parts.append((block, String(repeating: "  ", count: level) + "\(marker) \(runs.text)"))
+            case .code(let text): parts.append((block, text))
+            case .table(let rows): parts.append((block, Self.alignedTable(rows)))
+            case .image(let picture): if let description = picture.description { parts.append((block, "[\(description)]")) }
+            case .pageBreak: parts.append((block, "\u{0C}"))
+            case .rule: parts.append((block, "———"))
+            case .columns: break
             }
         }
         // List items stay together; everything else gets a blank line.
@@ -149,12 +161,12 @@ extension Document {
         for (index, part) in parts.enumerated() {
             if index > 0 {
                 let together = { () -> Bool in
-                    if case .listItem = blocks[index], case .listItem = blocks[index - 1] { return true }
+                    if case .listItem = part.block, case .listItem = parts[index - 1].block { return true }
                     return false
                 }()
                 text += together ? "\n" : "\n\n"
             }
-            text += part
+            text += part.text
         }
         return text + "\n"
     }
@@ -250,6 +262,8 @@ extension Document {
                 pictureIndex += 1
             case .pageBreak, .rule:
                 lines.append("---")
+            case .columns:
+                break
             }
             previousWasList = isList
         }
@@ -497,6 +511,7 @@ extension Document {
                 let alt = Self.escapeHTML(picture.description ?? "")
                 body.append("<p><img src=\"\(image(picture))\" alt=\"\(alt)\" width=\"\(Int(picture.width))\"\(xhtml ? "/" : "")></p>")
             case .pageBreak: body.append("<div class=\"page-break\"></div>")
+            case .columns: break
             case .rule: body.append(xhtml ? "<hr/>" : "<hr>")
             case .listItem: break
             }
@@ -511,6 +526,10 @@ extension Document {
             if run.code { text = "<code>\(text)</code>" }
             if run.italic { text = "<em>\(text)</em>" }
             if run.bold { text = "<strong>\(text)</strong>" }
+            var style: [String] = []
+            if let color = run.color { style.append("color: \(color)") }
+            if let size = run.size { style.append("font-size: \(Int(size.rounded()))pt") }
+            if !style.isEmpty { text = "<span style=\"\(style.joined(separator: "; "))\">\(text)</span>" }
             if let link = run.link { text = "<a href=\"\(escapeHTML(link))\">\(text)</a>" }
             return text
         }.joined()

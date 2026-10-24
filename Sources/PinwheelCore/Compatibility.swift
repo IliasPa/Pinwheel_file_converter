@@ -87,6 +87,7 @@ public enum Compatibility {
             return nil
         })
         formats.formUnion(sources.compactMap(\.sample.format))  // for each row's own dash
+        if kind == .image { formats.formUnion([.mp4, .webm]) }  // animated pictures (GIF) as videos
         let targets = order.filter(formats.contains)
         let rows = sources.map { source in Row(source: source, cells: targets.map { cell(from: source.sample, to: $0) }) }
         return Section(kind: kind, targets: targets, rows: rows)
@@ -96,7 +97,8 @@ public enum Compatibility {
         guard let kind = file.kind else { return .no }
         if file.format == target { return .same }
         let action = WheelAction.convert(target)
-        guard FormatCatalog.actions(for: kind, mode: .convert).contains(action) else { return .no }
+        let animations = kind == .image && file.format == .gif ? FormatCatalog.forAnimations : []
+        guard (FormatCatalog.actions(for: kind, mode: .convert) + animations).contains(action) else { return .no }
         return .converts(needs: tool(for: action, file: file))
     }
 
@@ -114,14 +116,15 @@ public enum Compatibility {
         let richDocuments: Set<String> = ["DOCX", "Pages", "RTF", "ODT", "HTML", "EPUB", "DOC"]
         switch source.kind {
         case .image:
-            if from == "GIF", target != .gif { return "only the first frame of an animated GIF" }
+            if from == "GIF", target == .mp4 { return "see-through parts get a solid color (MP4 has none)" }
+            if from == "GIF", !AnimatedPicture.keepsMotion.contains(target) { return "only the first frame of an animated GIF" }
             if target == .gif { return "only 256 colors (mixed finely, so shading stays smooth)" }
             if target == .jpeg, canBeSeeThrough.contains(from) {
                 return "see-through parts get a solid color (white, or the one chosen in Settings › Wheels › Formats)"
             }
         case .pdf:
             switch target {
-            case .docx, .pages, .epub: return "the layout is rebuilt from the pages, so it may not look the same"
+            case .docx, .pages, .epub: return "the layout is rebuilt from the pages (text, pictures, tables, columns), so it may not look exactly the same"
             case .md: return "simple formatting only"
             case .xlsx: return "only the tables found on its pages"
             case .pptx: return "each page becomes a picture on a slide (its text can't be edited)"
@@ -129,6 +132,7 @@ public enum Compatibility {
             }
         case .video:
             if target == .gif { return "no sound and only 256 colors (and a big file)" }
+            if target == .webp { return "no sound (an animated picture)" }
         case .audio:
             if from == "Opus", target == .ogg { return nil }  // the same sound, in an .ogg file
             if from == "M4A", lossyAudioTargets.contains(target) {
