@@ -22,7 +22,7 @@ struct KindAction: Hashable {
     var action: WheelAction
 }
 
-/// Settings › Conversions: for each kind of file, the formats on its
+/// Settings › Wheels › Formats: for each kind of file, the formats on its
 /// format wheel, each with its own settings right under it.
 struct ConversionsPane: View {
     @Bindable var settings: SettingsStore
@@ -95,7 +95,7 @@ struct ConversionsPane: View {
         case (.pdf, .convert(.heic)):
             "One picture per page, at \(percent(settings.heicQuality)) quality, as for pictures"
         case (.pdf, .tool(.compress)):
-            "Shrinks the pictures inside, at Compress's picture quality (Tools)"
+            "Shrinks the pictures inside, at the picture quality set in Tools"
         default:
             action.detail(for: kind, options: settings.conversionOptions)
         }
@@ -391,7 +391,7 @@ struct CompatibilityPane: View {
             return "not possible"
         case .converts(let needs):
             guard isOnWheel(section, column: column) else {
-                return "switched off for \(section.kind.pluralTitle.lowercased()) in Conversions"
+                return "switched off for \(section.kind.pluralTitle.lowercased()) in Wheels"
             }
             let limit = Compatibility.limitation(from: section.rows[row].source, to: target).map { ", but \($0)" } ?? ""
             if let needs {
@@ -410,7 +410,7 @@ struct CompatibilityPane: View {
             }
             HStack(spacing: 16) {
                 if !missing.isEmpty { legendItem("checkmark", .orange, "Needs " + missing.map(\.name).joined(separator: ", ")) }
-                legendItem("checkmark", .tertiary, "Switched off in Conversions")
+                legendItem("checkmark", .tertiary, "Switched off in Wheels")
                 legendItem("minus", .tertiary, "Same format")
             }
         }

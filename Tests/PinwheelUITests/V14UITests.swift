@@ -93,10 +93,10 @@ struct V14SettingsTests {
     @Test func searchFindsTheNewSettings() {
         func found(_ text: String) -> [SettingsPane] { SettingsPane.allCases.filter { $0.matches(text) } }
         #expect(found("keys") == [.wheel, .clipboard])  // the clipboard history has keys too (v1.7)
-        #expect(found("airdrop") == [.tools])
-        #expect(found("quick look") == [.tools])
+        #expect(found("airdrop") == [.wheel])
+        #expect(found("quick look") == [.wheel])
         #expect(found("cwebp") == [.advanced])
-        #expect(found("opus").contains(.conversions) && found("opus").contains(.compatibility))
+        #expect(found("opus").contains(.wheel) && found("opus").contains(.compatibility))
         #expect(found("rar") == [.compatibility])
     }
 }

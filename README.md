@@ -32,7 +32,7 @@ your Mac: nothing is uploaded.
 - Subtitles: SRT ⇄ WebVTT, or just their words.
 - Archives (ZIP, RAR, 7Z, TAR, TAR.GZ, GZ) → **extracted** into a folder, or
   repacked as ZIP, TAR, TAR.GZ or 7Z.
-- Settings › Compatibility has the whole table, and Settings › Conversions
+- Settings › Compatibility has the whole table, and Settings › Wheels
   chooses which formats each kind of file gets.
 
 **Tools** (⌥ Option + ⇧ Shift while dragging)
@@ -45,7 +45,7 @@ your Mac: nothing is uploaded.
   out, and faces or text found and blurred by themselves), and watermarks,
   on one picture or many at once.
 - **Remove BG:** cuts out people, pets and objects. **Blur Faces & Text**
-  hides them all in one go (switch it on in Settings › Tools).
+  hides them all in one go (switch it on in Settings › Wheels › Tools).
 - **Video and audio editor:** trim, cut into pieces, crop (1:1, 4:5, 9:16…),
   speed (pitch kept), turn, mute, fades, volume, even out the loudness,
   bleep words, mono or one side only; save a copy, a GIF of the part, or a
@@ -86,7 +86,8 @@ where you were typing (or just copied, if you prefer). Press and hold one
 (no tracking), on one line, in other capitals, or the text or QR code in a
 picture. A **heart** keeps a copy as a favorite for good, and your own
 **collections** ("Work", "Addresses"…) keep copies together: drag a copy
-onto one. The **anchor** at the bottom keeps the window open while you
+onto one. A kind, Favorites or a collection with nothing in it is left out
+of the filters (while you drag a copy, empty ones show, to drop it on). The **anchor** at the bottom keeps the window open while you
 work in other apps. The keys, and how many copies to keep (with the room
 they take), are in Settings › Clipboard.
 
@@ -151,7 +152,7 @@ Applications with the new one; your settings stay.
 | AirDrop, copy, move, ZIP… | Drag files, hold **⌃ Control + ⇧ Shift**, drop on an action |
 | Choose with the keyboard | With the wheel open: **← →**, then **Return**; **Tab** switches wheels |
 | Change your mind | Let go of the keys, press **Esc**, or drop in the middle |
-| Use other keys | Settings › Wheel › Keys (and whether the wheel stays open) |
+| Use other keys | Settings › Wheels, at the top (and whether the wheel stays open) |
 | Choose from Finder | Right-click files › **Services** › **Pinwheel Tools**, then click a wedge |
 | Take it back | Menu-bar icon › **Undo …** |
 | Paste something you copied before | **⌥⌘V**, then click it (or type to search, ↑↓ and Return) |
@@ -165,18 +166,19 @@ get a notification.
 **Settings** (menu-bar icon › Settings…) has a page for each part, listed
 in a sidebar with a search field:
 - **General:** the permission, what happens after converting, where new
-  files go, opening at login.
-- **Wheel:** the keys for each wheel, the glass look, the click sound and
-  the trackpad vibration (off, low or high).
-- **Conversions:** which formats each kind of file gets on the ⇧ Shift
-  wheel, with each format's settings (JPEG and HEIC quality, GIF size and
-  length, PDF page resolution…).
+  files go, the wheel's glass look, the click sound and the trackpad
+  vibration (off, low or high), opening at login.
+- **Wheels:** the three wheels and their keys stay at the top; click one
+  for its settings below, one kind of file at a time. **Formats** (⇧
+  Shift): which formats each kind of file gets, with each format's
+  settings (JPEG and HEIC quality, GIF size and length, PDF page
+  resolution…). **Tools** (⌥ Option + ⇧ Shift): which tools are on the
+  wheel, **custom actions**, and how Compress and Resize work. **File
+  actions** (⌃ Control + ⇧ Shift): which are on the wheel, and the
+  Terminal app.
 - **Compatibility:** a table of every kind of file against every format:
   ✓ it converts (a yellow ✓: something is lost, such as transparency in a
   JPEG; point at it to see what), – it's the same format.
-- **Tools:** Compress and Resize, which tools and file actions are on
-  their wheels, the Terminal app,
-  and **custom actions**.
 - **Clipboard** (beta): the history on or off, its keys (⌥⌘V), pasting or
   just copying, how a preview opens, the quick buttons, and how many
   copies it keeps.
@@ -271,7 +273,7 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 410, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 415, with real conversions). GitHub runs them on every push too. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |

@@ -3,6 +3,33 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v1.7.8 (beta) — 2026-10-24
+
+**New**
+- **One Wheels page in Settings,** in place of Wheel, Conversions and
+  Tools. The three wheels (Formats ⇧, Tools ⌥⇧, File actions ⌃⇧) and
+  their keys stay at the top while the page scrolls; click one to see
+  its settings below, one kind of file at a time. As for formats, a
+  tool's settings are right under its switch: picture quality under
+  Compress and the size under Resize for pictures, video quality and size
+  for videos, the bit rate for audio; and under Terminal, the app it opens
+  in. Searching for a tool or a file action opens its wheel.
+- **A fresher icon:** frosted blades, and the one picked slid out in
+  color, as the wheel shows the one you're on. Settings' Wheels page has
+  the menu-bar icon.
+
+**Changed**
+- **Quick buttons look like buttons:** outlined, they light up in your
+  accent color when you point at them (with a pointing hand), and more
+  when pressed.
+- **The clipboard's filters show only what has copies:** no Images or
+  Files chip until you copy one, and Favorites and your collections only
+  with something in them. While you drag a copy, the empty ones show, so
+  you can drop it on them; a collection you just made shows too.
+- **Favorites sits with the collections,** just before New.
+- **Appearance and Wheel feedback are in General** (the glass, the
+  click sound and the trackpad vibration).
+
 ## v1.7.7 (beta) — 2026-10-23
 
 **New**

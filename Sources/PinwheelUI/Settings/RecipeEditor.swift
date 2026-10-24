@@ -254,7 +254,7 @@ private struct StepOptions: View {
                 Text(String(format: "%+.0f dB", decibels)).monospacedDigit().foregroundStyle(.secondary)
             }
         case .compress:
-            note("With the quality set in Settings › Tools.")
+            note("With the quality set in Settings › Wheels › Tools.")
         case .removeLocation:
             note("Keeps the camera and date; removes only where it was taken.")
         case .extractText:

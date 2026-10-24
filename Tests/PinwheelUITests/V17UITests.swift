@@ -183,7 +183,7 @@ struct KeyShortcutTests {
 
         func found(_ text: String) -> [SettingsPane] { SettingsPane.allCases.filter { $0.matches(text) } }
         #expect(found("clipboard") == [.clipboard] && found("pasta") == [.clipboard])
-        #expect(NSImage(systemSymbolName: SettingsPane.clipboard.symbolName, accessibilityDescription: nil) != nil)
+        #expect(NSImage(systemSymbolName: SettingsPane.clipboard.symbolName ?? "", accessibilityDescription: nil) != nil)
         for kind in ClipKind.allCases {
             #expect(NSImage(systemSymbolName: kind.symbolName, accessibilityDescription: nil) != nil)
         }

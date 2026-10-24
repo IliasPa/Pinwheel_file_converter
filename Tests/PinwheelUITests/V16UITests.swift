@@ -72,7 +72,7 @@ struct V16CommandAndSettingsTests {
     @Test func searchFindsThem() {
         func found(_ text: String) -> [SettingsPane] { SettingsPane.allCases.filter { $0.matches(text) } }
         for word in ["shelf", "visualizer", "bleep", "faces", "mono"] {
-            #expect(found(word).contains(.tools), "\(word)")
+            #expect(found(word).contains(.wheel), "\(word)")
         }
     }
 

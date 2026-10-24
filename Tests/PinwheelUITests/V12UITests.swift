@@ -85,13 +85,13 @@ struct SettingsPaneTests {
     @Test func searchFindsThePages() {
         #expect(found("") == SettingsPane.allCases)
         #expect(found("  ") == SettingsPane.allCases)
-        #expect(found("Glass") == [.wheel])
+        #expect(found("Glass") == [.general])
         #expect(found("greek") == [.textRecognition])
-        #expect(found("JPEG") == [.conversions, .compatibility])
-        #expect(found("webm") == [.conversions, .compatibility])
+        #expect(found("JPEG") == [.wheel, .compatibility])
+        #expect(found("webm") == [.wheel, .compatibility])
         #expect(found("rar") == [.compatibility])
-        #expect(found("crop").contains(.tools))
-        #expect(found("custom actions") == [.tools])
+        #expect(found("crop").contains(.wheel))
+        #expect(found("custom actions") == [.wheel])
         #expect(found("ffmpeg") == [.advanced])
         #expect(found("login") == [.general])
         #expect(found("compat") == [.compatibility])
@@ -100,7 +100,9 @@ struct SettingsPaneTests {
 
     @Test func everyPageHasItsSymbol() {
         for pane in SettingsPane.allCases {
-            #expect(NSImage(systemSymbolName: pane.symbolName, accessibilityDescription: nil) != nil, "missing SF Symbol \(pane.symbolName)")
+            // Wheels draws a pinwheel of its own.
+            guard let symbol = pane.symbolName else { continue }
+            #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "missing SF Symbol \(symbol)")
         }
         #expect(Set(SettingsPane.allCases.map(\.title)).count == SettingsPane.allCases.count)
     }

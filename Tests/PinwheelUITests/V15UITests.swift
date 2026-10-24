@@ -32,10 +32,10 @@ struct V15SettingsTests {
 
     @Test func searchFindsDocumentSettings() {
         func found(_ text: String) -> [SettingsPane] { SettingsPane.allCases.filter { $0.matches(text) } }
-        #expect(found("word").contains(.conversions) && found("word").contains(.compatibility))  // and "Password" in Tools
-        #expect(found("subtitles") == [.conversions, .compatibility])
-        #expect(found("pages as pictures") == [.conversions])
-        #expect(found("epub").contains(.conversions) && found("epub").contains(.compatibility))
+        #expect(found("word").contains(.wheel) && found("word").contains(.compatibility))  // and "Password" in Tools
+        #expect(found("subtitles") == [.wheel, .compatibility])
+        #expect(found("pages as pictures") == [.wheel])
+        #expect(found("epub").contains(.wheel) && found("epub").contains(.compatibility))
     }
 }
 

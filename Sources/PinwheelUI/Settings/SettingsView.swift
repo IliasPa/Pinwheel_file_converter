@@ -25,12 +25,24 @@ final class SettingsViewState {
     var tableSpot: CompatibilityPane.Spot?
     let shortcutRecorder = ShortcutRecorder()
     var confirmClearClipboard = false
-    /// The kind of file Conversions and Compatibility show (one at a time:
-    /// all of them at once made those pages slow to open).
+    /// The kind of file Wheels and Compatibility show (one at a time: all of
+    /// them at once made those pages slow to open).
     var settingsKind: FileKind = .image
+    /// Which wheel's settings the Wheels page shows.
+    var wheelPage: WheelMode = .convert
+
+    /// Searching for a tool ("crop") or a file action ("airdrop") shows its
+    /// wheel on the Wheels page, and a format its formats.
+    func showWheel(for search: String) {
+        let word = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard word.count >= 2 else { return }
+        if let mode = WheelMode.allCases.first(where: { SettingsPane.keywords(for: $0).contains { $0.lowercased().contains(word) } }) {
+            wheelPage = mode
+        }
+    }
 
     /// Searching for a format ("webm", "mp3") or a kind ("spread…") shows
-    /// that kind on Conversions and Compatibility.
+    /// that kind on Wheels and Compatibility.
     func showKind(for search: String) {
         let word = search.trimmingCharacters(in: .whitespaces).lowercased()
         guard word.count >= 2 else { return }
@@ -87,17 +99,15 @@ final class ShortcutRecorder {
 
 /// The pages of the Settings window, in the sidebar's order.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, wheel, conversions, compatibility, tools, clipboard, textRecognition, finderAndShortcuts, advanced
+    case general, wheel, compatibility, clipboard, textRecognition, finderAndShortcuts, advanced
 
     var id: Self { self }
 
     var title: String {
         switch self {
         case .general: "General"
-        case .wheel: "Wheel"
-        case .conversions: "Conversions"
+        case .wheel: "Wheels"
         case .compatibility: "Compatibility"
-        case .tools: "Tools"
         case .clipboard: "Clipboard"
         case .textRecognition: "Text Recognition"
         case .finderAndShortcuts: "Finder & Shortcuts"
@@ -105,13 +115,12 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         }
     }
 
-    var symbolName: String {
+    /// The sidebar's icon: an SF Symbol, or (Wheels) the menu-bar icon.
+    var symbolName: String? {
         switch self {
         case .general: "gearshape"
-        case .wheel: "camera.aperture"
-        case .conversions: "arrow.triangle.2.circlepath"
+        case .wheel: nil
         case .compatibility: "tablecells"
-        case .tools: "wrench.and.screwdriver"
         case .clipboard: "list.clipboard"
         case .textRecognition: "text.viewfinder"
         case .finderAndShortcuts: "contextualmenu.and.cursorarrow"
@@ -124,12 +133,27 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general, .advanced: .gray
         case .wheel: Brand.indigo
-        case .conversions: Brand.blue
         case .compatibility: Brand.teal
-        case .tools: .orange
         case .clipboard: .pink
         case .textRecognition: .purple
         case .finderAndShortcuts: .green
+        }
+    }
+
+    /// Words that find a wheel's settings on the Wheels page.
+    static func keywords(for mode: WheelMode) -> [String] {
+        switch mode {
+        case .convert:
+            return OutputFormat.allCases.map(\.title)
+                + ["jpg", "formats", "conversions", "convert", "quality", "collage", "combined", "smaller pdf", "dpi", "resolution",
+                   "frame rate", "width", "length", "word", "excel", "powerpoint", "keynote", "numbers", "documents",
+                   "spreadsheets", "slides", "subtitles", "editable", "pages as pictures"]
+        case .tools:
+            return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title)
+                + ["tools", "bit rate", "video size", "custom actions", "qr", "barcode", "shelf", "visualizer", "waveform", "faces",
+                   "blur", "redact", "bleep", "split", "crop video", "mono", "stereo", "channels"]
+        case .actions:
+            return FileAction.allCases.map(\.title) + ["file actions", "path", "iterm"]
         }
     }
 
@@ -139,22 +163,14 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return ["permission", "accessibility", "progress window", "show in finder", "notify", "notification",
-                    "trash", "original", "save", "folder", "downloads", "login", "startup"]
+                    "trash", "original", "save", "folder", "downloads", "login", "startup", "glass", "appearance", "frosted",
+                    "crystal", "preview", "show on desktop", "sound", "click", "volume", "vibration", "haptic", "trackpad", "tap"]
         case .wheel:
-            return ["keys", "shortcut", "modifier", "shift", "option", "control", "command", "keyboard", "arrow", "let go",
-                    "keep open", "glass", "appearance", "frosted", "crystal", "preview", "show on desktop", "sound", "click",
-                    "volume", "vibration", "haptic", "trackpad", "tap"]
-        case .conversions:
-            return formats + ["formats", "shift", "quality", "collage", "combined", "smaller pdf", "dpi", "resolution",
-                              "frame rate", "width", "length", "word", "excel", "powerpoint", "keynote", "numbers", "documents",
-                              "spreadsheets", "slides", "subtitles", "editable", "pages as pictures"]
+            return ["keys", "shortcut", "modifier", "shift", "option", "control", "command", "keyboard", "arrow", "let go", "keep open"]
+                + WheelMode.allCases.flatMap(Self.keywords(for:))
         case .compatibility:
             return formats + Compatibility.sources.map(\.title) + ["table", "formats", "supported", "from", "word", "excel",
                                                                      "powerpoint", "keynote", "numbers", "subtitles"]
-        case .tools:
-            return ToolAction.allCases.map(\.title) + Editor.allCases.map(\.title) + FileAction.allCases.map(\.title)
-                + ["quality", "bit rate", "video size", "custom actions", "file actions", "path", "iterm", "zip", "qr", "barcode",
-                   "shelf", "visualizer", "waveform", "faces", "blur", "redact", "bleep", "split", "crop video", "mono", "stereo", "channels"]
         case .clipboard:
             return ["clipboard", "history", "paste", "copy", "copied", "favorites", "heart", "shortcut", "keys", "pasta", "beta", "preview", "drag", "plain text", "links", "tracking", "buttons", "collections"]
         case .textRecognition:
@@ -258,11 +274,19 @@ struct SettingsView: View {
                 Label {
                     Text(pane.title)
                 } icon: {
-                    Image(systemName: pane.symbolName)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 20, height: 20)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(pane.color.gradient))
+                    Group {
+                        if let symbol = pane.symbolName {
+                            Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                        } else {
+                            Image(nsImage: StatusIcon.make())
+                                .renderingMode(.template)
+                                .resizable()
+                                .frame(width: 15, height: 15)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(pane.color.gradient))
                 }
                 if pane == .general && !permission.isTrusted {
                     Spacer()
@@ -282,7 +306,10 @@ struct SettingsView: View {
             }
         }
         .searchable(text: $state.search, placement: .sidebar, prompt: "Search")
-        .onChange(of: state.search) { state.showKind(for: state.search) }
+        .onChange(of: state.search) {
+            state.showKind(for: state.search)
+            state.showWheel(for: state.search)
+        }
         .toolbar(removing: .sidebarToggle)
     }
 
@@ -294,24 +321,14 @@ struct SettingsView: View {
                 permissionSection
                 afterConverting
                 saving
+                appearance
+                feedback
                 startup
             }
         case .wheel:
-            Form {
-                keysSection
-                appearance
-                feedback
-            }
-        case .conversions:
-            ConversionsPane(settings: settings, state: state)
+            wheels
         case .compatibility:
             CompatibilityPane(settings: settings, state: state)
-        case .tools:
-            Form {
-                compressAndResize
-                toolsWheel
-                fileActionsWheel
-            }
         case .clipboard:
             Form { clipboardSection }
         case .textRecognition:
@@ -525,35 +542,85 @@ struct SettingsView: View {
         return count == 0 ? "No copies kept" : "\(copies) · \(ClipboardStore.size(clipboard?.store.totalBytes ?? 0))"
     }
 
-    // MARK: - Wheel
+    // MARK: - Wheels
 
-    /// The keys that open each wheel, and whether it stays open after them.
-    private var keysSection: some View {
+    /// Formats, Tools and File actions on one page: the wheels and their keys
+    /// stay at the top while it scrolls, and clicking a wheel shows its settings.
+    private var wheels: some View {
+        Group {
+            switch state.wheelPage {
+            case .convert:
+                ConversionsPane(settings: settings, state: state)
+            case .tools:
+                Form { toolsWheel }
+            case .actions:
+                Form { fileActionsWheel }
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) { wheelBar }
+    }
+
+    /// Each wheel with its keys, side by side, and what letting go of them does.
+    private var wheelBar: some View {
         let clashes = settings.wheelKeys.clashes
-        return Section {
-            ForEach(WheelMode.allCases, id: \.self) { mode in
-                LabeledContent {
-                    HStack(spacing: 4) {
-                        ForEach(ModifierKeys.each, id: \.rawValue) { key in
-                            keyToggle(key, for: mode)
-                        }
-                    }
-                } label: {
-                    Label("\(mode.wheelTitle) wheel", systemImage: mode.wheelSymbol)
-                    if clashes.contains(mode) {
-                        Text("Same keys as another wheel").foregroundStyle(.orange)
-                    }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(WheelMode.allCases, id: \.self) { mode in
+                    wheelCard(mode, clash: clashes.contains(mode))
                 }
             }
-            Picker("When you let go of the keys", selection: $settings.keepWheelOpen) {
-                Text("Close the wheel").tag(false)
-                Text("Keep it open until you drop").tag(true)
+            HStack(spacing: 12) {
+                Text("Hold a wheel's keys while dragging files. Click a wheel for its settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Picker("When you let go of the keys", selection: $settings.keepWheelOpen) {
+                    Text("Close the wheel").tag(false)
+                    Text("Keep it open until you drop").tag(true)
+                }
+                .controlSize(.small)
+                .fixedSize()
             }
-        } header: {
-            Text("Keys")
-        } footer: {
-            Footnote("Hold a wheel's keys while dragging files; each wheel opens with exactly its keys. With the wheel open: ← → choose, Return applies, Tab switches wheels, Esc closes it.")
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    /// A wheel: its name (click to see its settings) and its keys.
+    private func wheelCard(_ mode: WheelMode, clash: Bool) -> some View {
+        let isOn = state.wheelPage == mode
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 5) {
+                Image(systemName: mode.wheelSymbol).font(.system(size: 11, weight: .semibold))
+                Text(mode.wheelTitle).font(.system(size: 13, weight: .semibold))
+                Spacer(minLength: 0)
+                if clash {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help("Same keys as another wheel")
+                }
+            }
+            .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+            HStack(spacing: 3) {
+                ForEach(ModifierKeys.each, id: \.rawValue) { key in
+                    keyToggle(key, for: mode)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(shape.fill(isOn ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.045)))
+        .overlay(shape.strokeBorder(isOn ? Color.accentColor.opacity(0.9) : Color.primary.opacity(0.08), lineWidth: isOn ? 1.5 : 1))
+        .contentShape(shape)
+        .onTapGesture { state.wheelPage = mode }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(mode.wheelTitle) wheel")
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { state.wheelPage = mode }
     }
 
     /// One key of a wheel's combination, as a keycap: filled when it's part
@@ -567,9 +634,9 @@ struct SettingsView: View {
             if !updated.isEmpty { settings.wheelKeys[mode] = updated }
         } label: {
             Text(key.symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isOn ? Color.white : Color.primary)
-                .frame(width: 32, height: 24)
+                .frame(width: 30, height: 22)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(isOn ? Color.accentColor : Color.primary.opacity(0.08)))
                 .contentShape(Rectangle())
         }
@@ -578,6 +645,8 @@ struct SettingsView: View {
         .accessibilityLabel(key.name)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
+
+    // MARK: - The wheel's look and feel (General)
 
     private var appearance: some View {
         Section("Appearance") {
@@ -641,96 +710,127 @@ struct SettingsView: View {
 
     // MARK: - Tools
 
-    /// How Compress and Resize work (also in custom actions and Size Limit's first try).
-    private var compressAndResize: some View {
-        Section {
-            PercentSlider("Picture quality", value: $settings.compressQuality, range: 0.3...0.9)
-            Picker("Resize", selection: $settings.resize) {
-                ForEach(ResizeOption.allCases, id: \.self) { Text($0.title).tag($0) }
+    /// The tools wheel for one kind of file (chosen at the top): which tools
+    /// it shows, and the custom actions made for it.
+    private var toolsWheel: some View {
+        let kind = state.settingsKind
+        let options = settings.conversionOptions
+        let actions = FormatCatalog.actions(for: kind, mode: .tools)
+        let custom = settings.recipes.filter { $0.kind == kind }
+        let shown = settings.shownCount(for: kind)
+        return Group {
+            Section {
+                Text("Choose which tools the tools wheel shows for each kind of file. Tools with \u{201C}…\u{201D} open a window to choose the details first.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                KindPicker(state: state, kinds: FileKind.allCases)
             }
-            Picker("Video quality", selection: $settings.videoQuality) {
-                ForEach(VideoQuality.allCases, id: \.self) { Text($0.title).tag($0) }
+            Section {
+                ForEach(actions.map { KindAction(kind: kind, action: $0) }, id: \.self) { row in
+                    let action = row.action
+                    let isOn = settings.isOnWheel(action, for: kind)
+                    Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, $0) })) {
+                        Label(action.title(in: .tools, options: options), systemImage: action.symbolName(in: .tools))
+                    }
+                    .help(action.detail(for: kind, options: options))
+                    .disabled(!isOn && shown >= FormatCatalog.maxWedges)
+                    toolOptions(for: action, kind: kind)
+                }
+                ForEach(custom) { recipe in
+                    let action = WheelAction.recipe(recipe)
+                    let isOn = settings.isOnWheel(action, for: kind)
+                    HStack {
+                        Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, $0) })) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Label(recipe.name, systemImage: recipe.symbol)
+                                Text(recipe.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .disabled(!isOn && shown >= FormatCatalog.maxWedges)
+                        Button("Edit…") {
+                            state.recipeDraft = RecipeDraft(recipe, isNew: false, lastWatermark: settings.lastWatermark)
+                        }
+                        Button(role: .destructive) { settings.deleteRecipe(recipe) } label: { Image(systemName: "trash") }
+                            .buttonStyle(.borderless)
+                            .help("Delete this custom action")
+                    }
+                }
+                if !RecipeStep.templates(for: kind).isEmpty {
+                    HStack {
+                        Button("New Custom Action…") {
+                            let recipe = Recipe(name: "", kind: kind)
+                            state.recipeDraft = RecipeDraft(recipe, isNew: true, lastWatermark: settings.lastWatermark)
+                        }
+                        Text("Several steps in one wedge, in the order you choose.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                HStack {
+                    Label(kind.pluralTitle, systemImage: kind.symbolName)
+                    Spacer()
+                    Text("\(min(shown, FormatCatalog.maxWedges)) of \(actions.count + custom.count) on the wheel")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            } footer: {
+                Footnote(toolsFooter(kind))
             }
-            Picker("Video size", selection: $settings.videoMaxSize) {
-                ForEach(VideoMaxSize.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            Picker("Audio bit rate", selection: $settings.audioBitRate) {
-                ForEach([96, 128, 160, 192, 256], id: \.self) { Text("\($0) kbps").tag($0) }
-            }
-        } header: {
-            Text("Compress and Resize")
-        } footer: {
-            Footnote((settings.pngquantURL == nil
-                      ? "Compress keeps JPEG, HEIC and PNG in their format. For much smaller PNGs, install pngquant: brew install pngquant. "
-                      : "Compress keeps JPEG, HEIC and PNG in their format (PNGs are shrunk with pngquant). ")
-                     + "Videos and audio never get a higher bit rate than the original's, and a result that isn't smaller is thrown away. Smaller PDF uses the picture quality too.")
         }
     }
 
-    /// Which tools the Option+Shift wheel shows for each kind of file, and
-    /// the custom actions made for it.
-    private var toolsWheel: some View {
-        Section {
-            ForEach(FileKind.allCases, id: \.self) { kind in
-                let options = settings.conversionOptions
-                let actions = FormatCatalog.actions(for: kind, mode: .tools)
-                let custom = settings.recipes.filter { $0.kind == kind }
-                let shown = settings.shownCount(for: kind)
-                DisclosureGroup {
-                    ForEach(actions.map { KindAction(kind: kind, action: $0) }, id: \.self) { row in
-                        let action = row.action
-                        let isOn = settings.isOnWheel(action, for: kind)
-                        Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, $0) })) {
-                            Label(action.title(in: .tools, options: options), systemImage: action.symbolName(in: .tools))
-                        }
-                        .help(action.detail(for: kind, options: options))
-                        .disabled(!isOn && shown >= FormatCatalog.maxWedges)
-                    }
-                    ForEach(custom) { recipe in
-                        let action = WheelAction.recipe(recipe)
-                        let isOn = settings.isOnWheel(action, for: kind)
-                        HStack {
-                            Toggle(isOn: Binding(get: { isOn }, set: { settings.setOnWheel(action, for: kind, $0) })) {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Label(recipe.name, systemImage: recipe.symbol)
-                                    Text(recipe.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                            }
-                            .disabled(!isOn && shown >= FormatCatalog.maxWedges)
-                            Button("Edit…") {
-                                state.recipeDraft = RecipeDraft(recipe, isNew: false, lastWatermark: settings.lastWatermark)
-                            }
-                            Button(role: .destructive) { settings.deleteRecipe(recipe) } label: { Image(systemName: "trash") }
-                                .buttonStyle(.borderless)
-                                .help("Delete this custom action")
-                        }
-                    }
-                    if !RecipeStep.templates(for: kind).isEmpty {
-                        HStack {
-                            Button("New Custom Action…") {
-                                let recipe = Recipe(name: "", kind: kind)
-                                state.recipeDraft = RecipeDraft(recipe, isNew: true, lastWatermark: settings.lastWatermark)
-                            }
-                            Text("Several steps in one wedge, in the order you choose.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Text(kind.pluralTitle)
-                        Spacer()
-                        Text("\(min(shown, FormatCatalog.maxWedges)) of \(actions.count + custom.count) on the wheel")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+    /// The settings that belong to a tool, set in under its switch, as for
+    /// formats. Custom actions and Size Limit's first try use them too.
+    @ViewBuilder
+    private func toolOptions(for action: WheelAction, kind: FileKind) -> some View {
+        switch (kind, action) {
+        case (.image, .tool(.compress)), (.pdf, .tool(.compress)):
+            PercentSlider("Picture quality", value: $settings.compressQuality, range: 0.3...0.9, indented: true)
+        case (.image, .tool(.resize)):
+            Picker(selection: $settings.resize) {
+                ForEach(ResizeOption.allCases, id: \.self) { Text($0.title).tag($0) }
+            } label: {
+                Text("Size").padding(.leading, SettingsLayout.indent)
             }
-        } header: {
-            Text("Tools wheel (\(settings.wheelKeys[.tools].title))")
-        } footer: {
-            Footnote("The wheel holds up to \(FormatCatalog.maxWedges) tools, so switch one off to make room for another. Tools with “…” open a window to choose the details first. Custom actions do several steps one after the other, e.g. crop 4:5, fit 1080 px, add a watermark and save as JPEG.")
+        case (.video, .tool(.compress)):
+            Picker(selection: $settings.videoQuality) {
+                ForEach(VideoQuality.allCases, id: \.self) { Text($0.title).tag($0) }
+            } label: {
+                Text("Video quality").padding(.leading, SettingsLayout.indent)
+            }
+            Picker(selection: $settings.videoMaxSize) {
+                ForEach(VideoMaxSize.allCases, id: \.self) { Text($0.title).tag($0) }
+            } label: {
+                Text("Video size").padding(.leading, SettingsLayout.indent)
+            }
+        case (.audio, .tool(.compress)):
+            Picker(selection: $settings.audioBitRate) {
+                ForEach([96, 128, 160, 192, 256], id: \.self) { Text("\($0) kbps").tag($0) }
+            } label: {
+                Text("Bit rate").padding(.leading, SettingsLayout.indent)
+            }
+        default:
+            EmptyView()
         }
+    }
+
+    private func toolsFooter(_ kind: FileKind) -> String {
+        let compress: String
+        switch kind {
+        case .image:
+            compress = settings.pngquantURL == nil
+                ? "Compress keeps JPEG, HEIC and PNG in their format, and a result that isn't smaller is thrown away; for much smaller PNGs, install pngquant: brew install pngquant. "
+                : "Compress keeps JPEG, HEIC and PNG in their format (PNGs are shrunk with pngquant), and a result that isn't smaller is thrown away. "
+        case .video, .audio:
+            compress = "Compress never gives a higher bit rate than the original's, and a result that isn't smaller is thrown away. "
+        case .pdf:
+            compress = "Compress shrinks the pictures inside, at the picture quality set for pictures too. "
+        default:
+            compress = ""
+        }
+        return compress + "The wheel holds up to \(FormatCatalog.maxWedges) tools, so switch one off to make room for another. Custom actions do several steps one after the other, e.g. crop 4:5, fit 1080 px, add a watermark and save as JPEG."
     }
 
     /// The file actions wheel: the same for any files and folders.
@@ -744,14 +844,18 @@ struct SettingsView: View {
                     Text(action.detail(for: nil))
                 }
                 .disabled(isOn && shown == 1)
-            }
-            Picker("Terminal opens in", selection: $settings.terminalApp) {
-                ForEach(TerminalApp.installed, id: \.self) { Text($0.title).tag($0.rawValue) }
+                if action == .file(.terminal) {
+                    Picker(selection: $settings.terminalApp) {
+                        ForEach(TerminalApp.installed, id: \.self) { Text($0.title).tag($0.rawValue) }
+                    } label: {
+                        Text("Opens in").padding(.leading, SettingsLayout.indent)
+                    }
+                }
             }
         } header: {
-            Text("File actions wheel (\(settings.wheelKeys[.actions].title))")
+            Text("For any files and folders")
         } footer: {
-            Footnote("For any files and folders, also ones Pinwheel can't convert. Move To… can be undone from the menu bar; ZIP makes one .zip of everything dropped, without the Mac's hidden extras.")
+            Footnote("Also for ones Pinwheel can't convert. Move To… can be undone from the menu bar; ZIP makes one .zip of everything dropped, without the Mac's hidden extras.")
         }
     }
 

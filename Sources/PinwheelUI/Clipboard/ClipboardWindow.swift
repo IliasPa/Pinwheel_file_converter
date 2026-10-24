@@ -413,6 +413,8 @@ final class ClipboardPanelModel {
     }
     /// A collection being named, new or renamed.
     var naming: CollectionNaming?
+    /// Collections made since the window opened: shown even while empty.
+    var madeNow: Set<ClipCollection.ID> = []
     /// The collection asked to be deleted (it waits for a yes).
     var confirmingDelete: ClipCollection.ID?
     /// Where a copy being dragged would land now.
@@ -470,8 +472,28 @@ final class ClipboardPanelModel {
         if let appID, !store.apps.contains(where: { $0.id == appID }) { self.appID = nil }
         if let collectionID, !store.collections.contains(where: { $0.id == collectionID }) { self.collectionID = nil }
         naming = nil
+        madeNow = []
         confirmingDelete = nil
         selectFirst()
+    }
+
+    /// The kinds of copy a filter is shown for: those there are, and the
+    /// one chosen (so it can be let go of).
+    var shownKinds: [ClipKind] {
+        let kinds = Set(store.items.map(\.kind))
+        return ClipKind.allCases.filter { kinds.contains($0) || kind == $0 }
+    }
+
+    /// Favorites, or a collection, is shown when there's something in it,
+    /// when it's chosen, and while a copy is dragged (to be dropped on it);
+    /// a collection also while it's new or being renamed.
+    var showsFavorites: Bool {
+        favoritesOnly || dragging != nil || store.items.contains(where: \.isFavorite)
+    }
+
+    func shows(_ collection: ClipCollection) -> Bool {
+        !collection.items.isEmpty || collectionID == collection.id || dragging != nil
+            || madeNow.contains(collection.id) || naming?.collection == collection.id
     }
 
     /// A short note on a copy's row, for a moment.
@@ -636,16 +658,7 @@ struct ClipboardView: View {
                 model.favoritesOnly = false
                 model.collectionID = nil
             }
-            chip("Favorites", symbol: "heart.fill", isOn: model.favoritesOnly) {
-                model.favoritesOnly.toggle()
-                if model.favoritesOnly { model.collectionID = nil }
-            }
-            .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: model.dropTarget == .favorites ? 2 : 0))
-            .scaleEffect(model.dropTarget == .favorites ? 1.08 : (model.landed == .favorites ? 1.12 : 1))
-            .animation(.spring(response: 0.3, dampingFraction: 0.5), value: model.dropTarget)
-            .animation(.spring(response: 0.3, dampingFraction: 0.4), value: model.landed)
-            .onDrop(of: [.item], isTargeted: model.isTargeted(.favorites)) { _ in model.drop(on: .favorites) }
-            ForEach(ClipKind.allCases, id: \.self) { kind in
+            ForEach(model.shownKinds, id: \.self) { kind in
                 chip(kind.title, symbol: kind.symbolName, isOn: model.kind == kind) { model.kind = model.kind == kind ? nil : kind }
             }
             Spacer(minLength: 0)

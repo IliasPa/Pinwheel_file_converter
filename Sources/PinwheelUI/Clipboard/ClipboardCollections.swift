@@ -41,10 +41,12 @@ extension ClipboardPanelModel {
         self.naming = nil
         if let collection = naming.collection {
             store.rename(collection, to: naming.name)
-        } else if let made = store.addCollection(named: naming.name),
-                  let adding = naming.adding, let item = store.items.first(where: { $0.id == adding }) {
-            store.add(item, to: made.id)
-            flash("Added to \(made.name)", on: item.id, isProblem: false)
+        } else if let made = store.addCollection(named: naming.name) {
+            madeNow.insert(made.id)
+            if let adding = naming.adding, let item = store.items.first(where: { $0.id == adding }) {
+                store.add(item, to: made.id)
+                flash("Added to \(made.name)", on: item.id, isProblem: false)
+            }
         }
     }
 
@@ -103,7 +105,8 @@ extension ClipboardPanelModel {
 }
 
 /// The collections, under the filters: one chip each (a click shows just
-/// that collection; drop a copy on it to add the copy), and New Collection.
+/// that collection; drop a copy on it to add the copy), then Favorites and
+/// New Collection. Empty ones show only while a copy is dragged.
 struct CollectionsBar: View {
     var model: ClipboardPanelModel
     @FocusState private var nameFocused: Bool
@@ -112,12 +115,15 @@ struct CollectionsBar: View {
         VStack(alignment: .leading, spacing: 6) {
             ScrollView(.horizontal) {
                 HStack(spacing: 6) {
-                    ForEach(model.store.collections) { collection in
+                    ForEach(model.store.collections.filter(model.shows)) { collection in
                         if model.naming?.collection == collection.id {
                             nameField(placeholder: "Name")
                         } else {
                             chip(collection)
                         }
+                    }
+                    if model.showsFavorites {
+                        favorites
                     }
                     if model.naming != nil && model.naming?.collection == nil {
                         nameField(placeholder: "New collection")
@@ -125,7 +131,7 @@ struct CollectionsBar: View {
                         Button { model.startNewCollection() } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "folder.badge.plus").font(.system(size: 10, weight: .semibold))
-                                Text(model.store.collections.isEmpty ? "New Collection" : "New").font(.system(size: 11.5, weight: .medium))
+                                Text(model.store.collections.contains(where: model.shows) ? "New" : "New Collection").font(.system(size: 11.5, weight: .medium))
                             }
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 9)
@@ -176,6 +182,33 @@ struct CollectionsBar: View {
             }
         }
         .help("Only the copies in \(collection.name). Drag a copy here to add it")
+    }
+
+    /// The copies with a heart. Drop a copy on it to give it one.
+    private var favorites: some View {
+        let isOn = model.favoritesOnly
+        let isTargeted = model.dropTarget == .favorites
+        return Button {
+            model.favoritesOnly.toggle()
+            if model.favoritesOnly { model.collectionID = nil }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "heart.fill").font(.system(size: 10, weight: .semibold))
+                Text("Favorites").font(.system(size: 11.5, weight: .medium))
+                Text("\(model.store.items.count(where: \.isFavorite))").font(.system(size: 10, weight: .medium)).monospacedDigit().opacity(0.7)
+            }
+            .foregroundStyle(isOn ? Color.white : Color.primary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(isOn ? Color.accentColor : Color.primary.opacity(0.06)))
+            .overlay(Capsule().strokeBorder(Color.accentColor, lineWidth: isTargeted ? 2 : 0))
+            .scaleEffect(isTargeted ? 1.08 : (model.landed == .favorites ? 1.12 : 1))
+            .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isTargeted)
+            .animation(.spring(response: 0.3, dampingFraction: 0.4), value: model.landed)
+        }
+        .buttonStyle(.plain)
+        .onDrop(of: [.item], isTargeted: model.isTargeted(.favorites)) { _ in model.drop(on: .favorites) }
+        .help("Only the copies with a heart. Drag a copy here to give it one")
     }
 
     private func nameField(placeholder: String) -> some View {

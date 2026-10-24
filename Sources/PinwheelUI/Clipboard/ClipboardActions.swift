@@ -372,10 +372,11 @@ struct ClipActionBar: View {
             }
             Text(title).font(.system(size: 10.5, weight: .medium))
         }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(Color.primary.opacity(0.07)))
+        .foregroundStyle(Color.primary.opacity(0.75))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3.5)
+        .background(Capsule().fill(Color.primary.opacity(0.08)))
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.5))
     }
 }
 
@@ -403,23 +404,63 @@ struct ClickArea: NSViewRepresentable {
 final class ClickAreaView: NSView {
     var label = ""
     var action: (NSView) -> Void = { _ in }
+    private(set) var isHovered = false {
+        didSet { showState() }
+    }
+    private(set) var isPressed = false {
+        didSet { showState() }
+    }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+
+    // A click that pastes closes the window under the pointer: no
+    // "exited" comes, so the button would open lit next time.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowChanged), name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        }
+    }
+
+    @objc private func windowChanged() {
+        if window?.occlusionState.contains(.visible) != true { isHovered = false }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
     override func mouseDown(with event: NSEvent) {
-        showPressed(true)
+        isPressed = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        showPressed(false)
+        isPressed = false
         // Let go outside: not pressed.
         if bounds.contains(convert(event.locationInWindow, from: nil)) { action(self) }
     }
 
-    private func showPressed(_ pressed: Bool) {
+    /// Pointed at, it lights up in the accent color like a button;
+    /// pressed, a little more. (Drawn here, so pointing at it redraws
+    /// nothing else.)
+    private func showState() {
         wantsLayer = true
-        layer?.cornerRadius = bounds.height / 2
-        layer?.backgroundColor = pressed ? NSColor.labelColor.withAlphaComponent(0.15).cgColor : nil
+        guard let layer else { return }
+        let accent = NSColor.controlAccentColor
+        layer.cornerRadius = bounds.height / 2
+        layer.backgroundColor = isPressed ? accent.withAlphaComponent(0.34).cgColor : isHovered ? accent.withAlphaComponent(0.18).cgColor : nil
+        layer.borderColor = accent.withAlphaComponent(0.65).cgColor
+        layer.borderWidth = isHovered || isPressed ? 1 : 0
     }
 
     override func isAccessibilityElement() -> Bool { true }
