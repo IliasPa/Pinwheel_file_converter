@@ -320,11 +320,65 @@ enum WordDocument {
             return zip.data(target.hasPrefix("/") ? String(target.dropFirst()) : "word/" + target)
         }
         let reader = WordReader(relations: relations, styleNames: styleNames, bulletLists: bulletLists, picture: picture)
+        reader.footnotes = zip.data("word/footnotes.xml").map { notes($0, kind: "w:footnote") } ?? [:]
+        reader.endnotes = zip.data("word/endnotes.xml").map { notes($0, kind: "w:endnote") } ?? [:]
         let parser = XMLParser(data: body)
         parser.delegate = reader
         parser.parse()
+        var blocks = reader.blocks
+        // Footnotes and endnotes, numbered as their marks in the text.
+        if !reader.usedNotes.isEmpty {
+            blocks.append(.rule)
+            blocks += reader.usedNotes.map { .listItem(ordered: true, level: 0, [Document.Run($0)]) }
+        }
         let title = zip.data("docProps/core.xml").flatMap { XMLElements.read($0, keepText: true).first { $0.name == "dc:title" }?.text }
-        return Document(title: title?.isEmpty == false ? title : nil, blocks: reader.blocks)
+        return Document(title: title?.isEmpty == false ? title : nil, blocks: blocks)
+    }
+
+    /// Each footnote's (or endnote's) text, by its number; the separator lines aren't notes.
+    static func notes(_ data: Data, kind: String) -> [String: String] {
+        var notes: [String: String] = [:]
+        var current: String?
+        var inText = false
+        var paragraphs: [String] = []
+        final class Reader: NSObject, XMLParserDelegate {
+            var onStart: (String, [String: String]) -> Void = { _, _ in }
+            var onEnd: (String) -> Void = { _ in }
+            var onText: (String) -> Void = { _ in }
+            func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) { onStart(name, attributes) }
+            func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) { onEnd(name) }
+            func parser(_ parser: XMLParser, foundCharacters string: String) { onText(string) }
+        }
+        let reader = Reader()
+        reader.onStart = { name, attributes in
+            switch name {
+            case kind:
+                let type = attributes["w:type"] ?? ""
+                current = type.isEmpty || type == "normal" ? attributes["w:id"] : nil
+                paragraphs = []
+            case "w:p": if current != nil { paragraphs.append("") }
+            case "w:t": inText = true
+            default: break
+            }
+        }
+        reader.onEnd = { name in
+            switch name {
+            case kind:
+                if let id = current {
+                    notes[id] = paragraphs.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+                }
+                current = nil
+            case "w:t": inText = false
+            default: break
+            }
+        }
+        reader.onText = { text in
+            if inText, current != nil, !paragraphs.isEmpty { paragraphs[paragraphs.count - 1] += text }
+        }
+        let parser = XMLParser(data: data)
+        parser.delegate = reader
+        parser.parse()
+        return notes
     }
 
     static func packageRelations(main: String) -> String {
@@ -424,6 +478,16 @@ private final class WordReader: NSObject, XMLParserDelegate {
     private var table: [[String]] = []
     private var row: [String] = []
     private var cell: [String] = []
+    // Footnotes and endnotes: their texts, and those marked so far, in order.
+    var footnotes: [String: String] = [:]
+    var endnotes: [String: String] = [:]
+    private(set) var usedNotes: [String] = []
+    /// Inside mc:Fallback: the same content again, for older apps (skipped).
+    private var skipping = 0
+    /// Text boxes: the paragraph they sit in waits; their own paragraphs
+    /// come after it.
+    private var outerParagraphs: [(runs: [Document.Run], style: String?, listLevel: Int?, listID: String?, pictures: [Document.Picture], start: Int)] = []
+    private var textBoxBlocks: [Document.Block] = []
 
     init(relations: [String: String], styleNames: [String: String], bulletLists: Set<String>, picture: @escaping (String) -> Data?) {
         self.relations = relations
@@ -437,7 +501,21 @@ private final class WordReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+        if name == "mc:Fallback" { skipping += 1 }
+        guard skipping == 0 else { return }
         switch name {
+        case "w:txbxContent":
+            outerParagraphs.append((runs, style, listLevel, listID, pictures, blocks.count))
+            runs = []
+            pictures = []
+        case "w:footnoteReference", "w:endnoteReference":
+            let notes = name == "w:footnoteReference" ? footnotes : endnotes
+            if let id = attributes["w:id"], let text = notes[id], !text.isEmpty {
+                usedNotes.append(text)
+                runs.append(Document.Run("[\(usedNotes.count)]"))
+            }
+        case "w:noBreakHyphen": runs.append(Document.Run("-", bold: bold, italic: italic, code: code, link: link))
+        case "m:t": inText = true  // an equation's letters, as text
         case "w:p":
             runs = []
             style = nil
@@ -484,8 +562,18 @@ private final class WordReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+        if name == "mc:Fallback" {
+            skipping = max(0, skipping - 1)
+            return
+        }
+        guard skipping == 0 else { return }
         switch name {
-        case "w:t": inText = false
+        case "w:txbxContent":
+            guard let outer = outerParagraphs.popLast() else { break }
+            textBoxBlocks += blocks[outer.start...]
+            blocks.removeSubrange(outer.start...)
+            (runs, style, listLevel, listID, pictures) = (outer.runs, outer.style, outer.listLevel, outer.listID, outer.pictures)
+        case "w:t", "m:t": inText = false
         case "w:rPr": inRunProperties = false
         case "w:hyperlink": link = nil
         case "w:p": flushParagraph()
@@ -499,7 +587,7 @@ private final class WordReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        guard inText else { return }
+        guard inText, skipping == 0 else { return }
         runs.append(Document.Run(string, bold: bold, italic: italic, code: code, link: link))
     }
 
@@ -507,6 +595,10 @@ private final class WordReader: NSObject, XMLParserDelegate {
         defer {
             runs = []
             pictures = []
+            if outerParagraphs.isEmpty, tableDepth == 0, !textBoxBlocks.isEmpty {
+                blocks += textBoxBlocks
+                textBoxBlocks = []
+            }
             if pageBreakAfter && tableDepth == 0 { blocks.append(.pageBreak) }
             pageBreakAfter = false
         }

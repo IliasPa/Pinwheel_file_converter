@@ -14,6 +14,8 @@ public struct PlannedJob: Sendable, Equatable, Codable {
     var plan: OutputPlan
     /// The file (or, for a multi-page PDF, the folder) to write.
     public var destination: URL
+    /// Done again on a copy ffmpeg made readable (see `perform`).
+    var isRetry = false
 }
 
 /// Plans each job, sends it to the right converter, and checks the result.
@@ -161,6 +163,9 @@ public enum ConversionEngine {
             try Task.checkCancellation()
             var notes = [plan.folderNote]
             var outputs = [destination]
+            if file.kind == .image, request.files.count == 1, ImageConverter.isCutShort(file.url) {
+                notes.append("\(file.url.lastPathComponent) seems cut short (maybe a download that stopped): its missing part is gray.")
+            }
             switch (file.kind, request.action) {
             case (.image, .convert) where request.isCombinedPDF:
                 try ImageConverter.combineIntoPDF(request.files.map(\.url), destination: destination, progress: progress)
@@ -188,7 +193,7 @@ public enum ConversionEngine {
                 ))
             case (.archive, .convert(let format)):
                 progress(0.05)
-                try await ArchiveTools.convert(file.url, to: format, destination: destination)
+                notes.append(try await ArchiveTools.convert(file.url, to: format, destination: destination))
             case (_, .tool(let tool)):
                 notes.append(try await ToolConverter.run(tool, request: request, plan: plan, destination: destination, options: options, progress: progress))
             case (_, .recipe(let recipe)):
@@ -206,6 +211,16 @@ public enum ConversionEngine {
                 throw ConversionError.unsupported(file.url.lastPathComponent)
             }
             try Task.checkCancellation()
+            if keepsTags(request.action), file.kind == .audio || file.kind == .video, outputs == [destination],
+               AudioTags.soundExtensions.contains(destination.pathExtension.lowercased()) {
+                await AudioTags.carryIfMissing(from: file.url, into: destination, ffmpeg: options.ffmpegURL)
+            }
+            // (Sound against sound, picture against picture: a video's sound can end before it does.)
+            let soundOut = AudioTags.soundExtensions.contains(destination.pathExtension.lowercased())
+            if keepsLength(request.action), file.kind == .audio || (file.kind == .video && !soundOut), outputs == [destination],
+               let note = await cutShortNote(file, output: destination, ffmpeg: options.ffmpegURL) {
+                notes.append(note)
+            }
 
             if case .tool(.compress) = request.action, let reason = notSmallerReason(file, output: destination, options: options) {
                 try? FileManager.default.removeItem(at: destination)
@@ -217,12 +232,57 @@ public enum ConversionEngine {
         } catch let skip as NothingToDo {
             try? FileManager.default.removeItem(at: destination)
             return ConversionResult(outputs: [], note: skip.reason)
+        } catch is CancellationError {
+            try? FileManager.default.removeItem(at: destination)
+            throw CancellationError()
         } catch {
             // The destination was a fresh, unused name, so removing it can't
             // touch anything that existed before.
             try? FileManager.default.removeItem(at: destination)
-            throw error
+            guard file.kind == .video || file.kind == .audio, request.files.count == 1, MediaErrors.isUnreadable(error) else { throw error }
+            // macOS opened it but couldn't decode it (AV1 on some Macs, HEVC
+            // tagged "hev1"): the same job on a copy ffmpeg makes readable.
+            if !job.isRetry, let ffmpeg = options.ffmpegURL {
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Pinwheel-\(UUID().uuidString)", isDirectory: true)
+                defer { try? FileManager.default.removeItem(at: folder) }
+                if let copy = try? await MediaConverter.readableCopy(of: file, in: folder, ffmpeg: ffmpeg) {
+                    var retry = job
+                    retry.request.files[0] = SourceFile(url: copy)
+                    retry.isRetry = true
+                    return try await perform(retry, progress: progress)
+                }
+            }
+            throw ConversionError.failed(MediaErrors.damaged(file.url.lastPathComponent))
         }
+    }
+
+    /// Jobs whose sound file should still say what it is (title, artist,
+    /// cover): not the ones that change or remove that.
+    static func keepsTags(_ action: WheelAction) -> Bool {
+        switch action {
+        case .tool(.stripMetadata), .tool(.editInfo), .tool(.visualize): false
+        case .recipe: false  // each step is a job of its own
+        default: true
+        }
+    }
+
+    /// Jobs whose result is as long as the original.
+    static func keepsLength(_ action: WheelAction) -> Bool {
+        switch action {
+        case .convert(let format): ![.gif, .webp].contains(format)
+        case .tool(let tool): [.compress, .normalize, .stripMetadata, .mute, .extractAudio, .sizeLimit, .editInfo].contains(tool)
+        default: false
+        }
+    }
+
+    /// When the result is much shorter than the original says it is, the
+    /// original is cut short (a download that stopped): only what's there
+    /// could be read.
+    static func cutShortNote(_ file: SourceFile, output: URL, ffmpeg: URL?) async -> String? {
+        guard let declared = await MediaLength.of(file.url, ffmpeg: ffmpeg), let made = await MediaLength.of(output, ffmpeg: ffmpeg),
+              declared - made > 1, made < declared * 0.85 else { return nil }
+        let format = { (seconds: Double) in Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond)) }
+        return "\(file.url.lastPathComponent) seems cut short (maybe a download that stopped): only \(format(made)) of its \(format(declared)) could be read."
     }
 
     /// Compress has to be worth it: if the result isn't clearly smaller, the

@@ -26,6 +26,11 @@ enum MediaConverter {
             }
             return try await convertWithFFmpeg(file, to: format, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
         }
+        // A see-through video into MP4: macOS would show the colors hidden
+        // behind the see-through parts; ffmpeg puts black there.
+        if format == .mp4, let ffmpeg = options.ffmpegURL, await FFmpeg.streams(of: file.url, ffmpeg: ffmpeg)?.alpha == true {
+            return try await convertWithFFmpeg(file, to: format, destination: destination, ffmpeg: ffmpeg, options: options, progress: progress)
+        }
         var note: String?
         try await appleThenFFmpeg(destination: destination, ffmpegURL: options.ffmpegURL) {
             try await convertWithApple(file, to: format, destination: destination, progress: progress)
@@ -73,6 +78,13 @@ enum MediaConverter {
            let kept = audioArguments(for: format, source: stream) {
             arguments = kept
         }
+        var withoutSubtitles: [String]?
+        if let streams = await FFmpeg.streams(of: file.url, ffmpeg: ffmpeg) {
+            try check(streams, file: file, format: format)
+            let plain = arguments
+            arguments = fitted(plain, to: streams, format: format)
+            if !streams.subtitles.isEmpty { withoutSubtitles = fitted(plain, to: streams, format: format, withSubtitles: false) }
+        }
         var duration = await FFmpeg.duration(of: file, ffmpeg: ffmpeg)
         var note: String?
         if format == .gif, let limit = options.gifMaxSeconds {
@@ -90,14 +102,21 @@ enum MediaConverter {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            // Subtitles of a kind the container can't take: without them.
             // MKV first copies the streams as they are, and ffmpegs without
             // libvorbis or libopus have their own (simpler) encoders.
-            guard let second = secondTry(for: format) else { throw error }
-            try? FileManager.default.removeItem(at: destination)
-            try await FFmpeg.convert(
-                ffmpeg: ffmpeg, input: file.url, output: destination,
-                arguments: second, duration: duration, progress: progress
-            )
+            for retry in [withoutSubtitles, secondTry(for: format)].compactMap({ $0 }) {
+                try? FileManager.default.removeItem(at: destination)
+                do {
+                    try await FFmpeg.convert(ffmpeg: ffmpeg, input: file.url, output: destination, arguments: retry, duration: duration, progress: progress)
+                    return note
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    continue
+                }
+            }
+            throw error
         }
         return note
     }
@@ -128,6 +147,98 @@ enum MediaConverter {
         }
     }
 
+    /// A copy macOS can decode (H.264 or ProRes, AAC), named as the
+    /// original, in `folder`: for files whose codec macOS opens but can't decode.
+    static func readableCopy(of file: SourceFile, in folder: URL, ffmpeg: URL) async throws -> URL {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let copy = folder.appendingPathComponent(file.url.deletingPathExtension().lastPathComponent).appendingPathExtension(file.kind == .audio ? "m4a" : "mov")
+        let arguments = file.kind == .audio
+            ? ["-map", "0:a:0", "-c:a", "alac", "-map_metadata", "0"]
+            : ["-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p",
+               "-c:a", "aac", "-b:a", "256k", "-map_metadata", "0"]
+        try await FFmpeg.convert(ffmpeg: ffmpeg, input: file.url, output: copy, arguments: arguments, duration: nil) { _ in }
+        return copy
+    }
+
+    /// Sound into a sound format needs sound; a video format needs a picture.
+    static func check(_ streams: FFmpeg.Streams, file: SourceFile, format: OutputFormat) throws {
+        let name = file.url.lastPathComponent
+        if format.kind == .audio, streams.channels == nil {
+            throw NothingToDo(reason: "\(name) has no sound, so there's nothing to save.")
+        }
+        if format.kind == .video || format == .gif || format == .webp, !streams.video {
+            throw ConversionError.failed("\(name) is only sound, with no picture. Choose M4A or MP3 instead.")
+        }
+    }
+
+    /// The usual arguments, made to fit what the file has: every sound track
+    /// and the subtitles go into containers that hold them, the title and
+    /// cover go along with the sound, and sound the format can't hold (5.1
+    /// in WMA, 96 kHz) is brought down to what it can.
+    static func fitted(_ arguments: [String], to streams: FFmpeg.Streams, format: OutputFormat, withSubtitles: Bool = true) -> [String] {
+        var result = arguments
+        // Every sound track (languages, commentary) in the containers made for that.
+        if [.mp4, .mov, .mkv, .webm].contains(format), let index = result.firstIndex(of: "0:a:0?") {
+            result[index] = "0:a?"
+        }
+        // Subtitles inside: kept as text where the container takes it.
+        var kept = 0
+        for subtitle in streams.subtitles where withSubtitles {
+            let text = FFmpeg.Streams.textSubtitles.contains(subtitle.codec)
+            let codec: String? = switch format {
+            case .mp4, .mov: text ? "mov_text" : nil
+            case .mkv: ["mov_text", "webvtt", "text"].contains(subtitle.codec) ? "srt" : "copy"
+            case .webm: text ? "webvtt" : nil
+            default: nil
+            }
+            guard let codec else { continue }
+            result += ["-map", "0:\(subtitle.index)", "-c:s:\(kept)", codec]
+            kept += 1
+        }
+        // See-through parts: WebM keeps them; formats that can't get black
+        // behind them (else the colors hidden there showed through).
+        if streams.alpha {
+            if format == .webm, let index = result.firstIndex(of: "yuv420p") {
+                result[index] = "yuva420p"
+                result += ["-auto-alt-ref", "0"]
+            } else if [.mp4, .mov, .avi, .wmv, .gif].contains(format) {
+                if let index = result.firstIndex(of: "-vf") {
+                    result[index + 1] = "premultiply=inplace=1," + result[index + 1]
+                } else if let index = result.firstIndex(of: "-c:v") {
+                    result.insert(contentsOf: ["-vf", "premultiply=inplace=1"], at: index)
+                }
+            }
+        }
+        // Sound the format can't hold.
+        let audioCodec = result.firstIndex(of: "-c:a").map { result[$0 + 1] } ?? (result.contains("-c") ? "copy" : "")
+        if let channels = streams.channels, channels > 2 {
+            switch audioCodec {
+            case "wmav2", "libmp3lame", "vorbis", "opus":
+                result += ["-ac", "2"]
+            case "libopus":
+                // Opus holds up to 7.1, in the usual layouts ("5.1", not "5.1(side)").
+                let layout = (streams.layout ?? "").replacingOccurrences(of: "(side)", with: "").replacingOccurrences(of: "(wide)", with: "")
+                if ["3.0", "quad", "5.0", "5.1", "6.1", "7.1"].contains(layout) {
+                    result += ["-af", "aformat=channel_layouts=\(layout)", "-mapping_family", "1"]
+                } else {
+                    result += ["-ac", "2"]
+                }
+            default:
+                break
+            }
+        }
+        if let rate = streams.sampleRate, rate > 48_000, ["wmav2", "libmp3lame", "libopus", "opus"].contains(audioCodec) {
+            result += ["-ar", "48000"]
+        }
+        // The title and such, from the sound stream when that's where they are (Ogg, Opus).
+        if streams.tagsOnSound { result += ["-map_metadata", "0:s:a:0"] }
+        // The album cover, into formats that show one.
+        if let cover = streams.cover, [.mp3, .flac, .m4a].contains(format), let vn = result.firstIndex(of: "-vn") {
+            result.replaceSubrange(vn...vn, with: ["-map", "0:a:0", "-map", "0:\(cover)", "-c:v", "copy", "-disposition:v:0", "attached_pic"])
+        }
+        return result
+    }
+
     /// What to try when the first ffmpeg arguments fail, if anything.
     static func secondTry(for format: OutputFormat) -> [String]? {
         switch format {
@@ -149,6 +260,9 @@ enum MediaConverter {
     ) async throws {
         let duration = await FFmpeg.duration(of: file, ffmpeg: ffmpeg) ?? (part.end ?? 0)
         let (start, end) = part.range(duration: max(duration, part.end ?? 0))
+        if duration > 0, start >= duration - 0.01 {
+            throw NothingToDo(reason: "That part starts after the video ends (it's \(String(format: duration < 1 ? "%.2f" : "%.1f", duration)) seconds long).")
+        }
         var filters: [String] = []
         if part.speed != 1 { filters.append("setpts=PTS/\(part.speed)") }
         switch ((part.quarterTurns % 4) + 4) % 4 {
@@ -164,11 +278,24 @@ enum MediaConverter {
         if !filters.isEmpty, let index = arguments.firstIndex(of: "-vf") {
             arguments[index + 1] = filters.joined(separator: ",") + "," + arguments[index + 1]
         }
-        try await FFmpeg.convert(
-            ffmpeg: ffmpeg, input: file.url, output: destination,
-            inputArguments: ["-ss", String(format: "%.3f", start), "-t", String(format: "%.3f", end - start)],
-            arguments: arguments, duration: (end - start) / part.speed, progress: progress
-        )
+        let span = ["-ss", String(format: "%.3f", start), "-t", String(format: "%.3f", end - start)]
+        do {
+            // Seeking before reading is quick…
+            try await FFmpeg.convert(
+                ffmpeg: ffmpeg, input: file.url, output: destination,
+                inputArguments: span, arguments: arguments, duration: (end - start) / part.speed, progress: progress
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // …but finds nothing in some camcorder files (MTS that don't
+            // start at zero): then the video is read from the start.
+            try? FileManager.default.removeItem(at: destination)
+            try await FFmpeg.convert(
+                ffmpeg: ffmpeg, input: file.url, output: destination,
+                arguments: span + arguments, duration: end / part.speed, progress: progress
+            )
+        }
     }
 
     private static func convertWithApple(
@@ -198,7 +325,7 @@ enum MediaConverter {
         let asset = AVURLAsset(url: source)
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         guard !videoTracks.isEmpty else {
-            throw ConversionError.failed("\(source.lastPathComponent) has no picture to convert.")
+            throw ConversionError.failed("\(source.lastPathComponent) is only sound, with no picture. Choose M4A or MP3 instead.")
         }
         let fileType: AVFileType = format == .mp4 ? .mp4 : .mov
 
@@ -235,7 +362,7 @@ enum MediaConverter {
     ) async throws {
         let asset = AVURLAsset(url: source)
         guard try await !asset.loadTracks(withMediaType: .audio).isEmpty else {
-            throw ConversionError.failed("\(source.lastPathComponent) has no sound.")
+            throw NothingToDo(reason: "\(source.lastPathComponent) has no sound, so there's nothing to save.")
         }
         try await export(asset, preset: AVAssetExportPresetAppleM4A, fileType: .m4a, to: destination, progress: progress)
     }
@@ -407,5 +534,28 @@ enum AudioFileConverter {
             return description.mFormatFlags >= 2 ? 24 : 16
         }
         return 16
+    }
+}
+
+/// What macOS's media frameworks say when they can't read a file, in words.
+enum MediaErrors {
+    /// Couldn't open or decode: damaged, or coded in a way macOS can't read.
+    static func isUnreadable(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == AVFoundationErrorDomain {
+            let codes: Set<Int> = [
+                AVError.fileFormatNotRecognized.rawValue, AVError.decoderNotFound.rawValue, AVError.decodeFailed.rawValue,
+                AVError.failedToParse.rawValue, AVError.operationNotSupportedForAsset.rawValue, AVError.unknown.rawValue,
+                AVError.noLongerPlayable.rawValue, AVError.contentIsUnavailable.rawValue,
+            ]
+            if codes.contains(error.code) { return true }
+        }
+        let text = error.localizedDescription
+        return ["Cannot Open", "Cannot Decode", "The operation could not be completed", "This media may be damaged", "Operation Stopped"]
+            .contains { text.contains($0) }
+    }
+
+    static func damaged(_ name: String) -> String {
+        "\(name) seems damaged or incomplete (maybe a download that stopped), or it's coded in a way macOS can't read."
     }
 }

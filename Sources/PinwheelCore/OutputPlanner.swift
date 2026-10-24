@@ -116,6 +116,8 @@ enum OutputPlanner {
         case (_, .visualize):
             return (.mp4, OutputFormat.mp4.fileExtension)
         case (.video, .compress), (.video, .sizeLimit):
+            // HEVC keeps a see-through picture only in a QuickTime movie.
+            if MovieTracks.hasSeeThroughPicture(file.url) { return (.mov, OutputFormat.mov.fileExtension) }
             return (.mp4, OutputFormat.mp4.fileExtension)
         case (.video, .extractAudio), (.audio, .compress), (.audio, .sizeLimit):
             return (.m4a, OutputFormat.m4a.fileExtension)

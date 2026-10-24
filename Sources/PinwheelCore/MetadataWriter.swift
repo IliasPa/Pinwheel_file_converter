@@ -177,15 +177,16 @@ enum MetadataWriter {
     }
 
     /// How a new detail is stored: QuickTime keys in .mov, iTunes keys in
-    /// MPEG-4 files (common keys are translated by macOS).
+    /// MPEG-4 files. (Common keys were meant to be translated by macOS, but
+    /// a copy of the file left them out: the new title was lost.)
     static func newIdentifier(_ field: MetadataField, quickTime: Bool) -> AVMetadataIdentifier? {
         switch field {
-        case .title: .commonIdentifierTitle
-        case .artist: .commonIdentifierArtist
-        case .album: .commonIdentifierAlbumName
-        case .description: .commonIdentifierDescription
-        case .author: .commonIdentifierAuthor
-        case .copyright: .commonIdentifierCopyrights
+        case .title: quickTime ? .quickTimeMetadataTitle : .iTunesMetadataSongName
+        case .artist: quickTime ? .quickTimeMetadataArtist : .iTunesMetadataArtist
+        case .album: quickTime ? .quickTimeMetadataAlbum : .iTunesMetadataAlbum
+        case .description: quickTime ? .quickTimeMetadataDescription : .iTunesMetadataDescription
+        case .author: quickTime ? .quickTimeMetadataAuthor : .iTunesMetadataAuthor
+        case .copyright: quickTime ? .quickTimeMetadataCopyright : .iTunesMetadataCopyright
         case .genre: quickTime ? .quickTimeMetadataGenre : .iTunesMetadataUserGenre
         case .comment: quickTime ? .quickTimeMetadataComment : .iTunesMetadataUserComment
         case .year: quickTime ? .quickTimeMetadataYear : .iTunesMetadataReleaseDate
@@ -228,8 +229,12 @@ enum MetadataWriter {
         }
         guard let ffmpeg = options.ffmpegURL else { throw ConversionError.needsFFmpeg }
         var arguments = ["-map", "0", "-c", "copy", "-map_metadata", "0"]
+        // Ogg and Opus keep the details with the sound itself, not the file.
+        let onSound = ["ogg", "oga", "opus"].contains(ext)
         for (field, value) in edit.changes.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
-            arguments += ["-metadata", "\(ffmpegKey(field))=\(value.trimmingCharacters(in: .whitespacesAndNewlines))"]
+            let entry = "\(ffmpegKey(field))=\(value.trimmingCharacters(in: .whitespacesAndNewlines))"
+            arguments += ["-metadata", entry]
+            if onSound { arguments += ["-metadata:s:a:0", entry] }
         }
         if edit.removeLocation {
             arguments += ["-metadata", "location=", "-metadata", "location-eng=", "-metadata", "com.apple.quicktime.location.ISO6709="]

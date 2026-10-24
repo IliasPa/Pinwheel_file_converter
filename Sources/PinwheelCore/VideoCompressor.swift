@@ -33,7 +33,7 @@ enum VideoCompressor {
     static func probe(_ source: URL) async throws -> Probe {
         let asset = AVURLAsset(url: source)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else {
-            throw ConversionError.failed("\(source.lastPathComponent) has no picture.")
+            throw ConversionError.failed("\(source.lastPathComponent) is only sound, with no picture.")
         }
         let (naturalSize, transform, frameRate) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate)
         let upright = naturalSize.applying(transform)
@@ -71,20 +71,23 @@ enum VideoCompressor {
         let size = targetSize(naturalSize, longSide: longSide)
         let fps = Double(frameRate > 0 ? frameRate : 30)
         let bitRate = pickBitRate(size, fps, Double(sourceBitRate))
+        // A see-through video (ProRes 4444 with alpha) stays see-through, as
+        // HEVC with alpha; read without it, the colors hidden there showed.
+        let seeThrough = try await hasAlpha(videoTrack)
 
         let reader = try AVAssetReader(asset: asset)
         let videoOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            kCVPixelBufferPixelFormatTypeKey as String: seeThrough ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
         ])
         videoOutput.alwaysCopiesSampleData = false
         reader.add(videoOutput)
 
-        let writer = try AVAssetWriter(outputURL: destination, fileType: .mp4)
+        let writer = try AVAssetWriter(outputURL: destination, fileType: destination.pathExtension.lowercased() == "mov" ? .mov : .mp4)
         writer.metadata = metadata
         writer.shouldOptimizeForNetworkUse = true
         defer { removeOptimizingCopy(of: destination) }
         var videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoCodecKey: seeThrough ? AVVideoCodecType.hevcWithAlpha : AVVideoCodecType.hevc,
             AVVideoWidthKey: size.width,
             AVVideoHeightKey: size.height,
             AVVideoScalingModeKey: AVVideoScalingModeResizeAspect,
@@ -97,6 +100,9 @@ enum VideoCompressor {
         if let peakBytesPerSecond, var properties = videoSettings[AVVideoCompressionPropertiesKey] as? [String: Any] {
             properties[kVTCompressionPropertyKey_DataRateLimits as String] = [peakBytesPerSecond, 1]
             videoSettings[AVVideoCompressionPropertiesKey] = properties
+        }
+        if seeThrough, !writer.canApply(outputSettings: videoSettings, forMediaType: .video) {
+            videoSettings[AVVideoCodecKey] = AVVideoCodecType.hevc
         }
         if !writer.canApply(outputSettings: videoSettings, forMediaType: .video) {
             videoSettings[AVVideoCodecKey] = AVVideoCodecType.h264  // no HEVC encoder: fall back to H.264
@@ -180,6 +186,14 @@ enum VideoCompressor {
         }
         await writer.finishWriting()
         guard writer.status == .completed else { throw writeError(writer) }
+    }
+
+    /// The picture has a see-through part: 32 bits a pixel, or said so.
+    static func hasAlpha(_ track: AVAssetTrack) async throws -> Bool {
+        try await track.load(.formatDescriptions).contains { description in
+            CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_ContainsAlphaChannel) as? Bool == true
+                || CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_Depth) as? Int == 32
+        }
     }
 
     /// Making the file start playing before it's all downloaded, the writer

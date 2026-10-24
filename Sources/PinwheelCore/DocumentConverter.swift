@@ -129,7 +129,7 @@ enum DocumentConverter {
                 try await IWork.export(word, with: .pages, as: .native, to: url)
             }
         case .rtf: try AttributedDocument.writeRTF(document, to: url)
-        case .odt: try AttributedDocument.write(document, to: url, type: .openDocument)
+        case .odt: try OpenDocumentText.write(document, to: url)
         case .epub: try EPUBBook.write(document, to: url)
         case .md: return try writeMarkdown(document, to: url)
         case .txt: try writeText(document.plainText, to: url)

@@ -4,7 +4,7 @@ BUILD_ROOT := $(HOME)/Library/Developer/Pinwheel
 APP        := $(BUILD_ROOT)/Pinwheel.app
 INSTALLED  := /Applications/Pinwheel.app
 
-.PHONY: build run test install uninstall clean icon release
+.PHONY: build run test bench install uninstall clean icon release
 
 build:            ## Build Pinwheel.app (outside OneDrive, in ~/Library/Developer/Pinwheel)
 	@scripts/build-app.sh
@@ -16,6 +16,9 @@ run: build        ## Build, quit any running copy, and start the fresh build
 
 test:             ## Run the automated tests
 	@scripts/test.sh
+
+bench:            ## Every format and tool on ~180 hard files, each result checked (see scripts/bench)
+	@scripts/bench/run.sh
 
 install: build    ## Build and copy into /Applications, then start it from there
 	@pkill -x Pinwheel || true

@@ -37,6 +37,7 @@ enum SearchablePDF {
             throw NothingToDo(reason: "No text was found on the scanned pages, so nothing was saved.")
         }
         guard document.write(to: destination) else { throw ConversionError.cannotWrite(destination.lastPathComponent) }
+        PDFTextRepair.fixGreekMu(in: destination)
         progress(1)
         return layered == 1 ? "1 scanned page can now be searched." : "\(layered) scanned pages can now be searched."
     }

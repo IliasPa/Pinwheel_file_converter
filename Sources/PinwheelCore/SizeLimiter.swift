@@ -43,6 +43,9 @@ enum SizeLimiter {
         switch file.kind {
         case .image:
             let target = format ?? .jpeg
+            if [.gif, .png, .webp, .heic].contains(target), file.isAnimated {
+                return try await AnimatedPicture.sizeLimit(file.url, limit: limit, format: target, destination: destination, options: options, progress: progress)
+            }
             return try await Blocking.run { _ in try image(file.url, limit: limit, format: target, destination: destination, background: options.jpegBackground, progress: progress) }
         case .pdf:
             return try await Blocking.run { isCancelled in try pdf(file.url, limit: limit, destination: destination, isCancelled: isCancelled, progress: progress) }
@@ -64,9 +67,6 @@ enum SizeLimiter {
         progress: @Sendable (Double) -> Void
     ) throws -> String? {
         let src = try ImageConverter.open(source)
-        if CGImageSourceGetCount(src) > 1, CGImageSourceGetType(src) as String? == OutputFormat.gif.utType.identifier {
-            throw ConversionError.failed("Size Limit doesn't work on animated GIFs yet.")
-        }
         let index = CGImageSourceGetPrimaryImageIndex(src)
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
         let hasAlpha = properties[kCGImagePropertyHasAlpha] as? Bool ?? false

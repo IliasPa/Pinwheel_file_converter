@@ -3,6 +3,88 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.0 (beta) — 2026-10-24
+
+Every format and tool was tried on about 180 hard files: phone photos,
+HDR and see-through video, 5.1 sound, Greek in old encodings, Word files
+with tracked changes and footnotes, damaged downloads and more. That's
+about 2,200 jobs, each result opened and compared with the original.
+Everything that came out wrong is fixed. `make bench` runs it all again.
+
+**Pictures**
+- **Moving pictures can be edited:** Compress, Resize, Strip Info, Size
+  Limit and the image editor (crop, light and color, markup, watermark,
+  background) work on every frame of an animated GIF, PNG, WebP or HEIC,
+  and it keeps moving. Before, they said "doesn't work on animated GIFs
+  yet". A compressed GIF (with ffmpeg) keeps only what changes between
+  frames, often half the size.
+- **Phone photos into AVIF stay upright** (they came out sideways).
+- Palette PNGs into BMP made a file nothing could open; HDR pictures (EXR)
+  into BMP and in the editor work now.
+- Gray and 16-bit pictures into WebP keep their brightness.
+- A JPEG named ".png" can be compressed.
+- A picture that ends early (a download that stopped) is converted with a
+  word that its missing part is gray.
+
+**Video and sound**
+- **Music keeps its title, artist, album, year, track number and cover**
+  in every conversion and tool (MP3 into M4A, FLAC or WAV lost them; Ogg
+  and Opus lost them everywhere).
+- **Info** sets the title of MP4 and MOV videos (the new title didn't
+  stick) and of Ogg and Opus files.
+- **Subtitles inside a video are kept** (MKV into MP4 or MOV, and back),
+  and so is **every sound track** (languages, commentary).
+- **5.1 sound** into WMA or WebM/Opus works (it failed), and 96 kHz into WMA.
+- **Phone recordings** (8 kHz) and HE-AAC can be trimmed, normalized and
+  made smaller ("couldn't save" before). Edited WAV, AIFF and FLAC keep
+  their 96 kHz (they became 48 kHz).
+- **Videos macOS can't decode** (AV1 on some Macs, HEVC tagged "hev1"):
+  Save Frame, Size Limit, Compress and the editor use a copy ffmpeg makes.
+- **See-through video** (ProRes 4444): Compress keeps it see-through (HEVC
+  with alpha, in a .mov), WebM keeps it too, and MP4, AVI and WMV get black
+  behind it instead of the colors hidden there.
+- A **sound-only .mp4** (podcasts) gets the sound wheel.
+- A GIF of part of a **camcorder clip** (.mts) works.
+- **Plain words** for damaged videos, sound with no picture, and parts
+  past the end; a video with no sound is skipped with the reason instead
+  of failing. A sound file that ends early is converted with a word that
+  it's cut short.
+
+**Documents and spreadsheets**
+- **Greek, Cyrillic, Japanese… in older encodings** (Windows-1253,
+  ISO-8859-7, Windows-1251, Shift-JIS) are read right in text files,
+  subtitles, CSV and web pages (they came out as "ÃåéÜ").
+- **ODT files open in LibreOffice:** lists inside lists made broken files,
+  and pictures were left out. Pinwheel writes them itself now.
+- **Word:** footnotes and endnotes are kept (numbered, at the end), text
+  boxes appear once (they appeared twice), and equations as text.
+- **Greek μ in PDFs is searchable:** macOS writes it as the micro sign µ in
+  some fonts (Times, for one), so "Αποτελέσματα" wasn't found. PDFs
+  Pinwheel makes or changes (Smaller PDF, Organize, Merge, Split,
+  documents into PDF) are put right.
+- **Markdown:** footnotes, task boxes (☐ ☑), line breaks, quotes in quotes,
+  and HTML such as `<kbd>`.
+- **Excel:** workbooks from old Mac Excel get the right dates (they were
+  four years off); times and lengths of time are shown as such; sheets
+  written with a name prefix (some apps do) are read; 100,000 rows are
+  read in a second instead of 20, and into a PDF with a fraction of the
+  memory.
+- **PDFs into Excel** keep the words outside the tables (titles, totals,
+  pages without a table) on an "Other text" sheet.
+- **Subtitles:** WebVTT's "&amp;" and "&lt;" become the letters again, SRT
+  into WebVTT writes them as WebVTT needs, and subtitles numbered out of
+  order are put in the order they show.
+
+**Archives**
+- ZIPs mark their names as UTF-8, so **Windows shows Greek names right**.
+- A ZIP with a name that would land outside the folder: the rest opens,
+  with a note. Damaged archives say so in plain words.
+
+**Memory**
+- After Settings, the clipboard window, an editor or the progress window
+  closes, the memory they used goes back to macOS. Idle Pinwheel showed
+  twice what it used.
+
 ## v1.10 (beta) — 2026-10-24
 
 **New**

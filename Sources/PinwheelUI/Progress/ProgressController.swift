@@ -62,6 +62,7 @@ final class ProgressController {
         autoHide?.cancel()
         panel?.orderOut(nil)
         queue.clearFinished()
+        MemoryRelief.soon()
     }
 
     // MARK: - Private

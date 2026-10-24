@@ -281,7 +281,8 @@ make install
 |---|---|
 | `make run` | Builds Pinwheel and starts it. |
 | `make install` | Builds it, copies it into /Applications, and starts it. |
-| `make test` | Runs the tests (about 440, with real conversions). GitHub runs them on every push too. |
+| `make test` | Runs the tests (about 475, with real conversions). GitHub runs them on every push too. |
+| `make bench` | Makes about 180 hard files (phone photos, HDR video, Greek in old encodings, tracked changes, damaged files…), runs every format and tool on each (about 2,200 jobs) and checks every result. The report: `~/Library/Developer/Pinwheel/bench/results/results.md`. |
 | `make release` | Builds and packs `Pinwheel-<version>.zip` for a GitHub release. |
 | `make clean` | Deletes all build files. |
 | `make icon` | Redraws the app icon from `scripts/make-icon.swift`. |
@@ -311,7 +312,11 @@ Access › Certificate Assistant › Create a Certificate…**, name it exactly
   it reads text and codes in pictures (`PictureReader.swift`) and quits a
   minute after its last use. `PinwheelCLI` is the `pinwheel` command.
 - The tests make real pictures, videos, songs, PDFs, documents and
-  spreadsheets, convert them, and check the results. The ones that use
+  spreadsheets, convert them, and check the results. The bench
+  (`scripts/bench`) goes further: hard files of every kind, every wedge of
+  every wheel on each, and each result opened and compared with the
+  original (its look, length, sound, words, cells, pages and tags), with
+  the time and memory each job took. The ones that use
   Pages, Keynote and Numbers run when asked: `PINWHEEL_IWORK=1 make test`. `Tests/PinwheelUITests/ReadmeImages.swift` draws the
   pictures in this README (`PINWHEEL_README_IMAGES=docs make test`).
 

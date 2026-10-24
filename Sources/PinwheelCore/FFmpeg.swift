@@ -83,12 +83,33 @@ public enum FFmpeg {
             }
         }
         guard result.status == 0 else {
+            if let plain = plainWords(result.stderr, input: input) { throw ConversionError.failed(plain) }
             let reason = result.stderr
                 .split(whereSeparator: \.isNewline)
                 .suffix(2)
                 .joined(separator: " ")
             throw ConversionError.failed(reason.isEmpty ? "ffmpeg stopped with an error." : "ffmpeg: \(reason)")
         }
+    }
+
+    /// ffmpeg's complaints that have a plain meaning.
+    static func plainWords(_ stderr: String, input: URL) -> String? {
+        let lower = stderr.lowercased()
+        if lower.contains("invalid data found when processing input") || lower.contains("moov atom not found")
+            || lower.contains("end of file") && lower.contains("error opening input") {
+            return "\(input.lastPathComponent) seems damaged or incomplete (maybe a download that stopped), so it can't be read."
+        }
+        if lower.contains("output file is empty, nothing was encoded") || lower.contains("output file does not contain any stream") {
+            return "There was nothing to save from \(input.lastPathComponent) there."
+        }
+        return nil
+    }
+
+    /// Length in seconds, from AVFoundation when it can read the file, else ffprobe.
+    static func duration(of url: URL, ffmpeg: URL?) async -> Double? {
+        if let ffmpeg { return await duration(of: SourceFile(url: url), ffmpeg: ffmpeg) }
+        guard let time = try? await AVURLAsset(url: url).load(.duration), time.isNumeric else { return nil }
+        return time.seconds
     }
 
     /// Length in seconds, from AVFoundation when it can read the file, else ffprobe.
@@ -129,6 +150,75 @@ public enum FFmpeg {
         }
     }
 
+    /// What's inside a video or sound file, as ffprobe sees it.
+    struct Streams: Equatable {
+        /// A picture that moves (not an album cover).
+        var video = false
+        /// The picture has see-through parts (ProRes 4444, animation codecs).
+        var alpha = false
+        /// The album cover (an attached picture), by its stream number.
+        var cover: Int?
+        /// The first sound's channels, rate and layout ("5.1(side)"); nil without sound.
+        var channels: Int?
+        var sampleRate: Int?
+        var layout: String?
+        var audioTracks = 0
+        /// Subtitles: stream number and codec ("subrip", "mov_text", "hdmv_pgs_subtitle").
+        var subtitles: [(index: Int, codec: String)] = []
+        /// The title and such are kept with the sound, not the file (Ogg, Opus).
+        var tagsOnSound = false
+
+        static func == (a: Streams, b: Streams) -> Bool {
+            a.video == b.video && a.alpha == b.alpha && a.cover == b.cover && a.channels == b.channels && a.sampleRate == b.sampleRate && a.layout == b.layout
+                && a.audioTracks == b.audioTracks && a.subtitles.map(\.index) == b.subtitles.map(\.index) && a.tagsOnSound == b.tagsOnSound
+        }
+
+        /// Subtitles written as text (they can become MP4's or another text kind).
+        static let textSubtitles: Set<String> = ["subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"]
+
+        init() {}
+
+        init?(json data: Data) {
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            let formatTags = (json["format"] as? [String: Any])?["tags"] as? [String: Any] ?? [:]
+            for stream in json["streams"] as? [[String: Any]] ?? [] {
+                let index = stream["index"] as? Int ?? 0
+                let disposition = stream["disposition"] as? [String: Int] ?? [:]
+                switch stream["codec_type"] as? String {
+                case "video" where disposition["attached_pic"] == 1:
+                    if cover == nil { cover = index }
+                case "video":
+                    video = true
+                    // (VP9 in WebM keeps its see-through plane apart, which
+                    // ffmpeg's usual decoder doesn't read: those aren't counted.)
+                    let format = stream["pix_fmt"] as? String ?? ""
+                    alpha = alpha || format.hasPrefix("yuva") || format.hasPrefix("gbra")
+                        || ["rgba", "bgra", "argb", "abgr", "ya8", "ya16le", "rgba64le", "bgra64le"].contains(format)
+                case "audio":
+                    audioTracks += 1
+                    guard channels == nil else { continue }
+                    channels = stream["channels"] as? Int
+                    sampleRate = (stream["sample_rate"] as? String).flatMap { Int($0) }
+                    layout = stream["channel_layout"] as? String
+                    let tags = stream["tags"] as? [String: Any] ?? [:]
+                    tagsOnSound = !formatTags.keys.contains { $0.lowercased() == "title" } && tags.keys.contains { $0.lowercased() == "title" }
+                case "subtitle":
+                    subtitles.append((index, stream["codec_name"] as? String ?? ""))
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    static func streams(of url: URL, ffmpeg: URL) async -> Streams? {
+        let ffprobe = ffmpeg.deletingLastPathComponent().appendingPathComponent("ffprobe")
+        guard FileManager.default.isExecutableFile(atPath: ffprobe.path),
+              let result = try? await ProcessRunner.run(ffprobe, ["-v", "error", "-show_format", "-show_streams", "-of", "json", url.path]),
+              result.status == 0 else { return nil }
+        return Streams(json: Data(result.stdout.utf8))
+    }
+
     static func audioStream(of file: SourceFile, ffmpeg: URL) async -> AudioStream? {
         let ffprobe = ffmpeg.deletingLastPathComponent().appendingPathComponent("ffprobe")
         guard FileManager.default.isExecutableFile(atPath: ffprobe.path),
@@ -150,17 +240,22 @@ enum ProcessRunner {
         let stderr: String
     }
 
-    /// `input` is sent to the tool's standard input.
+    /// `input` is sent to the tool's standard input; `environment` adds to
+    /// (or replaces) the variables it inherits.
     static func run(
         _ executable: URL,
         _ arguments: [String],
         input: Data? = nil,
+        environment: [String: String] = [:],
         onStdoutLine: (@Sendable (String) -> Void)? = nil
     ) async throws -> Result {
         try Task.checkCancellation()
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        if !environment.isEmpty {
+            process.environment = ProcessInfo.processInfo.environment.merging(environment) { $1 }
+        }
         let inPipe = input == nil ? nil : Pipe()
         if let inPipe {
             process.standardInput = inPipe
@@ -339,5 +434,12 @@ public enum Blocking {
         }
         try Task.checkCancellation()
         return result
+    }
+}
+
+/// How long a sound or video file says it is.
+enum MediaLength {
+    static func of(_ url: URL, ffmpeg: URL?) async -> Double? {
+        await FFmpeg.duration(of: url, ffmpeg: ffmpeg).flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
     }
 }

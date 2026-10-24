@@ -153,5 +153,6 @@ class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         onClose?()
+        MemoryRelief.soon()
     }
 }

@@ -271,6 +271,7 @@ final class ClipboardController {
         model.justCopied = nil
         model.justDropped = nil
         model.previewing = nil
+        MemoryRelief.soon()
     }
 
     // MARK: - Dragging a copy out

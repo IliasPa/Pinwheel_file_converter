@@ -88,6 +88,7 @@ enum PDFTools {
             progress(Double(number + 1) / Double(sources.count) * 0.9)
         }
         guard merged.write(to: destination) else { throw ConversionError.cannotWrite(destination.lastPathComponent) }
+        PDFTextRepair.fixGreekMu(in: destination)
     }
 
     /// The chosen pages, in the chosen order and turns, as one PDF.
@@ -104,6 +105,7 @@ enum PDFTools {
         }
         guard result.pageCount > 0 else { throw NothingToDo(reason: "No pages were left, so nothing was saved.") }
         guard result.write(to: destination) else { throw ConversionError.cannotWrite(destination.lastPathComponent) }
+        PDFTextRepair.fixGreekMu(in: destination)
     }
 
     /// One PDF per page in a new folder: "report page 01.pdf", "report page 02.pdf"…
@@ -125,6 +127,7 @@ enum PDFTools {
             let padded = String(repeating: "0", count: max(0, digits - number.count)) + number
             let file = folder.appendingPathComponent("\(base) page \(padded).pdf")
             guard single.write(to: file) else { throw ConversionError.cannotWrite(file.lastPathComponent) }
+            PDFTextRepair.fixGreekMu(in: file)
             progress(Double(index + 1) / Double(count))
         }
     }

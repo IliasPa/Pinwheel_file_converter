@@ -307,17 +307,44 @@ extension Document {
     /// and pictures (in the file, or next to it in `folder`).
     public init(markdown text: String, folder: URL? = nil) {
         var blocks: [Block] = []
-        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        var lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         var paragraph: [String] = []
         var index = 0
 
+        // Footnotes: "[^1]: the note" lines become notes at the end, and
+        // each "[^1]" in the text their number.
+        var noteTexts: [String: String] = [:]
+        lines.removeAll { line in
+            guard let note = line.firstMatch(of: /^\s{0,3}\[\^([^\]]+)\]:\s*(.*)$/) else { return false }
+            noteTexts[String(note.1)] = String(note.2)
+            return true
+        }
+        var notes: [String] = []
+        func numbered(_ text: String) -> String {
+            guard !noteTexts.isEmpty else { return text }
+            return text.replacing(/\[\^([^\]]+)\]/) { match in
+                guard let note = noteTexts[String(match.1)] else { return String(match.0) }
+                notes.append(note)
+                return "[\(notes.count)]"
+            }
+        }
+        func inline(_ text: String) -> [Run] { Self.inlineMarkdown(numbered(text)) }
+
         func flush() {
             guard !paragraph.isEmpty else { return }
-            let joined = paragraph.map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+            // Two spaces (or a backslash) at a line's end: a line break there.
+            var joined = ""
+            for (number, line) in paragraph.enumerated() {
+                let breaks = line.hasSuffix("  ") || line.hasSuffix("\\")
+                var part = line.trimmingCharacters(in: .whitespaces)
+                if part.hasSuffix("\\") { part.removeLast() }
+                joined += part
+                if number < paragraph.count - 1 { joined += breaks ? "\n" : " " }
+            }
             if let picture = Self.markdownPicture(joined, folder: folder) {
                 blocks.append(.image(picture))
             } else {
-                blocks.append(.paragraph(Self.inlineMarkdown(joined)))
+                blocks.append(.paragraph(inline(joined)))
             }
             paragraph.removeAll()
         }
@@ -341,13 +368,13 @@ extension Document {
             }
             if let heading = trimmed.firstMatch(of: /^(#{1,6})\s+(.*?)\s*#*$/) {
                 flush()
-                blocks.append(.heading(heading.1.count, Self.inlineMarkdown(String(heading.2))))
+                blocks.append(.heading(heading.1.count, inline(String(heading.2))))
                 continue
             }
             // "Title" underlined with === or ---.
             if !paragraph.isEmpty, paragraph.count == 1, trimmed.wholeMatch(of: /=+|-+/) != nil {
                 let title = paragraph.removeFirst()
-                blocks.append(.heading(trimmed.hasPrefix("=") ? 1 : 2, Self.inlineMarkdown(title.trimmingCharacters(in: .whitespaces))))
+                blocks.append(.heading(trimmed.hasPrefix("=") ? 1 : 2, inline(title.trimmingCharacters(in: .whitespaces))))
                 continue
             }
             if trimmed.wholeMatch(of: /(\*\s*){3,}|(-\s*){3,}|(_\s*){3,}/) != nil {
@@ -359,18 +386,24 @@ extension Document {
                 flush()
                 var quote: [String] = []
                 while index < lines.count, lines[index].trimmingCharacters(in: .whitespaces).hasPrefix(">") {
-                    quote.append(String(lines[index].trimmingCharacters(in: .whitespaces).dropFirst()).trimmingCharacters(in: .whitespaces))
+                    // ">>" is a quote in a quote: the words are what matter.
+                    quote.append(String(lines[index].trimmingCharacters(in: .whitespaces).drop { $0 == ">" || $0 == " " }))
                     index += 1
                 }
                 index -= 1
-                blocks.append(.quote(Self.inlineMarkdown(quote.joined(separator: " "))))
+                blocks.append(.quote(inline(quote.joined(separator: " "))))
                 continue
             }
             if let item = line.firstMatch(of: /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/) {
                 flush()
                 let indent = item.1.replacingOccurrences(of: "\t", with: "    ").count
                 let ordered = item.2.first?.isNumber == true
-                blocks.append(.listItem(ordered: ordered, level: min(indent / 2, 8), Self.inlineMarkdown(String(item.3))))
+                // Task lists: "[ ]" and "[x]" as boxes.
+                var words = String(item.3)
+                if let task = words.firstMatch(of: /^\[([ xX])\]\s+/) {
+                    words = (task.1 == " " ? "☐ " : "☑ ") + words[task.range.upperBound...]
+                }
+                blocks.append(.listItem(ordered: ordered, level: min(indent / 2, 8), inline(words)))
                 continue
             }
             if trimmed.hasPrefix("|"), index + 1 < lines.count,
@@ -389,6 +422,10 @@ extension Document {
             paragraph.append(line)
         }
         flush()
+        if !notes.isEmpty {
+            blocks.append(.rule)
+            blocks += notes.map { .listItem(ordered: true, level: 0, Self.inlineMarkdown($0)) }
+        }
         self.init(blocks: blocks)
     }
 
@@ -424,6 +461,9 @@ extension Document {
 
     /// Bold, italics, code and links, read by Apple's own Markdown reader.
     static func inlineMarkdown(_ text: String) -> [Run] {
+        // Simple HTML in the text (<kbd>Ctrl</kbd>, <br>): its words, not its tags.
+        let text = text.replacing(/<br\s*\/?>/, with: "\n")
+            .replacing(/<\/?(?:kbd|sup|sub|span|mark|small|u|ins|abbr|cite|q|font|center)(?:\s[^>]*)?>/, with: "")
         guard let attributed = try? AttributedString(
             markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) else { return [Run(text)] }

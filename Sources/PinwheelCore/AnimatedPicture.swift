@@ -45,6 +45,24 @@ enum AnimatedPicture {
     struct Frames {
         let count: Int
         let frame: (Int) throws -> Frame
+
+        /// Each frame drawn smaller, its longer side `longSide` pixels.
+        func scaled(toLongSide longSide: Int) -> Frames {
+            Frames(count: count) { index in
+                var frame = try frame(index)
+                let image = frame.image
+                let scale = Double(longSide) / Double(max(image.width, image.height))
+                let width = max(1, Int((Double(image.width) * scale).rounded())), height = max(1, Int((Double(image.height) * scale).rounded()))
+                guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                else { throw ConversionError.failed("Not enough memory to resize the picture.") }
+                ctx.interpolationQuality = .high
+                ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+                guard let scaled = ctx.makeImage() else { throw ConversionError.failed("Not enough memory to resize the picture.") }
+                frame.image = scaled
+                return frame
+            }
+        }
     }
 
     static func frames(of url: URL) throws -> Frames {
@@ -73,10 +91,141 @@ enum AnimatedPicture {
         }
     }
 
+    // MARK: - Tools
+
+    /// Compress, Resize and Strip Info on a picture that moves: every frame,
+    /// still moving, in its own format (the info goes as the frames are
+    /// written again).
+    static func tool(_ tool: ToolAction, source: URL, format: OutputFormat, destination: URL, options: ConversionOptions,
+                     progress: @escaping @Sendable (Double) -> Void) async throws {
+        var options = options
+        var longSide: Int?
+        switch tool {
+        case .resize:
+            let first = try AnimatedPicture.frames(of: source).frame(0).image
+            guard let side = options.resize.newLongSide(from: max(first.width, first.height)) else {
+                throw NothingToDo(reason: "Already no bigger than \(options.resize.fitSize ?? 0) pixels, so nothing was changed.")
+            }
+            longSide = side
+        case .compress:
+            switch format {
+            case .gif:
+                // ffmpeg draws only what changes from frame to frame, with
+                // fewer colors: often half the size.
+                if let ffmpeg = options.ffmpegURL { return try await compressGIF(source, destination: destination, ffmpeg: ffmpeg, options: options) }
+            case .png:
+                throw NothingToDo(reason: "Animated PNGs can't get smaller without losing their look. As animated WebP they're usually far smaller.")
+            default:
+                options.webpQuality = options.compressQuality
+                options.heicQuality = options.compressQuality
+            }
+        case .stripMetadata:
+            break
+        default:
+            throw ConversionError.unsupported("\(tool.title) for moving pictures")
+        }
+        let (chosen, side) = (options, longSide)
+        if format == .webp {
+            let frames = try AnimatedPicture.frames(of: source)
+            try await writeWebP(side.map { frames.scaled(toLongSide: $0) } ?? frames, to: destination, options: chosen, progress: progress)
+        } else {
+            // Only a resized GIF needs new colors; otherwise its own are kept exactly.
+            try await Blocking.run { _ in
+                let frames = try AnimatedPicture.frames(of: source)
+                try writeWithImageIO(side.map { frames.scaled(toLongSide: $0) } ?? frames, to: destination, as: format, options: chosen,
+                                     newColors: tool == .resize, progress: progress)
+            }
+        }
+    }
+
+    /// The image editor's edit on every frame (crop, turn, adjust, markup,
+    /// watermark, frame), still moving.
+    static func edit(_ source: URL, edit: ImageEdit, format: OutputFormat, destination: URL, options: ConversionOptions,
+                     progress: @escaping @Sendable (Double) -> Void) async throws {
+        guard !edit.removeBackground else {
+            throw ConversionError.failed("Remove BG works on still pictures. Save one frame first (convert it to PNG), then remove its background.")
+        }
+        if format == .webp {
+            try await writeWebP(edited(try frames(of: source), edit: edit), to: destination, options: options, progress: progress)
+        } else {
+            try await Blocking.run { _ in
+                try writeWithImageIO(edited(try frames(of: source), edit: edit), to: destination, as: format, options: options, progress: progress)
+            }
+        }
+    }
+
+    private static func edited(_ frames: Frames, edit: ImageEdit) -> Frames {
+        Frames(count: frames.count) { index in
+            var frame = try frames.frame(index)
+            frame.image = try StudioRenderer.render(StudioSource(image: frame.image), mask: nil, edit: edit)
+            return frame
+        }
+    }
+
+    /// Under a size: fewer colors (or a lower quality) first, then smaller
+    /// frames, until it fits.
+    static func sizeLimit(_ source: URL, limit: Int64, format: OutputFormat, destination: URL, options: ConversionOptions,
+                          progress: @escaping @Sendable (Double) -> Void) async throws -> String? {
+        let first = try frames(of: source).frame(0).image
+        let longSide = max(first.width, first.height)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Pinwheel-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var scale = 1.0
+        for round in 0..<9 {
+            try Task.checkCancellation()
+            progress(Double(round) / 9)
+            let side = round == 0 ? nil : Int((Double(longSide) * scale).rounded())
+            let attempt = folder.appendingPathComponent("\(round).\(format.fileExtension)")
+            var tighter = options
+            tighter.compressQuality = round == 0 ? 0.6 : 0.5
+            tighter.webpQuality = round == 0 ? 0.6 : 0.5
+            tighter.heicQuality = tighter.webpQuality
+            if format == .gif, let ffmpeg = options.ffmpegURL {
+                try await compressGIF(source, destination: attempt, ffmpeg: ffmpeg, options: tighter, longSide: side)
+            } else {
+                let frames = try frames(of: source)
+                let chosen = side.map { frames.scaled(toLongSide: $0) } ?? frames
+                if format == .webp {
+                    try await writeWebP(chosen, to: attempt, options: tighter) { _ in }
+                } else {
+                    try writeWithImageIO(chosen, to: attempt, as: format, options: tighter, newColors: side != nil) { _ in }
+                }
+            }
+            let size = FileSize.of(attempt) ?? .max
+            if size <= limit {
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: attempt, to: destination)
+                guard let side else { return "Saved with fewer colors to fit; still moving." }
+                let made = try frames(of: destination).frame(0).image
+                return "Made \(made.width) × \(made.height) px to fit; still moving."
+            }
+            // The file shrinks about with the area: aim straight at the limit, a little under.
+            scale *= min(0.85, (Double(limit) / Double(size)).squareRoot() * 0.95)
+            if Double(longSide) * scale < 16 { break }
+        }
+        throw NothingToDo(reason: "Couldn't get it under \(SizeLimit.title(bytes: limit)), so nothing was saved.")
+    }
+
+    /// A smaller GIF from ffmpeg: one palette for the whole animation
+    /// (fewer colors at lower quality), and only the changed part of each frame.
+    /// `longSide`: the frames made smaller too.
+    static func compressGIF(_ source: URL, destination: URL, ffmpeg: URL, options: ConversionOptions, longSide: Int? = nil) async throws {
+        let colors = max(32, min(256, Int(64 + options.compressQuality * 192)))
+        let scale = longSide.map { "scale='if(gt(iw,ih),\($0),-2)':'if(gt(iw,ih),-2,\($0))':flags=lanczos," } ?? ""
+        try await FFmpeg.convert(ffmpeg: ffmpeg, input: source, output: destination, arguments: [
+            "-filter_complex", "[0:v]\(scale)split[a][b];[a]palettegen=stats_mode=diff:max_colors=\(colors)[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle",
+            "-fps_mode", "passthrough", "-gifflags", "+offsetting+transdiff", "-loop", "0",
+        ], duration: nil) { _ in }
+    }
+
     // MARK: - GIF, APNG and HEIC sequences
 
+    /// `newColors`: a GIF's frames get their best 256 colors, finely mixed
+    /// (pictures from other formats); off, frames that already have 256 or
+    /// fewer keep them exactly.
     static func writeWithImageIO(_ frames: Frames, to url: URL, as format: OutputFormat, options: ConversionOptions,
-                                 progress: (Double) -> Void) throws {
+                                 newColors: Bool = true, progress: (Double) -> Void) throws {
         let type = format == .heic ? "public.heics" : format.utType.identifier
         guard let dest = CGImageDestinationCreateWithURL(url as CFURL, type as CFString, frames.count, nil) else {
             throw ConversionError.cannotWrite(url.lastPathComponent)
@@ -95,7 +244,7 @@ enum AnimatedPicture {
             var properties: [CFString: Any]
             switch format {
             case .gif:
-                image = GIFPalette.dithered(frame.image) ?? frame.image
+                if newColors { image = GIFPalette.dithered(frame.image) ?? frame.image }
                 properties = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: frame.delay, kCGImagePropertyGIFUnclampedDelayTime: frame.delay]]
             case .png:
                 properties = [kCGImagePropertyPNGDictionary: [kCGImagePropertyAPNGDelayTime: frame.delay, kCGImagePropertyAPNGUnclampedDelayTime: frame.delay]]
@@ -162,7 +311,10 @@ enum AnimatedPicture {
                 "-i", file.url.path, "-vf", "fps=\(options.gifFPS),scale='min(\(options.gifWidth),iw)':-2:flags=lanczos",
                 "-an", pattern.path,
             ])
-            guard result.status == 0 else { throw ConversionError.failed("ffmpeg couldn't read the video: \(result.stderr.split(separator: "\n").last ?? "")") }
+            guard result.status == 0 else {
+                throw ConversionError.failed(FFmpeg.plainWords(result.stderr, input: file.url)
+                    ?? "ffmpeg couldn't read the video: \(result.stderr.split(separator: "\n").last ?? "")")
+            }
             progress(0.5)
             let files = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".png") }.sorted()
             guard !files.isEmpty else { throw ConversionError.failed("The video has no pictures to make a WebP of.") }

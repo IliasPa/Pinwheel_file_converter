@@ -26,7 +26,10 @@ enum AudioProcessor {
 
         // 1. The part kept, as plain samples (measuring loudness on the way).
         let decoded = work.appendingPathComponent("decoded.caf")
-        let measured = try await decode(source, edit: edit, to: decoded) { progress($0 * 0.45) }
+        // AAC holds at most 48 kHz; WAV, AIFF and FLAC keep a hi-res file's rate.
+        let ext = destination.pathExtension.lowercased()
+        let maxRate: Double = ["m4a", "m4b", "mp4", "mov", "m4v", "mp3"].contains(ext) ? 48_000 : 192_000
+        let measured = try await decode(source, edit: edit, to: decoded, maxRate: maxRate) { progress($0 * 0.45) }
         try Task.checkCancellation()
 
         // 2. A different speed, with the same pitch.
@@ -62,7 +65,6 @@ enum AudioProcessor {
         }
 
         // 4. Gain, fades and bleeps, written in the final format.
-        let ext = destination.pathExtension.lowercased()
         let input = samples, gain = gainDB
         let duration = edit.bleeps.isEmpty ? 0 : try await AVURLAsset(url: source).load(.duration).seconds
         let bleeps = Bleeps(times: edit.bleepTimes(duration: duration), silent: edit.silentBleeps)
@@ -107,7 +109,7 @@ enum AudioProcessor {
     /// The kept part of the first soundtrack, as 32-bit float samples (at
     /// most 2 channels and 48 kHz), its channels mixed as the edit asks.
     static func decode(
-        _ source: URL, edit: MediaEdit, to destination: URL, progress: @escaping @Sendable (Double) -> Void
+        _ source: URL, edit: MediaEdit, to destination: URL, maxRate: Double = 48_000, progress: @escaping @Sendable (Double) -> Void
     ) async throws -> Measured {
         let asset = AVURLAsset(url: source)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
@@ -115,7 +117,7 @@ enum AudioProcessor {
         }
         let duration = try await asset.load(.duration).seconds
         let (start, end) = edit.range(duration: duration)
-        let format = try await AudioFormat.of(track)
+        let format = try await AudioFormat.of(track, maxRate: maxRate)
         let box = TrackBox(track: track)  // only read, on that one thread
         return try await Blocking.run { isCancelled in
             try read(
@@ -323,7 +325,8 @@ enum AudioProcessor {
         case "m4a", "m4b", "mp4", "mov", "m4v":
             return [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: min(rate, 48_000),
-                AVNumberOfChannelsKey: min(channels, 2), AVEncoderBitRateKey: 256_000,
+                AVNumberOfChannelsKey: min(channels, 2),
+                AVEncoderBitRateKey: AACBitRate.allowed(256_000, sampleRate: min(rate, 48_000), channels: min(channels, 2)),
             ]
         case "wav": return pcmSettings(of: samples, bits: 24, bigEndian: false)
         case "aif", "aiff", "aifc": return pcmSettings(of: samples, bits: 24, bigEndian: true)

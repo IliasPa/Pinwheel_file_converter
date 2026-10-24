@@ -82,6 +82,7 @@ enum PDFConverter {
             PDFDocumentWriteOption(rawValue: "QuartzFilter"): filter,
         ])
         guard written else { throw ConversionError.cannotWrite(destination.lastPathComponent) }
+        PDFTextRepair.fixGreekMu(in: destination)
     }
 
     /// Removes the author, title, subject, keywords and app names.

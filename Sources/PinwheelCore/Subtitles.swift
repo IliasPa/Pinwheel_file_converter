@@ -88,6 +88,9 @@ enum Subtitles {
     static func parse(_ text: String) -> [Cue] {
         let blocks = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: "\n\n")
+        // VTT writes "&lt;" and "&amp;" where SRT has "<" and "&": the cues
+        // keep plain text (with only real tags in it).
+        let isVTT = text.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}").union(.whitespacesAndNewlines)).hasPrefix("WEBVTT")
         let colors = styleColors(blocks)
         var cues: [Cue] = []
         for block in blocks {
@@ -105,9 +108,34 @@ enum Subtitles {
                 body.removeSubrange(match.range)
             }
             body = body.replacing(/\{\\[^}]*\}/, with: "")  // other SRT/ASS codes
+            body = body.replacing(/<rt>.*?<\/rt>/, with: "")  // a reading over the letters (ruby): the letters stay
+            if isVTT { body = decodeEntities(body) }
             cues.append(Cue(start: start, end: end, text: colored(body, colors: colors), place: place))
         }
-        return cues
+        // In the order they're shown (some files are numbered out of order).
+        return cues.enumerated().sorted { ($0.element.start, $0.offset) < ($1.element.start, $1.offset) }.map(\.element)
+    }
+
+    /// The tags subtitles use; anything else in angle brackets is text.
+    static var tags: Regex<Substring> { /<\/?(?:i|b|u|s|font|c|v|lang|ruby|rt|span)(?:[.\s][^>]*)?>|<\d[\d:.]*>/ }
+
+    /// VTT's entities, as the letters they stand for.
+    static func decodeEntities(_ text: String) -> String {
+        text.replacing(/&(lt|gt|amp|nbsp|lrm|rlm|quot|apos|#\d+|#x[0-9a-fA-F]+);/) { match in
+            switch match.1 {
+            case "lt": "<"
+            case "gt": ">"
+            case "amp": "&"
+            case "nbsp": "\u{00A0}"
+            case "lrm": "\u{200E}"
+            case "rlm": "\u{200F}"
+            case "quot": "\""
+            case "apos": "'"
+            default:
+                (match.1.hasPrefix("#x") ? UInt32(match.1.dropFirst(2), radix: 16) : UInt32(match.1.dropFirst()))
+                    .flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? String(match.0)
+            }
+        }
     }
 
     /// WebVTT's standard color classes, and those its STYLE blocks give a
@@ -184,9 +212,26 @@ enum Subtitles {
             .replacing(/<\d[\d:.]*>/, with: "")
     }
 
-    /// SRT's font colors aren't VTT (it colors with classes): the words stay.
+    /// SRT's font colors aren't VTT (it colors with classes): the words
+    /// stay. "&" and "<" that aren't a tag are written as VTT wants them.
     static func vttText(_ text: String) -> String {
-        text.replacing(/<\/?font[^>]*>/, with: "")
+        var result = ""
+        var rest = Substring(text.replacing(/<\/?font[^>]*>/, with: ""))
+        while !rest.isEmpty {
+            if let tag = rest.prefixMatch(of: tags) {
+                result += tag.0
+                rest = rest[tag.range.upperBound...]
+                continue
+            }
+            let letter = rest.removeFirst()
+            switch letter {
+            case "&": result += "&amp;"
+            case "<": result += "&lt;"
+            case ">": result += "&gt;"
+            default: result.append(letter)
+            }
+        }
+        return result
     }
 
     /// Just the words, each line once (subtitles often repeat as they build
@@ -195,7 +240,7 @@ enum Subtitles {
         var lines: [String] = []
         var last: String?
         for cue in cues {
-            let clean = cue.text.replacing(/<v(?:\.[^ >]*)?\s+([^>]*)>/) { "\($0.1): " }.replacing(/<[^>]+>/, with: "")
+            let clean = cue.text.replacing(/<v(?:\.[^ >]*)?\s+([^>]*)>/) { "\($0.1): " }.replacing(tags, with: "")
             let words = clean.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             if times {
                 let joined = words.joined(separator: " ")

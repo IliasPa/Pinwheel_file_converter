@@ -52,9 +52,9 @@ struct MediaConverterTests {
         let folder = try TempFolder()
         let source = folder.file("silent.mov")
         try await MediaFixtures.makeVideo(at: source, withAudio: false)
-        await #expect(throws: ConversionError.self) {
-            try await runConversion(source, .convert(.m4a))
-        }
+        // Nothing to save is a skip with the reason, not a failure (v2.0).
+        let result = try await runRequest(ConversionRequest(file: SourceFile(url: source), action: .convert(.m4a)))
+        #expect(result.skipped && result.note == "silent.mov has no sound, so there's nothing to save.")
         #expect(!FileManager.default.fileExists(atPath: folder.file("silent (converted).m4a").path))
     }
 

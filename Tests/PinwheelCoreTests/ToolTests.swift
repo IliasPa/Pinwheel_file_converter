@@ -115,7 +115,8 @@ struct ImageToolTests {
         #expect(info.width == 400 && info.height == 300)
     }
 
-    @Test func animatedGIFsAreRefusedClearly() async throws {
+    /// Refused until v2.0; now every frame is resized and it still moves.
+    @Test func animatedGIFsResizeFrameByFrame() async throws {
         let folder = try TempFolder()
         let gif = folder.file("anim.gif")
         let dest = CGImageDestinationCreateWithURL(gif as CFURL, UTType.gif.identifier as CFString, 2, nil)!
@@ -127,7 +128,9 @@ struct ImageToolTests {
         CGImageDestinationAddImage(dest, frame, nil)
         CGImageDestinationAddImage(dest, frame, nil)
         #expect(CGImageDestinationFinalize(dest))
-        await #expect(throws: ConversionError.self) { try await runConversion(gif, .tool(.resize)) }
+        let resized = try await runConversion(gif, .tool(.resize))
+        #expect(CGImageSourceCreateWithURL(resized as CFURL, nil).map(CGImageSourceGetCount) == 2)
+        #expect(Fixtures.readImage(resized)?.width == 50)
     }
 }
 

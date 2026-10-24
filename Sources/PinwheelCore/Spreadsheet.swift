@@ -163,7 +163,13 @@ enum TextFile {
         if data.starts(with: [0xEF, 0xBB, 0xBF]) { return String(decoding: data.dropFirst(3), as: UTF8.self) }
         if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) { return String(data: data, encoding: .utf16) ?? "" }
         if let text = String(data: data, encoding: .utf8) { return text }
-        // Older Windows and Mac files.
+        // Older Windows and Mac files: macOS tells the encoding from the
+        // letters (Greek Windows-1253 and ISO-8859-7, Cyrillic, Shift-JIS…),
+        // where assuming Western turned Greek into "ÊáëçìÝñá".
+        var converted: NSString?
+        var lossy: ObjCBool = false
+        let found = NSString.stringEncoding(for: data, encodingOptions: [.allowLossyKey: false], convertedString: &converted, usedLossyConversion: &lossy)
+        if found != 0, let converted { return converted as String }
         return String(data: data, encoding: .windowsCP1252) ?? String(data: data, encoding: .macOSRoman) ?? String(decoding: data, as: UTF8.self)
     }
 
@@ -302,34 +308,98 @@ enum ExcelWorkbook {
             }
         }
         let strings = zip.data("xl/sharedStrings.xml").map(SharedStrings.read) ?? []
-        let dates = zip.data("xl/styles.xml").map(dateStyles) ?? []
+        let dates = zip.data("xl/styles.xml").map(dateStyles) ?? DateStyles()
+        let elements = XMLElements.read(workbookXML)
+        // Workbooks from old Mac Excel count days from 1904, not 1900.
+        let from1904 = elements.contains { $0.name.hasSuffix("workbookPr") && ["1", "true"].contains($0.attributes["date1904"]) }
         var sheets: [Workbook.Sheet] = []
-        for element in XMLElements.read(workbookXML) where element.name.hasSuffix("sheet") {
+        for element in elements where element.name.hasSuffix("sheet") {
             guard let name = element.attributes["name"],
                   let id = element.attributes["r:id"] ?? element.attributes.first(where: { $0.key.hasSuffix(":id") })?.value,
                   let target = targets[id] else { continue }
             let path = target.hasPrefix("/") ? String(target.dropFirst()) : "xl/" + target
             guard let data = zip.data(path) else { continue }
-            let reader = SheetReader(strings: strings, dates: dates)
-            let parser = XMLParser(data: data)
-            parser.delegate = reader
-            parser.parse()
-            sheets.append(Workbook.Sheet(name: name, rows: reader.rows).trimmed)
+            let maker = CellMaker(strings: strings, dates: dates, from1904: from1904)
+            // Read straight from the bytes (big sheets in a second, not
+            // twenty); XMLParser when the sheet is written unusually.
+            let rows = SheetScanner.rows(data, maker: maker) ?? {
+                let reader = SheetReader(maker: maker)
+                let parser = XMLParser(data: data)
+                parser.delegate = reader
+                parser.parse()
+                return reader.grid.rows
+            }()
+            sheets.append(Workbook.Sheet(name: name, rows: rows).trimmed)
         }
         return Workbook(sheets: sheets)
     }
 
-    /// Which cell styles show dates (their numbers are days since 1900).
-    private static func dateStyles(_ data: Data) -> Set<Int> {
-        var customDateFormats: Set<Int> = []
+    /// A cell's value as the sheet stores it, made into a cell: shared
+    /// strings looked up, dates and times written out.
+    struct CellMaker {
+        let strings: [String]
+        let dates: DateStyles
+        let from1904: Bool
+
+        func cell(type: String, style: Int, value: String) -> Workbook.Cell {
+            switch type {
+            case "s": return Int(value).flatMap { strings.indices.contains($0) ? .text(strings[$0]) : nil } ?? .empty
+            case "inlineStr", "str", "e": return value.isEmpty ? .empty : .text(ExcelWorkbook.unescape(value))
+            case "b": return .bool(value == "1" || value == "true")
+            default:
+                guard let number = Double(value) else { return value.isEmpty ? .empty : .text(value) }
+                if dates.dates.contains(style) { return .text(ExcelWorkbook.dateText(number, from1904: from1904)) }
+                if dates.times.contains(style) { return .text(ExcelWorkbook.timeText(number)) }
+                return .number(number)
+            }
+        }
+    }
+
+    /// Rows of cells, filled in wherever the sheet puts them.
+    struct Grid {
+        private(set) var rows: [[Workbook.Cell]] = []
+
+        mutating func put(_ cell: Workbook.Cell, row: Int, column: Int) {
+            guard cell != .empty, row >= 0, row < 1_048_576, column >= 0, column < 16_384 else { return }
+            while rows.count <= row { rows.append([]) }
+            if rows[row].count <= column { rows[row].append(contentsOf: repeatElement(.empty, count: column + 1 - rows[row].count)) }
+            rows[row][column] = cell
+        }
+    }
+
+    /// Excel writes some characters as _xHHHH_ ("_x000D_" for a carriage return).
+    static func unescape(_ text: String) -> String {
+        guard text.contains("_x") else { return text }
+        return text.replacing(/_x([0-9A-Fa-f]{4})_/) { match in
+            UInt32(match.1, radix: 16).flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? String(match.0)
+        }.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+    }
+
+    /// Which cell styles show dates (their numbers are days since 1900),
+    /// and which show only a time of day or a length of time.
+    struct DateStyles {
+        var dates: Set<Int> = []
+        var times: Set<Int> = []
+    }
+
+    private static func dateStyles(_ data: Data) -> DateStyles {
+        var customDates: Set<Int> = [], customTimes: Set<Int> = []
         var styles: [Int] = []
         var inCellXfs = false
         for element in XMLElements.read(data) {
             switch element.name {
             case "numFmt":
-                let code = (element.attributes["formatCode"] ?? "").replacing(/"[^"]*"/, with: "").lowercased()
-                if let id = Int(element.attributes["numFmtId"] ?? ""), code.contains("y") || code.contains("d") || (code.contains("m") && !code.contains("0")) {
-                    customDateFormats.insert(id)
+                // Quoted and escaped letters are just shown ("hours", \s).
+                let code = (element.attributes["formatCode"] ?? "").replacing(/"[^"]*"/, with: "").replacing(/\\./, with: "")
+                    .replacing(/\[[^\]]*\]/, with: { match in
+                        // [h] and [mm] are lengths of time; [Red] and [$€-408] are colors and currencies.
+                        ["[h]", "[hh]", "[m]", "[mm]", "[s]", "[ss]"].contains(match.output.lowercased()) ? "h" : ""
+                    }).lowercased()
+                guard let id = Int(element.attributes["numFmtId"] ?? "") else { continue }
+                if code.contains("y") || code.contains("d") || (code.contains("m") && !code.contains("0") && !code.contains("h") && !code.contains("s")) {
+                    customDates.insert(id)
+                } else if code.contains("h") || code.contains("s") {
+                    customTimes.insert(id)
                 }
             case "cellXfs": inCellXfs = true
             case "cellStyles", "dxfs": inCellXfs = false
@@ -337,18 +407,39 @@ enum ExcelWorkbook {
             default: break
             }
         }
-        let builtIn = Set(14...22).union(45...47)
-        return Set(styles.indices.filter { builtIn.contains(styles[$0]) || customDateFormats.contains(styles[$0]) })
+        let builtInDates = Set(14...17).union([22]), builtInTimes = Set(18...21).union(45...47)
+        return DateStyles(
+            dates: Set(styles.indices.filter { builtInDates.contains(styles[$0]) || customDates.contains(styles[$0]) }),
+            times: Set(styles.indices.filter { builtInTimes.contains(styles[$0]) || customTimes.contains(styles[$0]) })
+        )
     }
 
     /// "2026-10-21", or "2026-10-21 14:30" when there's a time.
-    static func dateText(_ serial: Double) -> String {
-        let date = Date(timeIntervalSince1970: (serial - 25_569) * 86_400)
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.dateFormat = serial.truncatingRemainder(dividingBy: 1) == 0 ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm"
-        return formatter.string(from: date)
+    /// Worked out by hand: a date formatter for each cell made a sheet of
+    /// 100,000 dates take twelve seconds.
+    static func dateText(_ serial: Double, from1904: Bool = false) -> String {
+        let minutes = Int(((from1904 ? serial + 1_462 : serial) * 1_440).rounded())
+        // Days since 1970-01-01, then the civil date (Howard Hinnant's method).
+        let fromEpoch = Int((Double(minutes) / 1_440).rounded(.down)) - 25_569
+        let shifted = fromEpoch + 719_468
+        let era = (shifted >= 0 ? shifted : shifted - 146_096) / 146_097
+        let dayOfEra = shifted - era * 146_097
+        let yearOfEra = (dayOfEra - dayOfEra / 1_460 + dayOfEra / 36_524 - dayOfEra / 146_096) / 365
+        let dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
+        let monthIndex = (5 * dayOfYear + 2) / 153
+        let day = dayOfYear - (153 * monthIndex + 2) / 5 + 1
+        let month = monthIndex < 10 ? monthIndex + 3 : monthIndex - 9
+        let year = yearOfEra + era * 400 + (month <= 2 ? 1 : 0)
+        let date = String(format: "%04d-%02d-%02d", year, month, day)
+        guard serial.truncatingRemainder(dividingBy: 1) != 0 else { return date }
+        let time = ((minutes % 1_440) + 1_440) % 1_440
+        return date + String(format: " %02d:%02d", time / 60, time % 60)
+    }
+
+    /// A time of day or a length of time: 0.75 → "18:00:00", 1.5 → "36:00:00".
+    static func timeText(_ serial: Double) -> String {
+        let seconds = Int((serial * 86_400).rounded())
+        return String(format: "%@%d:%02d:%02d", seconds < 0 ? "-" : "", abs(seconds) / 3600, abs(seconds) / 60 % 60, abs(seconds) % 60)
     }
 
     private final class SharedStrings: NSObject, XMLParserDelegate {
@@ -366,7 +457,8 @@ enum ExcelWorkbook {
         }
 
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
-            switch name {
+            // Some apps write every name with a prefix ("x:si").
+            switch name.split(separator: ":").last.map(String.init) ?? name {
             case "si": current = ""
             case "t": inText = phonetic == 0
             case "rPh": phonetic += 1
@@ -375,8 +467,8 @@ enum ExcelWorkbook {
         }
 
         func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
-            switch name {
-            case "si": strings.append(current)
+            switch name.split(separator: ":").last.map(String.init) ?? name {
+            case "si": strings.append(ExcelWorkbook.unescape(current))
             case "t": inText = false
             case "rPh": phonetic -= 1
             default: break
@@ -389,9 +481,8 @@ enum ExcelWorkbook {
     }
 
     private final class SheetReader: NSObject, XMLParserDelegate {
-        private(set) var rows: [[Workbook.Cell]] = []
-        private let strings: [String]
-        private let dates: Set<Int>
+        private(set) var grid = Grid()
+        private let maker: CellMaker
         private var row = 0
         private var column = 0
         private var type = ""
@@ -399,15 +490,15 @@ enum ExcelWorkbook {
         private var value = ""
         private var reading = false
 
-        init(strings: [String], dates: Set<Int>) {
-            self.strings = strings
-            self.dates = dates
+        init(maker: CellMaker) {
+            self.maker = maker
         }
 
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
-            switch name {
+            switch name.split(separator: ":").last.map(String.init) ?? name {
             case "row":
                 row = (Int(attributes["r"] ?? "") ?? (row + 1)) - 1
+                column = -1
             case "c":
                 let reference = attributes["r"] ?? ""
                 column = reference.isEmpty ? column + 1 : ExcelWorkbook.columnIndex(reference)
@@ -420,9 +511,9 @@ enum ExcelWorkbook {
         }
 
         func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
-            switch name {
+            switch name.split(separator: ":").last.map(String.init) ?? name {
             case "v", "t": reading = false
-            case "c": store()
+            case "c": grid.put(maker.cell(type: type, style: style, value: value), row: row, column: column)
             default: break
             }
         }
@@ -430,21 +521,213 @@ enum ExcelWorkbook {
         func parser(_ parser: XMLParser, foundCharacters string: String) {
             if reading { value += string }
         }
+    }
+}
 
-        private func store() {
-            let cell: Workbook.Cell
-            switch type {
-            case "s": cell = Int(value).flatMap { strings.indices.contains($0) ? .text(strings[$0]) : nil } ?? .empty
-            case "inlineStr", "str", "e": cell = value.isEmpty ? .empty : .text(value)
-            case "b": cell = .bool(value == "1")
-            default:
-                guard let number = Double(value) else { cell = value.isEmpty ? .empty : .text(value); break }
-                cell = dates.contains(style) ? .text(ExcelWorkbook.dateText(number)) : .number(number)
+/// Reads a worksheet's cells straight from its bytes. Sheets are plain and
+/// regular (rows of `<c>` with a `<v>` or an inline string), so this is
+/// enough, and far quicker than XMLParser; nil when something unexpected
+/// turns up (then XMLParser reads it).
+enum SheetScanner {
+    static func rows(_ data: Data, maker: ExcelWorkbook.CellMaker) -> [[Workbook.Cell]]? {
+        data.withUnsafeBytes { raw -> [[Workbook.Cell]]? in
+            var scanner = Scanner(bytes: raw.bindMemory(to: UInt8.self), maker: maker)
+            return scanner.read()
+        }
+    }
+
+    private struct Scanner {
+        let bytes: UnsafeBufferPointer<UInt8>
+        let maker: ExcelWorkbook.CellMaker
+        var at = 0
+        var grid = ExcelWorkbook.Grid()
+
+        init(bytes: UnsafeBufferPointer<UInt8>, maker: ExcelWorkbook.CellMaker) {
+            self.bytes = bytes
+            self.maker = maker
+        }
+
+        /// One tag: where its name (without a prefix) and attributes are,
+        /// whether it closes, and whether it ends with "/>".
+        struct Tag {
+            var name: Range<Int>
+            var closing: Bool
+            var empty: Bool
+            var attributes: Range<Int>
+        }
+
+        static let sheetData = Array("sheetData".utf8), row = Array("row".utf8), c = Array("c".utf8), v = Array("v".utf8)
+        static let t = Array("t".utf8), rPh = Array("rPh".utf8), f = Array("f".utf8)
+        static let r = Array("r".utf8), s = Array("s".utf8)
+
+        mutating func read() -> [[Workbook.Cell]]? {
+            var row = -1, column = -1
+            var type = "n", style = 0
+            var value: [UInt8] = []
+            var capturing = false, inCell = false, skipping = 0
+            var started = false
+            while let open = find(UInt8(ascii: "<")) {
+                if capturing, open > at { value.append(contentsOf: bytes[at..<open]) }
+                at = open
+                guard let tag = tag() else { return nil }
+                if tag.name.isEmpty { continue }  // a comment or declaration
+                if equal(tag.name, Self.c) {
+                    if tag.closing {
+                        guard inCell else { return nil }
+                        inCell = false
+                        grid.put(maker.cell(type: type, style: style, value: decode(value[...])), row: row, column: column)
+                    } else {
+                        let reference = attribute(Self.r, in: tag.attributes)
+                        column = reference.map(columnIndex) ?? column + 1
+                        type = attribute(Self.t, in: tag.attributes).map { String(decoding: $0, as: UTF8.self) } ?? "n"
+                        style = attribute(Self.s, in: tag.attributes).flatMap { number($0) } ?? 0
+                        value.removeAll(keepingCapacity: true)
+                        inCell = !tag.empty
+                    }
+                } else if equal(tag.name, Self.v) || equal(tag.name, Self.t) {
+                    capturing = !tag.closing && inCell && skipping == 0 && !tag.empty
+                } else if equal(tag.name, Self.row) {
+                    if !tag.closing {
+                        row = (attribute(Self.r, in: tag.attributes).flatMap { number($0) } ?? (row + 2)) - 1
+                        column = -1
+                    }
+                } else if equal(tag.name, Self.rPh) || equal(tag.name, Self.f) {
+                    if tag.closing { skipping = max(0, skipping - 1) } else if !tag.empty { skipping += 1 }
+                } else if equal(tag.name, Self.sheetData) {
+                    if tag.closing { return grid.rows }
+                    started = true
+                }
             }
-            guard cell != .empty, row >= 0, row < 1_048_576, column < 16_384 else { return }
-            while rows.count <= row { rows.append([]) }
-            while rows[row].count <= column { rows[row].append(.empty) }
-            rows[row][column] = cell
+            return started ? grid.rows : nil
+        }
+
+        func equal(_ range: Range<Int>, _ name: [UInt8]) -> Bool {
+            guard range.count == name.count else { return false }
+            var index = 0
+            while index < name.count {
+                if bytes[range.lowerBound + index] != name[index] { return false }
+                index += 1
+            }
+            return true
+        }
+
+        /// "BC12" → 54 (from 0), as `ExcelWorkbook.columnIndex`.
+        func columnIndex(_ reference: ArraySlice<UInt8>) -> Int {
+            var index = 0
+            for letter in reference {
+                guard letter >= 65, letter <= 90 else { break }
+                index = index * 26 + Int(letter - 64)
+            }
+            return max(index - 1, 0)
+        }
+
+        func number(_ digits: ArraySlice<UInt8>) -> Int? {
+            guard !digits.isEmpty, digits.count < 10 else { return nil }
+            var result = 0
+            for digit in digits {
+                guard digit >= 48, digit <= 57 else { return nil }
+                result = result * 10 + Int(digit - 48)
+            }
+            return result
+        }
+
+        func find(_ byte: UInt8) -> Int? {
+            var index = at
+            while index < bytes.count {
+                if bytes[index] == byte { return index }
+                index += 1
+            }
+            return nil
+        }
+
+        /// Reads the tag at `at` and moves past it; nil when it can't be read.
+        mutating func tag() -> Tag? {
+            var index = at + 1
+            guard index < bytes.count else { return nil }
+            if bytes[index] == UInt8(ascii: "!") || bytes[index] == UInt8(ascii: "?") {
+                // A comment or declaration: skipped. CDATA isn't expected here.
+                if index + 1 < bytes.count, bytes[index + 1] == UInt8(ascii: "[") { return nil }
+                let comment = bytes[index] == UInt8(ascii: "!")
+                while index + 2 < bytes.count {
+                    if comment, bytes[index] == UInt8(ascii: "-"), bytes[index + 1] == UInt8(ascii: "-"), bytes[index + 2] == UInt8(ascii: ">") {
+                        at = index + 3
+                        return Tag(name: 0..<0, closing: false, empty: false, attributes: 0..<0)
+                    }
+                    if !comment, bytes[index] == UInt8(ascii: "?"), bytes[index + 1] == UInt8(ascii: ">") {
+                        at = index + 2
+                        return Tag(name: 0..<0, closing: false, empty: false, attributes: 0..<0)
+                    }
+                    index += 1
+                }
+                return nil
+            }
+            let closing = bytes[index] == UInt8(ascii: "/")
+            if closing { index += 1 }
+            var nameStart = index
+            while index < bytes.count, !isSpace(bytes[index]), bytes[index] != UInt8(ascii: ">"), bytes[index] != UInt8(ascii: "/") {
+                if bytes[index] == UInt8(ascii: ":") { nameStart = index + 1 }
+                index += 1
+            }
+            let name = nameStart..<index
+            let attributesStart = index
+            var quote: UInt8 = 0
+            while index < bytes.count {
+                let byte = bytes[index]
+                if quote != 0 {
+                    if byte == quote { quote = 0 }
+                } else if byte == UInt8(ascii: "\"") || byte == UInt8(ascii: "'") {
+                    quote = byte
+                } else if byte == UInt8(ascii: ">") {
+                    break
+                }
+                index += 1
+            }
+            guard index < bytes.count, !name.isEmpty else { return nil }
+            let empty = index > attributesStart && bytes[index - 1] == UInt8(ascii: "/")
+            at = index + 1
+            return Tag(name: name, closing: closing, empty: empty, attributes: attributesStart..<index)
+        }
+
+        /// The value of `name="…"` among a tag's attributes (not a prefixed one).
+        func attribute(_ name: [UInt8], in range: Range<Int>) -> ArraySlice<UInt8>? {
+            var index = range.lowerBound
+            while index + name.count + 2 <= range.upperBound {
+                if isSpace(bytes[index]), equal((index + 1)..<(index + 1 + name.count), name) {
+                    var after = index + 1 + name.count
+                    while after < range.upperBound, isSpace(bytes[after]) { after += 1 }
+                    if after < range.upperBound, bytes[after] == UInt8(ascii: "=") {
+                        after += 1
+                        while after < range.upperBound, isSpace(bytes[after]) { after += 1 }
+                        guard after < range.upperBound else { return nil }
+                        let quote = bytes[after]
+                        var end = after + 1
+                        while end < range.upperBound, bytes[end] != quote { end += 1 }
+                        return Array(bytes[(after + 1)..<end])[...]
+                    }
+                }
+                index += 1
+            }
+            return nil
+        }
+
+        func isSpace(_ byte: UInt8) -> Bool { byte == 0x20 || byte == 0x0A || byte == 0x0D || byte == 0x09 }
+
+        /// Text with XML's escapes (&amp;, &#233;…) turned back into letters.
+        func decode(_ value: ArraySlice<UInt8>) -> String {
+            let text = String(decoding: value, as: UTF8.self)
+            guard text.contains("&") else { return text }
+            return text.replacing(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/) { match in
+                switch match.1 {
+                case "lt": "<"
+                case "gt": ">"
+                case "amp": "&"
+                case "quot": "\""
+                case "apos": "'"
+                default:
+                    (match.1.hasPrefix("#x") ? UInt32(match.1.dropFirst(2), radix: 16) : UInt32(match.1.dropFirst()))
+                        .flatMap(Unicode.Scalar.init).map { String(Character($0)) } ?? String(match.0)
+                }
+            }
         }
     }
 }

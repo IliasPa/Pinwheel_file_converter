@@ -605,13 +605,26 @@ enum PDFStructure {
             return Workbook(sheets: sheets.filter { !$0.rows.isEmpty })
         }
         var sheets: [Workbook.Sheet] = []
+        // Everything outside the tables (titles, addresses, totals, pages
+        // without a table) on a sheet of its own, so nothing is lost.
+        var other: [[Workbook.Cell]] = []
         for page in pages {
             let found = tables[page] ?? []
             for (number, table) in found.enumerated() {
                 let name = found.count == 1 ? "Page \(page + 1)" : "Page \(page + 1), table \(number + 1)"
                 sheets.append(Workbook.Sheet(name: name, rows: PDFTables.cells(table.rows)))
             }
+            let outside = (words[page] ?? []).filter { word in
+                !found.contains { $0.frame.insetBy(dx: -2, dy: -2).contains(CGPoint(x: word.frame.midX, y: word.frame.midY)) }
+            }
+            let rows = grid(outside).filter { !$0.allSatisfy { $0 == .empty } }
+            if !rows.isEmpty {
+                other.append([.text("Page \(page + 1)")])
+                other += rows
+                other.append([])
+            }
         }
+        if !other.isEmpty { sheets.append(Workbook.Sheet(name: "Other text", rows: other)) }
         return Workbook(sheets: sheets.filter { !$0.rows.isEmpty })
     }
 

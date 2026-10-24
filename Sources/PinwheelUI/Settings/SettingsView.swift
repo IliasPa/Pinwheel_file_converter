@@ -1227,6 +1227,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // go on animating unseen meanwhile.
         state.isWindowVisible = false
         onClose()
+        MemoryRelief.soon()
     }
 
     @available(*, unavailable)

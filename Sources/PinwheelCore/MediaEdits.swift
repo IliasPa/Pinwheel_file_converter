@@ -78,7 +78,7 @@ enum MediaEdits {
         let (start, end) = edit.range(duration: duration)
         let range = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600), end: CMTime(seconds: end, preferredTimescale: 600))
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
-        guard !videoTracks.isEmpty else { throw ConversionError.failed("\(source.lastPathComponent) has no picture.") }
+        guard !videoTracks.isEmpty else { throw ConversionError.failed("\(source.lastPathComponent) is only sound, with no picture.") }
 
         let composition = AVMutableComposition()
         var shownSize = CGSize.zero
@@ -182,7 +182,7 @@ enum MediaEdits {
         let asset = AVURLAsset(url: source)
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         guard !videoTracks.isEmpty else {
-            throw ConversionError.failed("\(source.lastPathComponent) has no picture.")
+            throw ConversionError.failed("\(source.lastPathComponent) is only sound, with no picture.")
         }
         guard try await !asset.loadTracks(withMediaType: .audio).isEmpty else {
             throw NothingToDo(reason: "This video has no sound, so nothing was changed.")

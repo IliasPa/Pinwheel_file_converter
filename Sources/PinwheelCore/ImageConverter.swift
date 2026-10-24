@@ -32,6 +32,15 @@ public enum ImageConverter {
             // Upright (GIF has no orientation), in 256 colors of its own, dithered.
             let image = try orientedImage(src, index: index)
             CGImageDestinationAddImage(dest, GIFPalette.dithered(image) ?? image, nil)
+        } else if format == .bmp {
+            // BMP takes plain 8-bit color: ImageIO wrote palette pictures
+            // (and HDR ones) as raw bytes without a BMP header.
+            let image = try standard(try orientedImage(src, index: index))
+            CGImageDestinationAddImage(dest, image, uprightMetadata(from: properties).merging(settings) { $1 } as CFDictionary)
+        } else if format == .avif, (properties[kCGImagePropertyOrientation] as? Int ?? 1) != 1 {
+            // AVIF files don't keep which way is up: the picture is turned upright first.
+            let image = try orientedImage(src, index: index)
+            CGImageDestinationAddImage(dest, image, uprightMetadata(from: properties).merging(settings) { $1 } as CFDictionary)
         } else if format == .jpeg, properties[kCGImagePropertyHasAlpha] as? Bool == true {
             // JPEG has no transparency. Without this, see-through areas turn black.
             guard let image = CGImageSourceCreateImageAtIndex(src, index, nil) else {
@@ -53,7 +62,9 @@ public enum ImageConverter {
             throw ConversionError.failed("WebP needs cwebp. Install it with: \(ExternalTool.cwebp.installCommand)")
         }
         let src = try open(source)
-        let image = try orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src))
+        // cwebp ignores color profiles: it gets plain sRGB (a 16-bit or
+        // linear gray PNG came out far too dark).
+        let image = try standard(try orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src)))
         let png = FileManager.default.temporaryDirectory.appendingPathComponent("pinwheel-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: png) }
         try write(image, to: png, format: .png, options: options)
@@ -175,6 +186,48 @@ public enum ImageConverter {
             throw ConversionError.unreadable("The image")
         }
         return image
+    }
+
+    /// The picture as 8-bit sRGB (with its transparency, if it has any):
+    /// what formats and tools that don't manage color expect. Pictures
+    /// that already are come back as they are.
+    static func standard(_ image: CGImage) throws -> CGImage {
+        let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+        let alpha = ![.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
+        if image.bitsPerComponent == 8, image.bitsPerPixel == 32, image.colorSpace?.name == CGColorSpace.sRGB,
+           !image.bitmapInfo.contains(.floatComponents) {
+            return image
+        }
+        guard let ctx = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0, space: sRGB,
+            bitmapInfo: (alpha ? CGImageAlphaInfo.premultipliedLast : CGImageAlphaInfo.noneSkipLast).rawValue
+        ) else { throw ConversionError.failed("Not enough memory to process the image.") }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard let result = ctx.makeImage() else { throw ConversionError.failed("Couldn't process the image.") }
+        return result
+    }
+
+    /// A JPEG or PNG whose file ends early (a download that stopped):
+    /// ImageIO shows what's there, leaves the rest gray, and says nothing,
+    /// so the file's own end mark is looked for.
+    static func isCutShort(_ url: URL) -> Bool {
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe), data.count > 16 else { return false }
+        let bytes = [UInt8](data.prefix(8))
+        if bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
+            return data.suffix(64).range(of: Data("IEND".utf8)) == nil
+        }
+        guard bytes.starts(with: [0xFF, 0xD8]) else { return false }
+        // Past the header's parts (where a thumbnail with its own end can
+        // hide) to the picture itself; it ends with FF D9.
+        var at = data.startIndex + 2
+        while at + 4 <= data.endIndex, data[at] == 0xFF {
+            let marker = data[at + 1]
+            if marker == 0xDA { break }  // the picture's data starts
+            if marker == 0xD8 || marker == 0x01 || (0xD0...0xD7).contains(marker) || marker == 0xFF { at += marker == 0xFF ? 1 : 2; continue }
+            at += 2 + (Int(data[at + 2]) << 8 | Int(data[at + 3]))
+        }
+        guard at < data.endIndex else { return true }
+        return data[at...].range(of: Data([0xFF, 0xD9])) == nil
     }
 
     /// The picture on a solid color (JPEG has no transparency), given as

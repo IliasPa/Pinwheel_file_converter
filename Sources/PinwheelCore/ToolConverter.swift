@@ -36,7 +36,7 @@ enum ToolConverter {
             try await ArchiveTools.make(request.files.map(\.url), format: .zip, destination: destination)
         case (.archive, .extract):
             progress(0.05)
-            try await ArchiveTools.extract(file.url, into: destination)
+            return try await ArchiveTools.extract(file.url, into: destination)
         case (.archive, _), (_, .extract):
             throw ConversionError.unsupported("\(tool.title) for \(file.url.lastPathComponent)")
         case (.image, .collage):
@@ -72,6 +72,10 @@ enum ToolConverter {
                 throw NothingToDo(reason: "Nothing was changed, so nothing was saved.")
             }
             progress(0.1)
+            if [.gif, .png, .webp, .heic].contains(format), file.isAnimated {
+                try await AnimatedPicture.edit(file.url, edit: edit, format: format, destination: destination, options: options, progress: progress)
+                return nil
+            }
             let chosen = edit
             return try await Blocking.run { _ in
                 try StudioExporter.export(file.url, edit: chosen, format: format, destination: destination, options: options)
@@ -79,7 +83,11 @@ enum ToolConverter {
         case (.image, _):
             guard let format = plan.format else { throw ConversionError.unsupported(destination.pathExtension.uppercased()) }
             progress(0.1)
-            try await ImageTools.run(tool, source: file.url, format: format, destination: destination, options: options)
+            if [.compress, .resize, .stripMetadata].contains(tool), [.gif, .png, .webp, .heic].contains(format), file.isAnimated {
+                try await AnimatedPicture.tool(tool, source: file.url, format: format, destination: destination, options: options, progress: progress)
+            } else {
+                try await ImageTools.run(tool, source: file.url, format: format, destination: destination, options: options)
+            }
         case (.pdf, _):
             progress(0.05)
             try PDFTools.run(tool, request: request, destination: destination, options: options, progress: progress)
@@ -97,9 +105,6 @@ enum ToolConverter {
 enum ImageTools {
     static func run(_ tool: ToolAction, source: URL, format: OutputFormat, destination: URL, options: ConversionOptions) async throws {
         let src = try ImageConverter.open(source)
-        if CGImageSourceGetCount(src) > 1, CGImageSourceGetType(src) as String? == OutputFormat.gif.utType.identifier {
-            throw ConversionError.failed("\(tool.title) doesn't work on animated GIFs yet.")
-        }
         switch tool {
         case .compress where format == .png:
             try await compressPNG(source, src, to: destination, options: options)
@@ -134,6 +139,17 @@ enum ImageTools {
     /// shrinking the file a lot with no visible change; without it only a
     /// lossless re-save is possible, which rarely helps.
     static func compressPNG(_ source: URL, _ src: CGImageSource, to url: URL, options: ConversionOptions) async throws {
+        // A picture named .png that's really another kind (often a JPEG):
+        // pngquant can't read it, so it gets a real PNG of it first.
+        if CGImageSourceGetType(src) as String? != OutputFormat.png.utType.identifier {
+            let png = FileManager.default.temporaryDirectory.appendingPathComponent("pinwheel-\(UUID().uuidString).png")
+            defer { try? FileManager.default.removeItem(at: png) }
+            let dest = try ImageConverter.makeDestination(png, format: .png)
+            CGImageDestinationAddImage(dest, try ImageConverter.orientedImage(src, index: CGImageSourceGetPrimaryImageIndex(src)), nil)
+            try ImageConverter.finalize(dest, png)
+            try await compressPNG(png, try ImageConverter.open(png), to: url, options: options)
+            return
+        }
         guard let pngquant = options.pngquantURL else {
             let dest = try ImageConverter.makeDestination(url, format: .png)
             CGImageDestinationAddImageFromSource(dest, src, CGImageSourceGetPrimaryImageIndex(src), nil)
@@ -414,12 +430,13 @@ struct AudioFormat {
     let channels: Int
     let sampleRate: Double
 
-    static func of(_ track: AVAssetTrack) async throws -> AudioFormat {
+    /// `maxRate`: 48 kHz for AAC; higher when the result is lossless.
+    static func of(_ track: AVAssetTrack, maxRate: Double = 48_000) async throws -> AudioFormat {
         let descriptions = try await track.load(.formatDescriptions)
         let stream = descriptions.first.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee }
         return AudioFormat(
             channels: max(1, min(Int(stream?.mChannelsPerFrame ?? 2), 2)),
-            sampleRate: min(stream?.mSampleRate ?? 44_100, 48_000)
+            sampleRate: min(stream?.mSampleRate ?? 44_100, maxRate)
         )
     }
 
@@ -440,7 +457,7 @@ struct AudioFormat {
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: channels,
-            AVEncoderBitRateKey: bitRate,
+            AVEncoderBitRateKey: AACBitRate.allowed(bitRate, sampleRate: sampleRate, channels: channels),
         ]
     }
 }

@@ -38,7 +38,8 @@ enum ArchiveTools {
     static func make(_ items: [URL], format: OutputFormat, destination: URL) async throws {
         var arguments = ["-c", "-f", destination.path, "--no-mac-metadata", "--exclude", ".DS_Store"]
         switch format {
-        case .zip: arguments += ["--format", "zip"]
+        // Names marked as UTF-8, so Windows shows Greek (or any) names right.
+        case .zip: arguments += ["--format", "zip", "--options", "zip:hdrcharset=UTF-8"]
         case .tar: break
         case .tgz: arguments += ["-z"]
         case .sevenZip: arguments += ["--format", "7zip"]
@@ -51,8 +52,10 @@ enum ArchiveTools {
         try await run(arguments, what: "the \(format.title) file")
     }
 
-    /// Everything in an archive, into `folder`.
-    static func extract(_ archive: URL, into folder: URL) async throws {
+    /// Everything in an archive, into `folder`. Returns a note when some
+    /// files were left out (names that would land outside the folder).
+    @discardableResult
+    static func extract(_ archive: URL, into folder: URL) async throws -> String? {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         switch singleFileCompression(of: archive) {
         case "xz":
@@ -61,22 +64,38 @@ enum ArchiveTools {
             let tool = squeeze == "gz" ? "/usr/bin/gunzip" : "/usr/bin/bunzip2"
             try await unsqueeze(tool, archive, to: folder.appendingPathComponent(baseName(of: archive)))
         case nil:
-            try await run(["-x", "-f", archive.path, "-C", folder.path], what: archive.lastPathComponent)
+            // In UTF-8, so names in any language come out right whatever
+            // locale the app was started with.
+            let result = try await ProcessRunner.run(tar, ["-x", "-f", archive.path, "-C", folder.path], environment: ["LC_ALL": "en_US.UTF-8"])
+            guard result.status != 0 else { return nil }
+            // tar refuses names with ".." or a leading "/" and opens the
+            // rest: that's a success, with a word about what was left out.
+            let complaints = result.stderr.split(whereSeparator: \.isNewline).map(String.init).filter { !$0.contains("Error exit delayed") }
+            let unsafe = complaints.filter { $0.contains("Path contains '..'") || $0.contains("Removing leading") || $0.contains("absolute path") }
+            guard !unsafe.isEmpty, unsafe.count == complaints.count else { throw problem(result.stderr, what: archive.lastPathComponent) }
+            return unsafe.count == 1
+                ? "1 file was left out: its name would have put it outside the folder."
+                : "\(unsafe.count) files were left out: their names would have put them outside the folder."
         }
+        return nil
     }
 
     /// One kind of archive into another: opened, then packed again.
-    static func convert(_ archive: URL, to format: OutputFormat, destination: URL) async throws {
+    static func convert(_ archive: URL, to format: OutputFormat, destination: URL) async throws -> String? {
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("pinwheel-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: work) }
-        try await extract(archive, into: work)
+        let note = try await extract(archive, into: work)
         let items = try FileManager.default.contentsOfDirectory(at: work, includingPropertiesForKeys: nil)
-        guard !items.isEmpty else { throw NothingToDo(reason: "\(archive.lastPathComponent) is empty.") }
+        guard !items.isEmpty else {
+            throw NothingToDo(reason: note == nil ? "\(archive.lastPathComponent) is empty."
+                : "Nothing was saved: every file in \(archive.lastPathComponent) would have landed outside the folder.")
+        }
         try await make(items.sorted { $0.lastPathComponent < $1.lastPathComponent }, format: format, destination: destination)
+        return note
     }
 
     private static func run(_ arguments: [String], what: String) async throws {
-        let result = try await ProcessRunner.run(tar, arguments)
+        let result = try await ProcessRunner.run(tar, arguments, environment: ["LC_ALL": "en_US.UTF-8"])
         guard result.status == 0 else { throw problem(result.stderr, what: what) }
     }
 
@@ -86,8 +105,15 @@ enum ArchiveTools {
         if lower.contains("passphrase") || lower.contains("encrypt") || lower.contains("password") {
             return .failed("\(what) has a password, and Pinwheel can't open those yet.")
         }
+        if lower.contains("truncated") || lower.contains("premature end") || lower.contains("unexpected end") || lower.contains("damaged") {
+            return .failed("\(what) is incomplete or damaged. If it was downloaded, try downloading it again.")
+        }
+        if lower.contains("unrecognized archive format") {
+            return .failed("\(what) isn't an archive Pinwheel can open.")
+        }
         let line = stderr.split(whereSeparator: \.isNewline).first { !$0.contains("Error exit delayed") }
-        let reason = line.map { $0.replacingOccurrences(of: "tar: ", with: "") } ?? "it stopped with an error"
+        let reason = (line.map { $0.replacingOccurrences(of: "tar: ", with: "") } ?? "it stopped with an error")
+            .replacingOccurrences(of: ": Unknown error: -1", with: "")
         return .failed("Couldn't make or open \(what): \(reason)")
     }
 

@@ -394,9 +394,15 @@ enum AttributedDocument {
         let pageSize = landscape ? CGSize(width: portrait.height, height: portrait.width) : portrait
         let font = Self.font(ofSize: fontSize), bold = Self.font(ofSize: fontSize, bold: true)
 
+        // Most cells are one short line: measured without laying the text out.
+        let oneLine = ceil(font.ascender - font.descender + font.leading) + 2 * padding
         func height(of row: [Workbook.Cell], font: NSFont) -> CGFloat {
             (0..<columns).map { column -> CGFloat in
                 let text = column < row.count ? row[column].text : ""
+                if CGFloat(text.utf16.count) * fontSize * 0.9 < widths[column] - 2 * padding, !text.contains("\n"),
+                   text.unicodeScalars.allSatisfy({ $0.value < 0x0530 }) {
+                    return oneLine
+                }
                 let rect = (text as NSString).boundingRect(
                     with: CGSize(width: widths[column] - 2 * padding, height: .greatestFiniteMagnitude),
                     options: [.usesLineFragmentOrigin], attributes: [.font: font]
@@ -476,22 +482,27 @@ final class PDFPages {
         let pages = PDFPages(context: context, size: size)
         try body(pages)
         context.closePDF()
+        PDFTextRepair.fixGreekMu(in: url)
     }
 
     func draw(size pageSize: CGSize? = nil, _ content: (CGContext) -> Void) {
         let size = pageSize ?? size
         var box = CGRect(origin: .zero, size: size)
         let info = [kCGPDFContextMediaBox: Data(bytes: &box, count: MemoryLayout<CGRect>.size)] as CFDictionary
-        context.beginPDFPage(info)
-        context.saveGState()
-        context.translateBy(x: 0, y: size.height)
-        context.scaleBy(x: 1, y: -1)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-        content(context)
-        NSGraphicsContext.restoreGraphicsState()
-        context.restoreGState()
-        context.endPDFPage()
+        // Each page lets go of what drawing it took: a 2,000-page sheet
+        // used to need almost a gigabyte.
+        autoreleasepool {
+            context.beginPDFPage(info)
+            context.saveGState()
+            context.translateBy(x: 0, y: size.height)
+            context.scaleBy(x: 1, y: -1)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            content(context)
+            NSGraphicsContext.restoreGraphicsState()
+            context.restoreGState()
+            context.endPDFPage()
+        }
     }
 }
 

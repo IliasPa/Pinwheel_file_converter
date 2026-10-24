@@ -115,7 +115,9 @@ struct V110Tests {
             ruledTable(ctx, top: 560, rows: [["Paid", "Date", "Left"], ["Yes", "2026-10-24", "(300,00)"], ["No", "-", "0,00"]])
         }
         let workbook = try await PDFStructure.workbook(url, recognition: TextRecognition()) { _ in }
-        #expect(workbook.sheets.map(\.name) == ["Page 1, table 1", "Page 1, table 2"])
+        // v2.0: the words outside the tables on a sheet of their own.
+        #expect(workbook.sheets.map(\.name) == ["Page 1, table 1", "Page 1, table 2", "Other text"])
+        #expect(workbook.sheets[2].rows.map { $0.map(\.text).joined(separator: " ") }.filter { !$0.isEmpty } == ["Page 1", "Invoice 2026-118", "Thank you."])
         #expect(workbook.sheets[0].rows == [
             [.text("Item"), .text("Units"), .text("Price")],
             [.text("Olive oil (5 litres)"), .number(2), .number(1250)],

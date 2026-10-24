@@ -24,10 +24,8 @@ public struct StudioSource: @unchecked Sendable {
     /// `maxPixelSize` limits the longer side (for previews); nil loads it all.
     public static func load(_ url: URL, maxPixelSize: Int? = nil) throws -> StudioSource {
         let src = try ImageConverter.open(url)
+        // A moving picture shows its first frame (the edit is done on every frame).
         let index = CGImageSourceGetPrimaryImageIndex(src)
-        if CGImageSourceGetCount(src) > 1, CGImageSourceGetType(src) as String? == OutputFormat.gif.utType.identifier {
-            throw ConversionError.failed("Editing doesn't work on animated GIFs yet.")
-        }
         let properties = CGImageSourceCopyPropertiesAtIndex(src, index, nil) as? [CFString: Any] ?? [:]
         let width = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
         let height = properties[kCGImagePropertyPixelHeight] as? Int ?? 0
@@ -487,9 +485,14 @@ public enum StudioRenderer {
         return result
     }
 
-    /// The picture's own RGB color space (e.g. Display P3), else sRGB.
+    /// The picture's own RGB color space (e.g. Display P3), else sRGB. The
+    /// result has 8 bits a channel, so HDR and linear spaces (an EXR's)
+    /// become sRGB: they need more bits (drawing failed with "not enough memory").
     static func outputColorSpace(for image: CGImage) -> CGColorSpace {
-        if let space = image.colorSpace, space.model == .rgb { return space }
+        if let space = image.colorSpace, space.model == .rgb, !CGColorSpaceUsesExtendedRange(space),
+           !((space.name as String?) ?? "").localizedCaseInsensitiveContains("linear") {
+            return space
+        }
         return CGColorSpace(name: CGColorSpace.sRGB)!
     }
 
