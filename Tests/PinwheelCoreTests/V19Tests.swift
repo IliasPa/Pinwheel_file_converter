@@ -52,14 +52,30 @@ struct AnimationTests {
         #expect(try abs(frames.frame(1).delay - 0.2) < 0.001)
     }
 
+    /// Whether this Mac can write a HEIC sequence (it needs Apple's HEVC
+    /// encoder, which virtual Macs don't have).
+    static let heicSequencesWork: Bool = {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.heics" as CFString, 2, nil),
+              let ctx = CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let image = ctx.makeImage() else { return false }
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination)
+    }()
+
     @Test func animationsKeepMoving() async throws {
         let folder = try TempFolder()
         let gif = folder.file("moving.gif")
         try Self.animatedGIF(at: gif)
         let png = try await runConversion(gif, .convert(.png))
         #expect(frameCount(png) == 4, "an animated PNG")
-        let heic = try await runConversion(gif, .convert(.heic))
-        #expect(frameCount(heic) == 4, "a HEIC sequence")
+        // (Virtual Macs, as GitHub's, can't write HEIC sequences.)
+        if Self.heicSequencesWork {
+            let heic = try await runConversion(gif, .convert(.heic))
+            #expect(frameCount(heic) == 4, "a HEIC sequence")
+        }
         // Back into a GIF, still moving, from the PNG.
         let again = try await runConversion(png, .convert(.gif))
         #expect(frameCount(again) == 4)

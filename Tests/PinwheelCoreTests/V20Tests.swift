@@ -221,6 +221,26 @@ struct V20Tests {
         let folder = try TempFolder()
         let gif = folder.file("moving.gif")
         try animatedGIF(at: gif)
+        // Each tool keeps it a GIF (Compress made an animated HEIC, Size Limit a JPEG).
+        for tool in [ToolAction.compress, .resize, .stripMetadata, .sizeLimit] {
+            #expect(OutputPlanner.toolOutput(tool, for: SourceFile(url: gif)).1 == "gif", "\(tool)")
+        }
+        var turn = ImageEdit()
+        turn.quarterTurns = 1
+        #expect(OutputPlanner.toolOutput(.edit, for: SourceFile(url: gif), request: ConversionRequest(file: SourceFile(url: gif), action: .tool(.edit), parameters: .image(turn))).1 == "gif")
+        // Size Limit on a busier one (a tiny GIF can't lose a third).
+        let busy = folder.file("busy.gif")
+        let destination = try #require(CGImageDestinationCreateWithURL(busy as CFURL, UTType.gif.identifier as CFString, 6, nil))
+        for _ in 0..<6 {
+            CGImageDestinationAddImage(destination, MediaFixtures.noiseImage(width: 240, height: 180),
+                                       [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.1]] as CFDictionary)
+        }
+        #expect(CGImageDestinationFinalize(destination))
+        let size = try #require(FileSize.of(busy))
+        let attempt = try await runRequest(ConversionRequest(file: SourceFile(url: busy), action: .tool(.sizeLimit), parameters: .sizeLimit(bytes: size * 7 / 10)))
+        let limited = try #require(attempt.outputs.first, "\(attempt.note ?? "") (\(size) bytes)")
+        #expect((FileSize.of(limited) ?? .max) <= size * 7 / 10)
+        #expect(limited.pathExtension == "gif" && CGImageSourceCreateWithURL(limited as CFURL, nil).map(CGImageSourceGetCount) == 6)
 
         let resized = try await runConversion(gif, .tool(.resize))
         let src = try #require(CGImageSourceCreateWithURL(resized as CFURL, nil))
@@ -237,8 +257,9 @@ struct V20Tests {
         let gif = folder.file("moving.gif")
         try animatedGIF(at: gif, frames: 20)
         let result = try await runRequest(ConversionRequest(file: SourceFile(url: gif), action: .tool(.compress)))
-        // Either smaller and still moving, or kept as it was (already small).
+        // Either a smaller GIF still moving, or kept as it was (already small).
         if let output = result.outputs.first {
+            #expect(output.pathExtension == "gif")
             #expect(CGImageSourceCreateWithURL(output as CFURL, nil).map(CGImageSourceGetCount) == 20)
             #expect((FileSize.of(output) ?? 0) < (FileSize.of(gif) ?? 0))
         } else {

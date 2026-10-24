@@ -79,6 +79,13 @@ enum OutputPlanner {
         request: ConversionRequest? = nil, options: ConversionOptions = ConversionOptions()
     ) -> (OutputFormat?, String?) {
         let ext = file.url.pathExtension.lowercased()
+        // A picture that moves stays what it is, so it keeps moving (a GIF
+        // stays a GIF: Compress made it an animated HEIC, Size Limit a JPEG).
+        if file.kind == .image, [.compress, .resize, .stripMetadata, .sizeLimit, .edit].contains(tool),
+           request?.imageEdit.format == nil, file.isAnimated {
+            if let format = file.format, [.gif, .webp, .png, .heic].contains(format) { return (format, ext) }
+            return (.heic, OutputFormat.heic.fileExtension)  // a HEIC sequence (.heics)
+        }
         switch (file.kind, tool) {
         case (_, .archive):
             return (.zip, OutputFormat.zip.fileExtension)
