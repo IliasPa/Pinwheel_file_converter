@@ -3,14 +3,14 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
-## v2.0.1 (beta) — 2026-10-24
+## v2.0.1 — 2026-10-24
 
 **Fixed**
 - **A moving GIF stays a GIF** with Compress, Size Limit and the image
   editor, and a moving WebP stays a WebP: in 2.0, Compress made them an
   animated HEIC, which few apps play, and Size Limit a still JPEG.
 
-## v2.0 (beta) — 2026-10-24
+## v2.0 — 2026-10-24
 
 Every format and tool was tried on about 180 hard files: phone photos,
 HDR and see-through video, 5.1 sound, Greek in old encodings, Word files
