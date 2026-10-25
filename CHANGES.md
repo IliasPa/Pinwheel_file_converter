@@ -168,7 +168,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
 - **Fewer yellow ticks:** what a format holds by its nature isn't a loss
   (icons up to 256 × 256, plain text, compressed sound into lossless).
 
-## v1.7.8 (beta) — 2026-10-24
+## v1.7.8 — 2026-10-24
 
 **New**
 - **One Wheels page in Settings,** in place of Wheel, Conversions and
@@ -195,7 +195,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
 - **Appearance and Wheel feedback are in General** (the glass, the
   click sound and the trackpad vibration).
 
-## v1.7.7 (beta) — 2026-10-23
+## v1.7.7 — 2026-10-23
 
 **New**
 - **Straighten snaps to level.** In the image editor, the angle is pulled
@@ -239,7 +239,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
   minute, so opening it again is instant.
 - The clipboard history appears at once, without fading in.
 
-## v1.7.6 (beta) — 2026-10-23
+## v1.7.6 — 2026-10-23
 
 **Changed**
 - **Quick buttons show only when they'd do something:**
@@ -265,7 +265,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
 **Fixed**
 - Anchored, a quick button pressed just after a paste only copied.
 
-## v1.7.5 (beta) — 2026-10-22
+## v1.7.5 — 2026-10-22
 
 **New**
 - **Your own collections** in the clipboard history: copies put together
@@ -279,7 +279,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
 - Drag a copy onto **Favorites** to make it a favorite.
 - Clear History keeps the copies in collections, as it keeps favorites.
 
-## v1.7.4 (beta) — 2026-10-22
+## v1.7.4 — 2026-10-22
 
 **New**
 - **Quick buttons under each copy** in the clipboard history. Click one
@@ -302,7 +302,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
 **Fixed**
 - Anchored, a history closed right after choosing a copy could come back.
 
-## v1.7.3 (beta) — 2026-10-22
+## v1.7.3 — 2026-10-22
 
 **New**
 - **See all of a copy:** press and hold one in the clipboard history, or
@@ -319,7 +319,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
   formatted text, pictures, files.
 - The right-click menu has Preview.
 
-## v1.7.2 (beta) — 2026-10-22
+## v1.7.2 — 2026-10-22
 
 **New**
 - **An anchor** at the bottom of the clipboard history, next to its
@@ -338,7 +338,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
   around the window's shadow, and the window was taller than its glass;
   now the window is just the glass, with a soft shadow of its own.
 
-## v1.7.1 (beta) — 2026-10-22
+## v1.7.1 — 2026-10-22
 
 **New**
 - **Choosing a copy pastes it where you're typing.** Click one (or press
@@ -356,7 +356,7 @@ What the yellow ticks in Settings › Compatibility lost, kept.
   (and the tests on GitHub did): Vision now works on a thread of its own,
   and reading text that fails because the Mac is busy is tried again.
 
-## v1.7 (beta) — 2026-10-21
+## v1.7 — 2026-10-21
 
 A clipboard history.
 
