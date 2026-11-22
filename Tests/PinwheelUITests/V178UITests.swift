@@ -70,7 +70,7 @@ struct V178Tests {
     /// Conversions and Tools are one page, Wheels; Appearance and Wheel
     /// feedback are in General.
     @Test func oneWheelsPage() {
-        #expect(SettingsPane.allCases.map(\.title) == ["General", "Wheels", "Compatibility", "Clipboard", "Text Recognition", "Finder & Shortcuts", "Advanced"])
+        #expect(SettingsPane.allCases.map(\.title) == ["General", "Wheels", "Compatibility", "Clipboard", "Hot Corners", "Text Recognition", "Finder & Shortcuts", "Advanced"])
         func found(_ text: String) -> [SettingsPane] { SettingsPane.allCases.filter { $0.matches(text) } }
         #expect(found("vibration") == [.general] && found("frosted") == [.general])
         #expect(found("keys").contains(.wheel) && found("airdrop") == [.wheel] && found("custom actions") == [.wheel])

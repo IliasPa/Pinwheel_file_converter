@@ -99,6 +99,13 @@ of the filters (while you drag a copy, empty ones show, to drop it on). The **an
 work in other apps. The keys, and how many copies to keep (with the room
 they take), are in Settings › Clipboard.
 
+**Hot corners for apps:** rest the pointer in a corner of the screen and
+an app opens: any app, a different one in each corner. Settings › Hot
+Corners shows your screen; click a corner to choose its app. Corners stay
+quiet in games and full-screen apps (a switch turns that off). (For actions
+such as Mission Control, use macOS's own hot corners, System Settings ›
+Desktop & Dock › Hot Corners.)
+
 **And**
 - **Undo** at the top of the menu-bar menu: new files go to the Trash and
   originals come back.
@@ -190,6 +197,7 @@ in a sidebar with a search field:
 - **Clipboard** (beta): the history on or off, its keys (⌥⌘V), pasting or
   just copying, how a preview opens, the quick buttons, and how many
   copies it keeps.
+- **Hot Corners:** the app each corner opens, and how long to rest there.
 - **Text Recognition**, **Finder & Shortcuts** (and the `pinwheel`
   command), and **Advanced** (how many files at once, ffmpeg, Reset to
   Defaults).

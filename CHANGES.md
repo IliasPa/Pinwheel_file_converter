@@ -3,6 +3,24 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.2 — 2026-11-21
+
+**New**
+- **Hot corners for apps:** rest the pointer in a corner of the screen and
+  an app opens (or comes to the front). Any app on the Mac, a different one
+  in each corner. Settings › Hot Corners has a picture of your screen:
+  click a corner to choose its app. You choose how long to rest before it
+  opens (right away to one second); moving away and back opens it again.
+  Nothing opens while a mouse button is held, so dragging files to a corner
+  is safe, and a corner that touches another display isn't a corner (the
+  pointer goes on through it).
+- **Not in games and full-screen apps** (on by default, a switch in
+  Settings › Hot Corners): corners stay quiet while a game, a full-screen
+  app or a full-screen video is in front.
+- Want an **action** (Mission Control, Notification Center, Lock Screen…)
+  rather than an app? macOS has those built in: the tab explains the steps
+  (System Settings › Desktop & Dock › Hot Corners) and opens that page.
+
 ## v2.0.1 — 2026-10-24
 
 **Fixed**

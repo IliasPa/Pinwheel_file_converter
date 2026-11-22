@@ -82,6 +82,7 @@ final class SettingsStore {
         case textRecognition
         case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes, clipboardPreview, clipboardActions
         case jpegBackground, subtitleTimes
+        case hotCornersEnabled, hotCornerApps, hotCornerDelay, hotCornersSkipFullScreen
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -185,6 +186,15 @@ final class SettingsStore {
     /// The clipboard history follows its settings at once.
     @ObservationIgnored var onClipboardChange: () -> Void = {}
 
+    // Hot corners
+    /// Resting the pointer in a screen corner opens its app.
+    var hotCornersEnabled: Bool { didSet { save(hotCornersEnabled, .hotCornersEnabled) } }
+    /// The app each corner opens.
+    var hotCornerApps: HotCornerApps { didSet { save(hotCornerApps.stored, .hotCornerApps) } }
+    var hotCornerDelay: HotCornerDelay { didSet { save(hotCornerDelay.rawValue, .hotCornerDelay) } }
+    /// Corners do nothing while a game or a full-screen app is in front.
+    var hotCornersSkipFullScreen: Bool { didSet { save(hotCornersSkipFullScreen, .hotCornersSkipFullScreen) } }
+
     // Text recognition
     var textRecognition: TextRecognitionChoice { didSet { save(textRecognition.rawValue, .textRecognition) } }
     /// Bumped when a language file is added, so views showing what's installed refresh.
@@ -238,6 +248,10 @@ final class SettingsStore {
             .clipboardPastes: true,
             .clipboardPreview: ClipPreviewTrigger.holdOrSpace.rawValue,
             .clipboardActions: true,
+            .hotCornersEnabled: true,
+            .hotCornerApps: [String: String](),
+            .hotCornerDelay: HotCornerDelay.short.rawValue,
+            .hotCornersSkipFullScreen: true,
         ]
     }
 
@@ -296,6 +310,10 @@ final class SettingsStore {
         clipboardPastes = defaults.bool(forKey: Key.clipboardPastes.rawValue)
         clipboardPreview = ClipPreviewTrigger(rawValue: string(.clipboardPreview)) ?? .holdOrSpace
         clipboardActions = defaults.bool(forKey: Key.clipboardActions.rawValue)
+        hotCornersEnabled = defaults.bool(forKey: Key.hotCornersEnabled.rawValue)
+        hotCornerApps = HotCornerApps(stored: defaults.dictionary(forKey: Key.hotCornerApps.rawValue))
+        hotCornerDelay = HotCornerDelay(rawValue: defaults.double(forKey: Key.hotCornerDelay.rawValue)) ?? .short
+        hotCornersSkipFullScreen = defaults.bool(forKey: Key.hotCornersSkipFullScreen.rawValue)
         placeNewTools()
     }
 
@@ -502,6 +520,10 @@ final class SettingsStore {
         clipboardPastes = fresh.clipboardPastes
         clipboardPreview = fresh.clipboardPreview
         clipboardActions = fresh.clipboardActions
+        hotCornersEnabled = fresh.hotCornersEnabled
+        hotCornerApps = fresh.hotCornerApps
+        hotCornerDelay = fresh.hotCornerDelay
+        hotCornersSkipFullScreen = fresh.hotCornersSkipFullScreen
     }
 
     /// The last watermark saved from the image editor, offered again next time.

@@ -9,6 +9,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private let launch = LaunchAtLogin()
     private let permission = AccessibilityPermission()
     private let dragMonitor = DragMonitor()
+    private let hotCorners = HotCornerMonitor()
     private let jobs = JobQueue()
     private let history = UndoHistory()
     private let services = ServicesProvider()
@@ -70,6 +71,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         dragMonitor.keys = { settings.wheelKeys }
         dragMonitor.keepsOpen = { settings.keepWheelOpen }
         dragMonitor.start()
+
+        hotCorners.apps = { settings.hotCornerApps }
+        hotCorners.isEnabled = { settings.hotCornersEnabled }
+        hotCorners.delay = { settings.hotCornerDelay }
+        hotCorners.skipsFullScreen = { settings.hotCornersSkipFullScreen }
+        hotCorners.start()
 
         let availability: (WheelAction, [SourceFile]) -> Availability = { action, files in
             ConversionEngine.availability(
@@ -157,6 +164,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         dragMonitor.stop()
+        hotCorners.stop()
     }
 
     // MARK: - Private

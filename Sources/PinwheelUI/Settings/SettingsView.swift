@@ -99,7 +99,7 @@ final class ShortcutRecorder {
 
 /// The pages of the Settings window, in the sidebar's order.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, wheel, compatibility, clipboard, textRecognition, finderAndShortcuts, advanced
+    case general, wheel, compatibility, clipboard, hotCorners, textRecognition, finderAndShortcuts, advanced
 
     var id: Self { self }
 
@@ -109,6 +109,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .wheel: "Wheels"
         case .compatibility: "Compatibility"
         case .clipboard: "Clipboard"
+        case .hotCorners: "Hot Corners"
         case .textRecognition: "Text Recognition"
         case .finderAndShortcuts: "Finder & Shortcuts"
         case .advanced: "Advanced"
@@ -122,6 +123,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .wheel: nil
         case .compatibility: "tablecells"
         case .clipboard: "list.clipboard"
+        case .hotCorners: "rectangle.inset.topleft.filled"
         case .textRecognition: "text.viewfinder"
         case .finderAndShortcuts: "contextualmenu.and.cursorarrow"
         case .advanced: "gearshape.2"
@@ -135,6 +137,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .wheel: Brand.indigo
         case .compatibility: Brand.teal
         case .clipboard: .pink
+        case .hotCorners: .orange
         case .textRecognition: .purple
         case .finderAndShortcuts: .green
         }
@@ -174,6 +177,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
                                                                      "powerpoint", "keynote", "numbers", "subtitles"]
         case .clipboard:
             return ["clipboard", "history", "paste", "copy", "copied", "favorites", "heart", "shortcut", "keys", "pasta", "beta", "preview", "drag", "plain text", "links", "tracking", "buttons", "collections"]
+        case .hotCorners:
+            return ["hot corner", "corners", "launch an app", "pointer", "mouse", "cursor"]
         case .textRecognition:
             return ["ocr", "get text", "searchable", "tesseract", "greek", "language", "apple"]
         case .finderAndShortcuts:
@@ -332,6 +337,8 @@ struct SettingsView: View {
             CompatibilityPane(settings: settings, state: state)
         case .clipboard:
             Form { clipboardSection }
+        case .hotCorners:
+            Form { hotCornersSection }
         case .textRecognition:
             Form { textRecognition }
         case .finderAndShortcuts:
@@ -860,6 +867,55 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Hot corners
+
+    private var hotCornersSection: some View {
+        Group {
+            Section {
+                Toggle("Open an app from a screen corner", isOn: $settings.hotCornersEnabled)
+                Picker("Open it", selection: $settings.hotCornerDelay) {
+                    ForEach(HotCornerDelay.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .disabled(!settings.hotCornersEnabled)
+                Toggle("Not in games and full-screen apps", isOn: $settings.hotCornersSkipFullScreen)
+                    .disabled(!settings.hotCornersEnabled)
+            } footer: {
+                Footnote("Move the pointer into a corner and rest it there; the app opens (or comes to the front if it's already open). Move away and back to open it again. Nothing opens while a mouse button is held, so dragging files to a corner is safe. With \"Not in games and full-screen apps\" on, corners stay quiet while a game, a full-screen app or a full-screen video is in front.")
+            }
+            Section {
+                HotCornerPicker(settings: settings)
+                    .disabled(!settings.hotCornersEnabled)
+            } header: {
+                Text("Corners")
+            } footer: {
+                Footnote("Click a corner to choose any app on this Mac. A corner that's next to another display isn't a corner: the pointer goes on through it.")
+            }
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Want an action instead of an app?")
+                        .font(.headline)
+                    Text("Mission Control, Notification Center, Lock Screen, Launchpad, Quick Note and more are built into macOS:")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    step(1, "Click **Open Desktop & Dock** below.")
+                    step(2, "Scroll to the bottom and click **Hot Corners…**.")
+                    step(3, "Click a corner's menu and choose the action. Click **Done**.")
+                    HStack {
+                        Button("Open Desktop & Dock") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.Desktop-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        Text("A corner set there and here does both.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
     // MARK: - Text recognition
 
     /// Which engine reads text, and Tesseract's Greek.
@@ -1238,5 +1294,100 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         state.isWindowVisible = true
+    }
+}
+
+/// A picture of a screen with a button in each corner: the app it opens, or
+/// "+" to choose one.
+struct HotCornerPicker: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1.5)
+            Text("Your screen")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+            ForEach(ScreenCorner.allCases) { corner in
+                chip(corner)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(corner))
+                    .padding(8)
+            }
+        }
+        .aspectRatio(16.0 / 10.0, contentMode: .fit)
+        .frame(maxWidth: 460)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+    }
+
+    private func alignment(_ corner: ScreenCorner) -> Alignment {
+        switch corner {
+        case .topLeft: .topLeading
+        case .topRight: .topTrailing
+        case .bottomLeft: .bottomLeading
+        case .bottomRight: .bottomTrailing
+        }
+    }
+
+    private func chip(_ corner: ScreenCorner) -> some View {
+        let app = settings.hotCornerApps[corner]
+        return Menu {
+            Button("Choose App…") { choose(for: corner) }
+            if app != nil {
+                Button("Remove", role: .destructive) { settings.hotCornerApps[corner] = nil }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if let app {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
+                        .resizable()
+                        .frame(width: 26, height: 26)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(Self.name(of: app)).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Text(corner.title).font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.tertiary)
+                    Text(corner.title).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: 160, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(app == nil ? Color.clear : Color.accentColor.opacity(0.14)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(app == nil ? Color.primary.opacity(0.2) : Color.accentColor.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: app == nil ? [4, 3] : []))
+            )
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("\(corner.title) corner")
+        .accessibilityValue(app.map(Self.name(of:)) ?? "No app")
+    }
+
+    static func name(of app: URL) -> String {
+        FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
+    }
+
+    private func choose(for corner: ScreenCorner) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Choose"
+        panel.message = "Choose the app the \(corner.title.lowercased()) corner opens."
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.hotCornerApps[corner] = url
+        }
     }
 }
