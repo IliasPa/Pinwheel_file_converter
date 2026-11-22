@@ -83,6 +83,7 @@ final class SettingsStore {
         case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes, clipboardPreview, clipboardActions
         case jpegBackground, subtitleTimes
         case hotCornersEnabled, hotCornerApps, hotCornerDelay, hotCornersSkipFullScreen
+        case screenshotsEnabled, screenshotShortcuts, screenshotAfter, screenshotCopy, screenshotFormat, screenshotDelay, screenshotFolder, screenshotWindowShadow
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -195,6 +196,68 @@ final class SettingsStore {
     /// Corners do nothing while a game or a full-screen app is in front.
     var hotCornersSkipFullScreen: Bool { didSet { save(hotCornersSkipFullScreen, .hotCornersSkipFullScreen) } }
 
+    // Screenshots
+    var screenshotsEnabled: Bool {
+        didSet {
+            save(screenshotsEnabled, .screenshotsEnabled)
+            onScreenshotChange()
+        }
+    }
+    /// The keys for each way to take one.
+    var screenshotShortcuts: [ScreenshotMode: KeyShortcut] {
+        didSet {
+            save(Self.stored(screenshotShortcuts), .screenshotShortcuts)
+            onScreenshotChange()
+        }
+    }
+    var screenshotAfter: ScreenshotAfter { didSet { save(screenshotAfter.rawValue, .screenshotAfter) } }
+    /// PNG, JPEG or HEIC.
+    var screenshotFormat: ScreenshotFormat { didSet { save(screenshotFormat.rawValue, .screenshotFormat) } }
+    /// Every screenshot is also copied, ready to paste.
+    var screenshotCopy: Bool { didSet { save(screenshotCopy, .screenshotCopy) } }
+    /// Seconds to wait before the picture is taken: 0, 3, 5 or 10.
+    var screenshotDelay: Int { didSet { save(screenshotDelay, .screenshotDelay) } }
+    static let screenshotDelays = [0, 3, 5, 10]
+    /// Empty: where macOS keeps its own screenshots (the Desktop, usually).
+    var screenshotFolderPath: String { didSet { save(screenshotFolderPath, .screenshotFolder) } }
+    /// A window's soft shadow comes along.
+    var screenshotWindowShadow: Bool { didSet { save(screenshotWindowShadow, .screenshotWindowShadow) } }
+    /// Shortcuts follow their settings at once.
+    @ObservationIgnored var onScreenshotChange: () -> Void = {}
+
+    /// Where screenshots are saved.
+    var screenshotFolder: URL {
+        if !screenshotFolderPath.isEmpty { return URL(fileURLWithPath: screenshotFolderPath) }
+        let system = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location")
+        if let system, !system.isEmpty { return URL(fileURLWithPath: (system as NSString).expandingTildeInPath) }
+        return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first ?? FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    /// The area last captured, so "again" can repeat it.
+    var lastScreenshotArea: NSRect? {
+        get {
+            guard let numbers = defaults.array(forKey: Self.lastScreenshotAreaKey) as? [Double], numbers.count == 4 else { return nil }
+            return NSRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3])
+        }
+        set {
+            defaults.set(newValue.map { [Double($0.minX), Double($0.minY), Double($0.width), Double($0.height)] }, forKey: Self.lastScreenshotAreaKey)
+        }
+    }
+
+    private static let lastScreenshotAreaKey = "lastScreenshotArea"
+
+    private static func stored(_ shortcuts: [ScreenshotMode: KeyShortcut]) -> [String: [String: Any]] {
+        Dictionary(uniqueKeysWithValues: shortcuts.map { ($0.key.rawValue, $0.value.stored) })
+    }
+
+    private static func screenshotShortcuts(from saved: [String: Any]?) -> [ScreenshotMode: KeyShortcut] {
+        var shortcuts: [ScreenshotMode: KeyShortcut] = [:]
+        for mode in ScreenshotMode.allCases {
+            shortcuts[mode] = KeyShortcut(stored: saved?[mode.rawValue] as? [String: Any]) ?? mode.defaultShortcut
+        }
+        return shortcuts
+    }
+
     // Text recognition
     var textRecognition: TextRecognitionChoice { didSet { save(textRecognition.rawValue, .textRecognition) } }
     /// Bumped when a language file is added, so views showing what's installed refresh.
@@ -252,6 +315,14 @@ final class SettingsStore {
             .hotCornerApps: [String: String](),
             .hotCornerDelay: HotCornerDelay.short.rawValue,
             .hotCornersSkipFullScreen: true,
+            .screenshotsEnabled: true,
+            .screenshotShortcuts: stored(Dictionary(uniqueKeysWithValues: ScreenshotMode.allCases.map { ($0, $0.defaultShortcut) })),
+            .screenshotAfter: ScreenshotAfter.edit.rawValue,
+            .screenshotCopy: true,
+            .screenshotFormat: ScreenshotFormat.png.rawValue,
+            .screenshotDelay: 0,
+            .screenshotFolder: "",
+            .screenshotWindowShadow: false,
         ]
     }
 
@@ -314,6 +385,14 @@ final class SettingsStore {
         hotCornerApps = HotCornerApps(stored: defaults.dictionary(forKey: Key.hotCornerApps.rawValue))
         hotCornerDelay = HotCornerDelay(rawValue: defaults.double(forKey: Key.hotCornerDelay.rawValue)) ?? .short
         hotCornersSkipFullScreen = defaults.bool(forKey: Key.hotCornersSkipFullScreen.rawValue)
+        screenshotsEnabled = defaults.bool(forKey: Key.screenshotsEnabled.rawValue)
+        screenshotShortcuts = Self.screenshotShortcuts(from: defaults.dictionary(forKey: Key.screenshotShortcuts.rawValue))
+        screenshotAfter = ScreenshotAfter(rawValue: string(.screenshotAfter)) ?? .edit
+        screenshotCopy = defaults.bool(forKey: Key.screenshotCopy.rawValue)
+        screenshotFormat = ScreenshotFormat(rawValue: string(.screenshotFormat)) ?? .png
+        screenshotDelay = defaults.integer(forKey: Key.screenshotDelay.rawValue)
+        screenshotFolderPath = string(.screenshotFolder)
+        screenshotWindowShadow = defaults.bool(forKey: Key.screenshotWindowShadow.rawValue)
         placeNewTools()
     }
 
@@ -524,6 +603,14 @@ final class SettingsStore {
         hotCornerApps = fresh.hotCornerApps
         hotCornerDelay = fresh.hotCornerDelay
         hotCornersSkipFullScreen = fresh.hotCornersSkipFullScreen
+        screenshotsEnabled = fresh.screenshotsEnabled
+        screenshotShortcuts = fresh.screenshotShortcuts
+        screenshotAfter = fresh.screenshotAfter
+        screenshotCopy = fresh.screenshotCopy
+        screenshotFormat = fresh.screenshotFormat
+        screenshotDelay = fresh.screenshotDelay
+        screenshotFolderPath = fresh.screenshotFolderPath
+        screenshotWindowShadow = fresh.screenshotWindowShadow
     }
 
     /// The last watermark saved from the image editor, offered again next time.

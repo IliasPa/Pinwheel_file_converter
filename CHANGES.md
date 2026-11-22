@@ -3,6 +3,60 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.3 — 2026-11-21
+
+**Screenshots** (a new tab in Settings), with the tools of Shottr that
+Pinwheel was missing. The editor is the one that opens from the ⌥⇧ wheel on
+any picture, so every new tool works there too.
+- **Take a screenshot with a shortcut:** an area (drag a box; its size in
+  pixels shows beside it), a window, the whole screen, or **the same area
+  again** (⌥⌘4, ⌥⌘5, ⌥⌘3, ⌥⌘6; change them in Settings). Also in the
+  menu-bar icon's **Screenshot** menu. Optionally wait 3, 5 or 10 seconds
+  first, and keep or drop a window's shadow.
+- **Choose the format:** PNG (the default), JPEG or HEIC, with real-life
+  examples of when each is best (text and app windows: PNG; photos and
+  anything sent by email or chat: JPEG; a big collection kept on Apple
+  devices: HEIC).
+- **Copy the text in an area** (⌥⌘7): drag over text anywhere on the screen
+  and it's read (Apple's reader, or Tesseract for Greek) and copied. No
+  picture is saved.
+- **After a screenshot:** open it in the editor, **pin it on the screen**
+  (it floats above every window: drag it, scroll to resize it, double-click
+  or Esc to close, right-click to copy, edit or fade it), or nothing. It is
+  saved as a PNG (Desktop, or a folder you choose) and copied to paste.
+- **The screen freezes** when you press the shortcut: the picture is taken
+  at that moment, not a moment after you let go, so menus, tooltips and
+  video can't change under you. (With a timer set, it's taken when the timer
+  runs out.)
+- **Copy** in the editor (⇧⌘C): puts the edited picture on the clipboard,
+  as it would be saved, without saving a file.
+- **One slider for size or strength**, above the colors: thickness for lines,
+  shapes, text and numbers (with notches at Small, Medium and Large, so you
+  can still land on them, or go between or past them); strength for Blur Out
+  (block size), Soft Blur and Spotlight (how dark).
+- **More shapes:** two-way arrow, dashed line, rounded box, filled box, check
+  mark and cross.
+- **A ruler that snaps:** Measure ends jump to the nearest edge, and a click
+  measures the space between the edges around it (⌥-click: up and down).
+- **Pixel zoom:** a magnifier beside the pointer shows each pixel and its
+  color (always on with Measure; a switch for other tools).
+- **Contrast check:** click a text color and then its background anywhere on
+  the screen to see the WCAG ratio and whether it passes AA and AAA.
+- **New editor tools:** **Line**, **Spotlight** (dims everything but what
+  matters), **Soft Blur** (smooth, next to the blocky Blur Out), **Measure**
+  (a ruler that says how many pixels it spans, in the original's pixels even
+  though the editor shows a smaller copy) and a **color picker** (any color
+  on any screen; its code is copied).
+- Needs the Screen Recording permission (Settings › Screenshots explains
+  it); nothing leaves the Mac.
+- **Erase objects:** the Erase tool takes what you select out of the
+  picture when you press Backspace, filling it in from what's around it (best
+  on plain backgrounds; it can't invent a pattern). Backspace also deletes
+  the selected mark.
+- The picture now fills the editor's window, with no border around it.
+- Not in this version: scrolling screenshots, an editor zoom,
+  and a screenshot history.
+
 ## v2.2.3 — 2026-11-23
 
 - **A hot corner can open a folder**, not only an app. In Settings › Hot

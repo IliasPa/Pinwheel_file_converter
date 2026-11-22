@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import CoreText
 import Foundation
 
@@ -10,6 +11,9 @@ struct MarkupMapping: Sendable {
     let crop: CGRect
     /// The picture being drawn on.
     let contentSize: CGSize
+    /// Pixels of the original per pixel of the turned picture drawn here
+    /// (below 1 when a smaller copy is shown): the ruler tells the real size.
+    var originalScale: CGFloat = 1
 
     var scaleX: CGFloat { contentSize.width / max(crop.width, 1) }
     var scaleY: CGFloat { contentSize.height / max(crop.height, 1) }
@@ -63,8 +67,123 @@ enum MarkupPainter {
         case .number:
             badge(annotation.text, at: first, diameter: size, color: annotation.color, in: ctx)
         case .redact:
-            pixelate(box(first, last), in: ctx, contentSize: mapping.contentSize)
+            pixelate(box(first, last), in: ctx, contentSize: mapping.contentSize, coarseness: coarseness(annotation.strength))
+        case .line:
+            ctx.move(to: first)
+            ctx.addLine(to: last)
+            ctx.strokePath()
+        case .blur:
+            softBlur(box(first, last), in: ctx, contentSize: mapping.contentSize, heaviness: coarseness(annotation.strength, range: 3))
+        case .spotlight:
+            spotlight(box(first, last), in: ctx, contentSize: mapping.contentSize, dimming: 0.2 + 0.7 * annotation.strength)
+        case .roundedBox:
+            let area = box(first, last)
+            let radius = min(area.width, area.height) * 0.22
+            ctx.addPath(CGPath(roundedRect: area, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            ctx.strokePath()
+        case .filledBox:
+            // See-through enough to read what's under it, with a solid edge.
+            let area = box(first, last)
+            ctx.setFillColor(annotation.color.cgColor.copy(alpha: 0.28) ?? annotation.color.cgColor)
+            ctx.fill(area)
+            ctx.stroke(area)
+        case .doubleArrow:
+            doubleArrow(from: first, to: last, width: size, in: ctx)
+        case .erase:
+            ObjectEraser.erase(box(first, last), in: ctx, contentSize: mapping.contentSize)
+        case .dashedLine:
+            ctx.setLineDash(phase: 0, lengths: [size * 3, size * 2.2])
+            ctx.setLineCap(.butt)
+            ctx.move(to: first)
+            ctx.addLine(to: last)
+            ctx.strokePath()
+        case .checkmark:
+            let area = box(first, last)
+            guard area.width > 1, area.height > 1 else { return }
+            ctx.move(to: CGPoint(x: area.minX + area.width * 0.08, y: area.minY + area.height * 0.5))
+            ctx.addLine(to: CGPoint(x: area.minX + area.width * 0.36, y: area.minY + area.height * 0.18))
+            ctx.addLine(to: CGPoint(x: area.minX + area.width * 0.92, y: area.minY + area.height * 0.86))
+            ctx.strokePath()
+        case .cross:
+            let area = box(first, last)
+            guard area.width > 1, area.height > 1 else { return }
+            ctx.move(to: CGPoint(x: area.minX + area.width * 0.12, y: area.minY + area.height * 0.12))
+            ctx.addLine(to: CGPoint(x: area.maxX - area.width * 0.12, y: area.maxY - area.height * 0.12))
+            ctx.move(to: CGPoint(x: area.minX + area.width * 0.12, y: area.maxY - area.height * 0.12))
+            ctx.addLine(to: CGPoint(x: area.maxX - area.width * 0.12, y: area.minY + area.height * 0.12))
+            ctx.strokePath()
+        case .measure:
+            let pixels = hypot(
+                (annotation.points[annotation.points.count - 1].x - annotation.points[0].x) * mapping.turnedSize.width,
+                (annotation.points[annotation.points.count - 1].y - annotation.points[0].y) * mapping.turnedSize.height
+            ) / max(mapping.originalScale, 0.000_001)
+            ruler(from: first, to: last, pixels: pixels, width: size, color: annotation.color, in: ctx)
         }
+    }
+
+    /// How much coarser or finer than standard: 0.5 is 1×, 0 is `1/2^range`…
+    /// and 1 is `2^range` (a range of 1 gives ½× to 2×).
+    static func coarseness(_ strength: Double, range: Double = 1) -> CGFloat {
+        CGFloat(pow(2, (min(max(strength, 0), 1) - 0.5) * 2 * range))
+    }
+
+    /// Dims everything except the area, so it stands out.
+    static func spotlight(_ area: CGRect, in ctx: CGContext, contentSize: CGSize, dimming: Double = 0.55) {
+        let hole = area.intersection(CGRect(origin: .zero, size: contentSize))
+        guard !hole.isNull, hole.width >= 2, hole.height >= 2 else { return }
+        let radius = min(hole.width, hole.height) * 0.08
+        ctx.saveGState()
+        let path = CGMutablePath()
+        path.addRect(CGRect(origin: .zero, size: contentSize))
+        path.addRoundedRect(in: hole, cornerWidth: radius, cornerHeight: radius)
+        ctx.addPath(path)
+        ctx.setFillColor(CGColor(gray: 0, alpha: dimming))
+        ctx.fillPath(using: .evenOdd)
+        ctx.restoreGState()
+    }
+
+    /// Smoothly blurs an area (the blocks of `pixelate` are the other way).
+    static func softBlur(_ area: CGRect, in ctx: CGContext, contentSize: CGSize, heaviness: CGFloat = 1) {
+        let region = area.integral.intersection(CGRect(origin: .zero, size: contentSize))
+        guard !region.isNull, region.width >= 2, region.height >= 2, let current = ctx.makeImage() else { return }
+        let flipped = CGRect(x: region.minX, y: contentSize.height - region.maxY, width: region.width, height: region.height)
+        guard let piece = current.cropping(to: flipped) else { return }
+        let sigma = max(3, max(contentSize.width, contentSize.height) / 160, min(region.width, region.height) / 14) * heaviness
+        let source = CIImage(cgImage: piece)
+        let blurred = source.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: source.extent)
+        guard let result = StudioRenderer.context.createCGImage(blurred, from: source.extent) else { return }
+        ctx.saveGState()
+        ctx.setBlendMode(.copy)
+        ctx.draw(result, in: region)
+        ctx.restoreGState()
+    }
+
+    /// A line with a bar at each end and its length in pixels in the middle.
+    static func ruler(from start: CGPoint, to end: CGPoint, pixels: CGFloat, width: CGFloat, color: MarkupColor, in ctx: CGContext) {
+        let length = hypot(end.x - start.x, end.y - start.y)
+        guard length > 0.5 else { return }
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let cap = max(width * 3, 6)
+        ctx.move(to: start)
+        ctx.addLine(to: end)
+        for point in [start, end] {
+            ctx.move(to: CGPoint(x: point.x - sin(angle) * cap, y: point.y + cos(angle) * cap))
+            ctx.addLine(to: CGPoint(x: point.x + sin(angle) * cap, y: point.y - cos(angle) * cap))
+        }
+        ctx.strokePath()
+
+        let label = "\(Int(pixels.rounded())) px"
+        let height = max(width * 2.2, 11)
+        let measured = textSize([label], height: height)
+        let middle = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let pill = CGRect(
+            x: middle.x - measured.width / 2 - height * 0.45, y: middle.y - measured.height / 2 - height * 0.1,
+            width: measured.width + height * 0.9, height: measured.height + height * 0.2
+        )
+        ctx.setFillColor(color.cgColor)
+        ctx.addPath(CGPath(roundedRect: pill, cornerWidth: pill.height / 2, cornerHeight: pill.height / 2, transform: nil))
+        ctx.fillPath()
+        text([label], at: middle, height: height, color: color.isLight ? .black : .white, glow: false, in: ctx)
     }
 
     static func box(_ a: CGPoint, _ b: CGPoint) -> CGRect {
@@ -76,15 +195,34 @@ enum MarkupPainter {
         guard length > 0.5 else { return }
         let angle = atan2(end.y - start.y, end.x - start.x)
         let head = min(max(width * 4.2, 6), length * 0.7)
-        let spread = CGFloat.pi / 7
         // The shaft stops inside the head, so its round end doesn't poke out.
         let shaftEnd = CGPoint(x: end.x - cos(angle) * head * 0.7, y: end.y - sin(angle) * head * 0.7)
         ctx.move(to: start)
         ctx.addLine(to: shaftEnd)
         ctx.strokePath()
-        ctx.move(to: end)
-        ctx.addLine(to: CGPoint(x: end.x - head * cos(angle - spread), y: end.y - head * sin(angle - spread)))
-        ctx.addLine(to: CGPoint(x: end.x - head * cos(angle + spread), y: end.y - head * sin(angle + spread)))
+        arrowHead(at: end, angle: angle, head: head, width: width, in: ctx)
+    }
+
+    /// One shaft with a head at each end (each end is the tip exactly).
+    static func doubleArrow(from start: CGPoint, to end: CGPoint, width: CGFloat, in ctx: CGContext) {
+        let length = hypot(end.x - start.x, end.y - start.y)
+        guard length > 0.5 else { return }
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let head = min(max(width * 4.2, 6), length * 0.35)
+        let inset = head * 0.7
+        ctx.move(to: CGPoint(x: start.x + cos(angle) * inset, y: start.y + sin(angle) * inset))
+        ctx.addLine(to: CGPoint(x: end.x - cos(angle) * inset, y: end.y - sin(angle) * inset))
+        ctx.strokePath()
+        arrowHead(at: end, angle: angle, head: head, width: width, in: ctx)
+        arrowHead(at: start, angle: angle + .pi, head: head, width: width, in: ctx)
+    }
+
+    /// A filled triangle whose tip is `tip`, pointing the way `angle` says.
+    static func arrowHead(at tip: CGPoint, angle: CGFloat, head: CGFloat, width: CGFloat, in ctx: CGContext) {
+        let spread = CGFloat.pi / 7
+        ctx.move(to: tip)
+        ctx.addLine(to: CGPoint(x: tip.x - head * cos(angle - spread), y: tip.y - head * sin(angle - spread)))
+        ctx.addLine(to: CGPoint(x: tip.x - head * cos(angle + spread), y: tip.y - head * sin(angle + spread)))
         ctx.closePath()
         ctx.setLineWidth(width * 0.6)
         ctx.drawPath(using: .fillStroke)
@@ -163,13 +301,13 @@ enum MarkupPainter {
 
     /// Replaces an area with big blocks of its average colors, so text and
     /// faces in it can't be read.
-    static func pixelate(_ area: CGRect, in ctx: CGContext, contentSize: CGSize) {
+    static func pixelate(_ area: CGRect, in ctx: CGContext, contentSize: CGSize, coarseness: CGFloat = 1) {
         let region = area.integral.intersection(CGRect(origin: .zero, size: contentSize))
         guard !region.isNull, region.width >= 2, region.height >= 2, let current = ctx.makeImage() else { return }
         // CGImage.cropping counts y from the top.
         let flipped = CGRect(x: region.minX, y: contentSize.height - region.maxY, width: region.width, height: region.height)
         guard let piece = current.cropping(to: flipped) else { return }
-        let block = max(4, max(contentSize.width, contentSize.height) / 90, min(region.width, region.height) / 8)
+        let block = max(3, max(4, max(contentSize.width, contentSize.height) / 90, min(region.width, region.height) / 8) * coarseness)
         let columns = max(1, Int((region.width / block).rounded()))
         let rows = max(1, Int((region.height / block).rounded()))
         guard let small = CGContext(

@@ -21,6 +21,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var editors = EditorCoordinator(settings: settings)
     private lazy var shelf = ShelfController(settings: settings)
     private lazy var clipboard = ClipboardController(settings: settings)
+    private lazy var screenshots = ScreenshotController(settings: settings)
     private var settingsState: SettingsViewState?
     private var menuBar: MenuBarController?
     private var settingsWindow: SettingsWindowController?
@@ -44,10 +45,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 showFeedback: { [weak self] in self?.showFeedback() },
                 toggleShelf: { [weak self] in self?.shelf.toggle() },
                 showClipboard: { [weak self] in self?.clipboard.show() },
+                capture: { [weak self] mode in self?.screenshots.capture(mode) },
+                closePins: { [weak self] in self?.screenshots.closePins() },
                 quit: { NSApp.terminate(nil) }
             ),
             shelfCount: { [weak self] in self?.shelf.model.items.count ?? 0 },
             clipboardShortcut: { settings.clipboardEnabled ? settings.clipboardShortcut : nil },
+            screenshotShortcuts: { settings.screenshotsEnabled ? settings.screenshotShortcuts : nil },
+            pinCount: { [weak self] in self?.screenshots.pinCount ?? 0 },
             recents: recents,
             history: history,
             launch: launch,
@@ -136,6 +141,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboard.onOpenSettings = { [weak self] in self?.showSettings(pane: .clipboard) }
         settings.onClipboardChange = { [weak self] in self?.clipboard.apply() }
         clipboard.apply()
+        // Screenshots: the shortcuts, and the editor they open (the wheel's own).
+        screenshots.onEdit = { [weak self] url in self?.editors.open(.markup, files: [SourceFile(url: url)]) }
+        screenshots.onNeedsPermission = { [weak self] in self?.showSettings(pane: .screenshots) }
+        settings.onScreenshotChange = { [weak self] in self?.screenshots.apply() }
+        screenshots.apply()
         commands.recipes = { settings.recipes }
         commands.availability = availability
         commands.start()
@@ -199,7 +209,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.wheel.showDemo(avoiding: self?.settingsWindow?.window?.frame)
                 },
                 onShowFFmpegHelp: { [weak self] in self?.showFFmpegHelp() },
-                clipboard: clipboard
+                clipboard: clipboard,
+                screenshots: screenshots
             )
             settingsWindow = SettingsWindowController(view: view) { [weak self] in
                 // Kept for a minute, so opening it again is instant, then

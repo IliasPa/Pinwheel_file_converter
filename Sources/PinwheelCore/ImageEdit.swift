@@ -247,17 +247,32 @@ public struct Adjustments: Codable, Sendable, Equatable {
 public struct Annotation: Codable, Sendable, Equatable, Identifiable {
     public enum Kind: String, CaseIterable, Codable, Sendable {
         case arrow, rectangle, ellipse, pen, highlighter, text, number, redact
+        /// Added in 2.2 (the screenshot tools): a plain line, a soft blur, a
+        /// spotlight (everything else dimmed) and a ruler that says how many
+        /// pixels it spans.
+        case line, blur, spotlight, measure
+        /// Added in 2.2: a rounded box, a filled box, an arrow with a head at
+        /// both ends, a dashed line, a check mark and a cross.
+        case roundedBox, filledBox, doubleArrow, dashedLine, checkmark, cross
+        /// Added in 2.3: takes what's inside out of the picture, filling it from around.
+        case erase
 
         /// Drawn by dragging from one corner (or end) to the other.
         public var isTwoPoint: Bool {
             switch self {
-            case .arrow, .rectangle, .ellipse, .redact: true
+            case .arrow, .rectangle, .ellipse, .redact, .line, .blur, .spotlight, .measure,
+                 .roundedBox, .filledBox, .doubleArrow, .dashedLine, .checkmark, .cross, .erase: true
             case .pen, .highlighter, .text, .number: false
             }
         }
 
         /// Placed with a click.
         public var isPlaced: Bool { self == .text || self == .number }
+
+        /// Tools with no line or text to size: their one control is how
+        /// strong they act (how coarse the blocks, how heavy the blur, how
+        /// dark the dimming).
+        public var usesStrength: Bool { self == .redact || self == .blur || self == .spotlight }
     }
 
     public var id: UUID
@@ -271,9 +286,12 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
     /// share of the turned picture's longer side.
     public var size: Double
     public var text: String
+    /// 0...1 for the tools that blur or dim (0.5 is the standard look).
+    public var strength: Double
 
     public init(
-        id: UUID = UUID(), kind: Kind, points: [RelativePoint], color: MarkupColor, size: Double, text: String = ""
+        id: UUID = UUID(), kind: Kind, points: [RelativePoint], color: MarkupColor, size: Double, text: String = "",
+        strength: Double = 0.5
     ) {
         self.id = id
         self.kind = kind
@@ -281,6 +299,21 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
         self.color = color
         self.size = size
         self.text = text
+        self.strength = strength
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, points, color, size, text, strength }
+
+    /// Edits saved before 2.2 have no strength.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        kind = try values.decode(Kind.self, forKey: .kind)
+        points = try values.decode([RelativePoint].self, forKey: .points)
+        color = try values.decode(MarkupColor.self, forKey: .color)
+        size = try values.decode(Double.self, forKey: .size)
+        text = try values.decode(String.self, forKey: .text)
+        strength = try values.decodeIfPresent(Double.self, forKey: .strength) ?? 0.5
     }
 
     /// Roughly the area it covers (0...1 of the turned picture), for clicking on it.

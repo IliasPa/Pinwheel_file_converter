@@ -7,12 +7,13 @@ import PinwheelCore
 struct StudioCanvas: View {
     var model: StudioModel
 
-    static let margin: CGFloat = 32
+    /// Space around the picture: none, so it fills the window (the crop box keeps a little, to reach its edges).
+    static func margin(for tab: StudioModel.Tab) -> CGFloat { tab == .crop ? 14 : 0 }
     static let background = Color(white: 0.14)
 
     var body: some View {
         GeometryReader { geometry in
-            let area = CGRect(origin: .zero, size: geometry.size).insetBy(dx: Self.margin, dy: Self.margin)
+            let area = CGRect(origin: .zero, size: geometry.size).insetBy(dx: Self.margin(for: model.tab), dy: Self.margin(for: model.tab))
             ZStack {
                 Self.background
                 if let image = model.preview {
@@ -208,12 +209,35 @@ private struct MarkupOverlay: View {
                 Path { $0.addRect(rect) }
                     .stroke(Color.white.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4], dashPhase: 4.5))
             }
+            if let area = model.eraseArea {
+                let a = model.shownPoint(area[0]), b = model.shownPoint(area[1])
+                let rect = CGRect(
+                    x: imageRect.minX + min(a.x, b.x) * imageRect.width, y: imageRect.minY + min(a.y, b.y) * imageRect.height,
+                    width: abs(a.x - b.x) * imageRect.width, height: abs(a.y - b.y) * imageRect.height
+                )
+                Path { $0.addRect(rect) }.fill(Color.white.opacity(0.12))
+                Path { $0.addRect(rect) }.stroke(Color.black, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                Path { $0.addRect(rect) }.stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4], dashPhase: 4.5))
+            }
+            if model.showsZoom, let hover = model.hover, let patch = model.zoomPatch {
+                PixelLoupe(patch: patch)
+                    .position(Self.loupePosition(
+                        pointer: CGPoint(x: imageRect.minX + hover.x * imageRect.width, y: imageRect.minY + hover.y * imageRect.height),
+                        in: imageRect.insetBy(dx: -StudioCanvas.margin(for: model.tab), dy: -StudioCanvas.margin(for: model.tab))
+                    ))
+                    .allowsHitTesting(false)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
+                    // The pointer is dragging, so no hover events come: the zoom follows the drag.
+                    model.hover = CGPoint(
+                        x: min(max((value.location.x - imageRect.minX) / max(imageRect.width, 1), 0), 1),
+                        y: min(max((value.location.y - imageRect.minY) / max(imageRect.height, 1), 0), 1)
+                    )
                     if !model.isMarking { model.beginMarkup(at: point(value.startLocation)) }
                     model.continueMarkup(to: point(value.location))
                 }
@@ -222,15 +246,31 @@ private struct MarkupOverlay: View {
         .onContinuousHover { phase in
             switch phase {
             case .active(let location):
+                model.hover = CGPoint(
+                    x: min(max((location.x - imageRect.minX) / max(imageRect.width, 1), 0), 1),
+                    y: min(max((location.y - imageRect.minY) / max(imageRect.height, 1), 0), 1)
+                )
                 if model.tool == nil {
                     (model.annotation(at: point(location)) != nil ? NSCursor.openHand : NSCursor.arrow).set()
                 } else {
                     (model.tool == .text ? NSCursor.iBeam : NSCursor.crosshair).set()
                 }
             case .ended:
+                model.hover = nil
                 NSCursor.arrow.set()
             }
         }
+    }
+
+    /// Beside the pointer, on whichever side has room.
+    static func loupePosition(pointer: CGPoint, in area: CGRect) -> CGPoint {
+        let side = PixelLoupe.side
+        let height = PixelLoupe.height
+        var x = pointer.x + 24 + side / 2
+        var y = pointer.y - 24 - height / 2
+        if x + side / 2 > area.maxX { x = pointer.x - 24 - side / 2 }
+        if y - height / 2 < area.minY { y = pointer.y + 24 + height / 2 }
+        return CGPoint(x: x, y: y)
     }
 
     private func point(_ location: CGPoint) -> RelativePoint {
@@ -238,5 +278,50 @@ private struct MarkupOverlay: View {
             x: (location.x - imageRect.minX) / max(imageRect.width, 1),
             y: (location.y - imageRect.minY) / max(imageRect.height, 1)
         ))
+    }
+}
+
+/// A magnifier: the pixels around the pointer, each one big, with its color and place.
+struct PixelLoupe: View {
+    let patch: (image: CGImage, x: Int, y: Int, hex: String)
+
+    static let side: CGFloat = 150
+    static let height: CGFloat = 172
+
+    var body: some View {
+        let cells = CGFloat(StudioModel.zoomPixels)
+        let cell = Self.side / cells
+        VStack(spacing: 0) {
+            ZStack {
+                Checkerboard(square: 6)
+                Image(decorative: patch.image, scale: 1)
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(width: CGFloat(patch.image.width) * cell, height: CGFloat(patch.image.height) * cell)
+                Path { path in
+                    for step in 0...Int(cells) {
+                        let at = CGFloat(step) * cell
+                        path.move(to: CGPoint(x: at, y: 0)); path.addLine(to: CGPoint(x: at, y: Self.side))
+                        path.move(to: CGPoint(x: 0, y: at)); path.addLine(to: CGPoint(x: Self.side, y: at))
+                    }
+                }
+                .stroke(Color.black.opacity(0.12), lineWidth: 0.5)
+                Rectangle()
+                    .strokeBorder(Color.white, lineWidth: 2)
+                    .overlay(Rectangle().strokeBorder(Color.black, lineWidth: 0.75))
+                    .frame(width: cell, height: cell)
+                    .position(x: (CGFloat(patch.x) + 0.5) * cell, y: (CGFloat(patch.y) + 0.5) * cell)
+            }
+            .frame(width: Self.side, height: Self.side)
+            .clipped()
+            Text("\(patch.hex)")
+                .font(.system(size: 11, weight: .medium).monospaced())
+                .foregroundStyle(.white)
+                .frame(width: Self.side, height: Self.height - Self.side)
+                .background(Color.black.opacity(0.8))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.7), lineWidth: 1))
+        .shadow(color: .black.opacity(0.5), radius: 6)
     }
 }

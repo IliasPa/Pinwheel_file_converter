@@ -202,7 +202,8 @@ public enum StudioRenderer {
         let turned = turnedSize(source.size, edit)
         let mapping = MarkupMapping(
             turnedSize: turned, crop: cropRect(in: turned, edit),
-            contentSize: CGSize(width: content.width, height: content.height)
+            contentSize: CGSize(width: content.width, height: content.height),
+            originalScale: source.scale
         )
         let ctx = try bitmapContext(width: content.width, height: content.height, colorSpace: outputColorSpace(for: content))
         ctx.draw(content, in: CGRect(x: 0, y: 0, width: content.width, height: content.height))
@@ -514,9 +515,9 @@ public enum StudioRenderer {
 
 /// Saves what the image editor (or Remove BG) made, at full size. Returns
 /// a note for the progress window, if any.
-enum StudioExporter {
+public enum StudioExporter {
     @discardableResult
-    static func export(_ url: URL, edit: ImageEdit, format: OutputFormat, destination: URL, options: ConversionOptions) throws -> String? {
+    public static func export(_ url: URL, edit: ImageEdit, format: OutputFormat, destination: URL, options: ConversionOptions) throws -> String? {
         let source = try StudioSource.load(url)
         var mask: CGImage?
         var note: String?

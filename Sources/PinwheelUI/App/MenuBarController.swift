@@ -9,6 +9,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var showFeedback: @MainActor () -> Void
         var toggleShelf: @MainActor () -> Void
         var showClipboard: @MainActor () -> Void = {}
+        var capture: @MainActor (ScreenshotMode) -> Void = { _ in }
+        var closePins: @MainActor () -> Void = {}
         var quit: @MainActor () -> Void
     }
 
@@ -22,11 +24,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let hasFFmpeg: @MainActor () -> Bool
     private let shelfCount: @MainActor () -> Int
     private let clipboardShortcut: @MainActor () -> KeyShortcut?
+    private let screenshotShortcuts: @MainActor () -> [ScreenshotMode: KeyShortcut]?
+    private let pinCount: @MainActor () -> Int
 
     init(
         actions: Actions,
         shelfCount: @escaping @MainActor () -> Int = { 0 },
         clipboardShortcut: @escaping @MainActor () -> KeyShortcut? = { nil },
+        screenshotShortcuts: @escaping @MainActor () -> [ScreenshotMode: KeyShortcut]? = { nil },
+        pinCount: @escaping @MainActor () -> Int = { 0 },
         recents: RecentsStore,
         history: UndoHistory,
         launch: LaunchAtLogin,
@@ -36,6 +42,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.actions = actions
         self.shelfCount = shelfCount
         self.clipboardShortcut = clipboardShortcut
+        self.screenshotShortcuts = screenshotShortcuts
+        self.pinCount = pinCount
         self.recents = recents
         self.history = history
         self.launch = launch
@@ -85,6 +93,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
             menu.addItem(history)
         }
+        menu.addItem(screenshotItem())
         menu.addItem(.separator())
 
         menu.addItem(item("Settings…", #selector(showSettings), key: ","))
@@ -100,6 +109,42 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(item("Quit Pinwheel", #selector(quit), key: "q"))
     }
+
+    // MARK: - Screenshots
+
+    /// "Screenshot ▸" with each way to take one (and the keys), and Close Pins.
+    private func screenshotItem() -> NSMenuItem {
+        let parent = NSMenuItem(title: "Screenshot", action: nil, keyEquivalent: "")
+        parent.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: nil)
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        let shortcuts = screenshotShortcuts()
+        for mode in ScreenshotMode.allCases {
+            let entry = item(mode.title, #selector(capture(_:)))
+            entry.representedObject = mode.rawValue
+            entry.image = NSImage(systemSymbolName: mode.symbolName, accessibilityDescription: nil)
+            if let shortcut = shortcuts?[mode], shortcut.key.count == 1 {
+                entry.keyEquivalent = shortcut.key.lowercased()
+                entry.keyEquivalentModifierMask = shortcut.modifiers.eventFlags
+            }
+            submenu.addItem(entry)
+        }
+        let pins = pinCount()
+        if pins > 0 {
+            submenu.addItem(.separator())
+            submenu.addItem(item(pins == 1 ? "Close the Pinned Picture" : "Close \(pins) Pinned Pictures", #selector(closePins)))
+        }
+        parent.submenu = submenu
+        return parent
+    }
+
+    @objc private func capture(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = ScreenshotMode(rawValue: raw) else { return }
+        // Let the menu close first, so it isn't in the picture.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [actions] in actions.capture(mode) }
+    }
+
+    @objc private func closePins() { actions.closePins() }
 
     // MARK: - Undo
 

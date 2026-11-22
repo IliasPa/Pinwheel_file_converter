@@ -94,6 +94,15 @@ struct StudioView: View {
             }
             .fixedSize()
             .help("JPEG has no see-through parts: they become white.")
+            if let note = model.copyNote {
+                Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Button(action: model.copyResult) {
+                Label("Copy", systemImage: "doc.on.clipboard")
+            }
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .disabled(model.isCopying || model.loadError != nil)
+            .help("Puts the edited picture on the clipboard, ready to paste (⇧⌘C). Nothing is saved.")
             Button("Cancel", action: model.cancel)
                 .keyboardShortcut(.cancelAction)
             Button(model.files.count > 1 ? "Save \(model.files.count) Copies" : "Save Copy", action: model.save)

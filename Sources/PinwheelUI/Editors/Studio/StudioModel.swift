@@ -51,25 +51,45 @@ final class StudioModel {
         case failed(String)
     }
 
-    /// Line widths and text sizes, as a share of the picture's longer side.
-    enum StrokeSize: String, CaseIterable, Identifiable {
-        case small, medium, large
+    /// The Size slider: 0...1, with Small, Medium and Large as the notches at
+    /// a quarter, a half and three quarters. Between them is any size; past
+    /// them are smaller and bigger ones.
+    enum SizeScale {
+        static let notches = [0.25, 0.5, 0.75]
 
-        var id: Self { self }
-        var title: String { rawValue.prefix(1).uppercased() }
-
-        func share(for kind: Annotation.Kind) -> Double {
-            let steps: (Double, Double, Double) = switch kind {
+        /// Line widths and text sizes of Small, Medium and Large, as a share of the picture's longer side.
+        static func steps(for kind: Annotation.Kind) -> (Double, Double, Double) {
+            switch kind {
             case .text: (0.035, 0.05, 0.075)
             case .number: (0.04, 0.055, 0.08)
             case .highlighter: (0.02, 0.03, 0.045)
+            case .checkmark, .cross: (0.004, 0.007, 0.012)
             default: (0.004, 0.007, 0.012)
             }
-            return switch self {
-            case .small: steps.0
-            case .medium: steps.1
-            case .large: steps.2
+        }
+
+        private static func stops(for kind: Annotation.Kind) -> [(level: Double, share: Double)] {
+            let (small, medium, large) = steps(for: kind)
+            return [(0, small * 0.4), (0.25, small), (0.5, medium), (0.75, large), (1, large * 1.8)]
+        }
+
+        static func share(level: Double, for kind: Annotation.Kind) -> Double {
+            let stops = stops(for: kind)
+            let level = min(max(level, 0), 1)
+            for index in 1..<stops.count where level <= stops[index].level {
+                let (a, b) = (stops[index - 1], stops[index])
+                return a.share + (b.share - a.share) * (level - a.level) / (b.level - a.level)
             }
+            return stops[stops.count - 1].share
+        }
+
+        static func level(share: Double, for kind: Annotation.Kind) -> Double {
+            let stops = stops(for: kind)
+            for index in 1..<stops.count where share <= stops[index].share {
+                let (a, b) = (stops[index - 1], stops[index])
+                return a.level + (b.level - a.level) * (share - a.share) / (b.share - a.share)
+            }
+            return 1
         }
     }
 
@@ -105,9 +125,16 @@ final class StudioModel {
     }
 
     // Markup
-    var tool: Annotation.Kind? = .arrow
+    var tool: Annotation.Kind? = .arrow {
+        didSet { if tool != oldValue && tool != .erase { eraseArea = nil } }
+    }
+    /// The box chosen with the Erase tool, waiting for Delete (two corners).
+    private(set) var eraseArea: [RelativePoint]?
     private(set) var color = MarkupColor.red
-    private(set) var strokeSize = StrokeSize.medium
+    /// The Size slider's place for lines, shapes and text.
+    private(set) var sizeLevel = 0.5
+    /// The slider's place for the tools that blur or dim.
+    private(set) var strengthLevel = 0.5
     var selection: UUID?
     /// What the Text tool places next.
     private(set) var pendingText = "Text"
@@ -691,6 +718,93 @@ final class StudioModel {
         return CGPoint(x: (point.x - crop.x) / max(crop.width, 0.0001), y: (point.y - crop.y) / max(crop.height, 0.0001))
     }
 
+    /// Where the ruler began (before it was snapped to an edge).
+    private var measureStart: RelativePoint?
+
+    /// The picture as it's shown, for finding edges: it follows the crop, so
+    /// the ruler stops where you see an edge.
+    private var edges: EdgeMap? {
+        guard let image = cache?.content.image else { return nil }
+        if let cachedEdges, cachedEdges.image === image { return cachedEdges.map }
+        let map = EdgeMap(image)
+        cachedEdges = map.map { (image, $0) }
+        return map
+    }
+
+    @ObservationIgnored private var cachedEdges: (image: CGImage, map: EdgeMap)?
+
+    /// A straight ruler from `start` toward `end`, along the longer way, both
+    /// ends pulled to the nearest edge.
+    private func snappedRuler(from start: RelativePoint, to end: RelativePoint) -> [RelativePoint] {
+        guard let map = edges else { return [start, end] }
+        let width = Double(map.width), height = Double(map.height)
+        let a = shownPoint(start), b = shownPoint(end)
+        let (ax, ay, bx, by) = (a.x * width, a.y * height, b.x * width, b.y * height)
+        let horizontal = abs(bx - ax) >= abs(by - ay)
+        let radius = 8
+        func shown(_ x: Double, _ y: Double) -> RelativePoint {
+            markupPoint(fromShown: CGPoint(x: x / width, y: y / height))
+        }
+        if horizontal {
+            let line = Int(ay.rounded())
+            let from = map.snap(Int(ax.rounded()), line: line, horizontal: true, radius: radius)
+            let to = map.snap(Int(bx.rounded()), line: line, horizontal: true, radius: radius)
+            return [shown(Double(from), ay), shown(Double(to), ay)]
+        }
+        let line = Int(ax.rounded())
+        let from = map.snap(Int(ay.rounded()), line: line, horizontal: false, radius: radius)
+        let to = map.snap(Int(by.rounded()), line: line, horizontal: false, radius: radius)
+        return [shown(ax, Double(from)), shown(ax, Double(to))]
+    }
+
+    /// The ruler across the space around a point, edge to edge.
+    private func spanRuler(at point: RelativePoint, vertical: Bool) -> [RelativePoint]? {
+        guard let map = edges else { return nil }
+        let width = Double(map.width), height = Double(map.height)
+        let spot = shownPoint(point)
+        let (x, y) = (Int((spot.x * width).rounded(.down)), Int((spot.y * height).rounded(.down)))
+        let span = map.span(x: x, y: y, horizontal: !vertical)
+        guard span.end - span.start >= 2 else { return nil }
+        func shown(_ px: Double, _ py: Double) -> RelativePoint { markupPoint(fromShown: CGPoint(x: px / width, y: py / height)) }
+        return vertical
+            ? [shown(spot.x * width, Double(span.start)), shown(spot.x * width, Double(span.end))]
+            : [shown(Double(span.start), spot.y * height), shown(Double(span.end), spot.y * height)]
+    }
+
+    // Pixel zoom
+
+    /// Where the pointer is over the picture, 0...1 of what's shown (nil: off it).
+    var hover: CGPoint?
+    /// Always show the pixel zoom (the Measure tool shows it anyway).
+    var pixelZoom = false
+    var showsZoom: Bool { (pixelZoom || tool == .measure) && hover != nil && tab == .markup }
+    /// The zoom takes this many pixels across.
+    static let zoomPixels = 15
+
+    /// The pixels around the pointer, and the center pixel's color and place.
+    var zoomPatch: (image: CGImage, x: Int, y: Int, hex: String)? {
+        guard let hover, let image = cache?.content.image else { return nil }
+        let x = min(max(Int((hover.x * Double(image.width)).rounded(.down)), 0), image.width - 1)
+        let y = min(max(Int((hover.y * Double(image.height)).rounded(.down)), 0), image.height - 1)
+        let half = Self.zoomPixels / 2
+        let left = min(max(x - half, 0), max(image.width - Self.zoomPixels, 0))
+        let top = min(max(y - half, 0), max(image.height - Self.zoomPixels, 0))
+        let rect = CGRect(x: left, y: top, width: min(Self.zoomPixels, image.width), height: min(Self.zoomPixels, image.height))
+        guard let patch = image.cropping(to: rect) else { return nil }
+        return (patch, x - left, y - top, Self.hex(ofPixelAt: x, y, in: image))
+    }
+
+    private static func hex(ofPixelAt x: Int, _ y: Int, in image: CGImage) -> String {
+        var bytes = [UInt8](repeating: 0, count: 4)
+        guard let one = image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)),
+              let ctx = CGContext(
+                  data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+              ) else { return "" }
+        ctx.draw(one, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return String(format: "#%02X%02X%02X", bytes[0], bytes[1], bytes[2])
+    }
+
     var selected: Annotation? { edit.markup.first { $0.id == selection } }
     private var selectedIndex: Int? { edit.markup.firstIndex { $0.id == selection } }
 
@@ -707,7 +821,7 @@ final class StudioModel {
     func size(for kind: Annotation.Kind) -> Double {
         let turned = turnedSize
         let box = cropBox
-        return strokeSize.share(for: kind) * max(box.width, box.height) / max(turned.width, turned.height, 1)
+        return SizeScale.share(level: sizeLevel, for: kind) * max(box.width, box.height) / max(turned.width, turned.height, 1)
     }
 
     var nextNumber: Int {
@@ -719,12 +833,22 @@ final class StudioModel {
         gestureNeedsCheckpoint = true
         moveDrag = nil
         if let tool {
+            if tool == .erase {
+                selection = nil
+                eraseArea = [point, point]
+                return
+            }
             if tool.isPlaced {
                 place(tool, at: point)
                 return
             }
             selection = nil
-            draft = Annotation(kind: tool, points: tool.isTwoPoint ? [point, point] : [point], color: color, size: size(for: tool))
+            measureStart = point
+            draft = Annotation(
+                kind: tool, points: tool.isTwoPoint ? [point, point] : [point], color: color, size: size(for: tool),
+                strength: strengthLevel
+            )
+            if tool == .measure { draft?.points = snappedRuler(from: point, to: point) }
             scheduleRender()
         } else if let hit = annotation(at: point) {
             selection = hit.id
@@ -735,8 +859,14 @@ final class StudioModel {
     }
 
     func continueMarkup(to point: RelativePoint) {
+        if tool == .erase, eraseArea != nil {
+            eraseArea?[1] = point
+            return
+        }
         if var current = draft {
-            if current.kind.isTwoPoint {
+            if current.kind == .measure, let start = measureStart {
+                current.points = snappedRuler(from: start, to: point)
+            } else if current.kind.isTwoPoint {
                 current.points[1] = point
             } else if let last = current.points.last, hypot(point.x - last.x, point.y - last.y) > 0.0015 {
                 current.points.append(point)
@@ -753,10 +883,20 @@ final class StudioModel {
         isMarking = false
         gestureNeedsCheckpoint = false
         moveDrag = nil
+        if tool == .erase, let area = eraseArea {
+            // A click, not a drag, chooses nothing.
+            if hypot(area[0].x - area[1].x, area[0].y - area[1].y) < 0.004 { eraseArea = nil }
+            return
+        }
         guard let finished = draft else { return }
         draft = nil
         let first = finished.points[0], last = finished.points[finished.points.count - 1]
-        if finished.kind.isTwoPoint && hypot(first.x - last.x, first.y - last.y) < 0.004 {
+        if finished.kind == .measure, hypot(first.x - last.x, first.y - last.y) < 0.004, let click = measureStart,
+           let span = spanRuler(at: click, vertical: NSEvent.modifierFlags.contains(.option)) {
+            var ruler = finished
+            ruler.points = span
+            change { $0.markup.append(ruler) }  // a click measures the space between the edges around it
+        } else if finished.kind.isTwoPoint && hypot(first.x - last.x, first.y - last.y) < 0.004 {
             scheduleRender()  // a click, not a drag: nothing to add
         } else {
             change { $0.markup.append(finished) }
@@ -786,11 +926,118 @@ final class StudioModel {
         if let index = selectedIndex { change { $0.markup[index].color = newColor } }
     }
 
-    func setStrokeSize(_ newSize: StrokeSize) {
-        strokeSize = newSize
-        if let index = selectedIndex {
-            let kind = edit.markup[index].kind
-            change { $0.markup[index].size = size(for: kind) }
+    /// The screen's own color picker: any pixel on any screen becomes the
+    /// markup color, and its code ("#4338CA") is copied.
+    func pickColorFromScreen() {
+        let sampler = NSColorSampler()
+        sampler.show { [weak self] picked in
+            guard let picked else { return }
+            MainActor.assumeIsolated {
+                guard let self, let rgb = picked.usingColorSpace(.sRGB) else { return }
+                self.setColor(MarkupColor(Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent)))
+                let code = MarkupColor.hexCode(rgb)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(code, forType: .string)
+                self.colorNote = "Picked \(code) (copied)."
+            }
+        }
+    }
+
+    /// What the color picker did last.
+    private(set) var colorNote: String?
+
+    /// The last contrast check: the text color, the background, and how readable it is.
+    private(set) var contrast: (text: MarkupColor, background: MarkupColor, check: ContrastCheck)?
+    /// "Now click the background…" between the two clicks.
+    private(set) var contrastStep: String?
+
+    /// Two clicks on the screen: the text, then what's behind it. The result
+    /// is the WCAG contrast ratio (the one accessibility checks use).
+    func checkContrast() {
+        contrast = nil
+        contrastStep = "Click the text color…"
+        sample { [weak self] text in
+            guard let self else { return }
+            guard let text else { self.contrastStep = nil; return }
+            self.contrastStep = "Now click the background behind it…"
+            self.sample { [weak self] background in
+                guard let self else { return }
+                self.contrastStep = nil
+                guard let background else { return }
+                self.contrast = (text, background, ContrastCheck(text, on: background))
+            }
+        }
+    }
+
+    /// One pick with the system's color picker.
+    private func sample(_ done: @escaping @MainActor (MarkupColor?) -> Void) {
+        let sampler = NSColorSampler()
+        sampler.show { picked in
+            MainActor.assumeIsolated {
+                guard let rgb = picked?.usingColorSpace(.sRGB) else { return done(nil) }
+                done(MarkupColor(Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent)))
+            }
+        }
+    }
+
+    /// Says how the last "copy" went.
+    private(set) var copyNote: String?
+    private(set) var isCopying = false
+
+    /// Puts the edited picture, as it would be saved, on the clipboard.
+    func copyResult() {
+        guard !isCopying else { return }
+        isCopying = true
+        copyNote = nil
+        let (url, current) = (file.url, edit)
+        Task {
+            defer { isCopying = false }
+            do {
+                let temp = FileManager.default.temporaryDirectory.appendingPathComponent("pinwheel-copy-\(UUID().uuidString).png")
+                defer { try? FileManager.default.removeItem(at: temp) }
+                try await Blocking.run { _ in
+                    try StudioExporter.export(url, edit: current, format: .png, destination: temp, options: ConversionOptions())
+                }
+                guard let picture = NSImage(contentsOf: temp) else { throw CocoaError(.fileReadCorruptFile) }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([picture])
+                copyNote = "Copied to the clipboard."
+            } catch {
+                copyNote = "Couldn't copy: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// The kind the Size slider is for: the selected one's, else the tool's.
+    var sliderKind: Annotation.Kind? {
+        let kind = selected?.kind ?? tool
+        return kind == .erase ? nil : kind  // erasing has nothing to size
+    }
+
+    /// True when the slider is a strength (blur, pixel blocks, dimming), not a size.
+    var sliderIsStrength: Bool { sliderKind?.usesStrength ?? false }
+
+    /// Where the slider's thumb is.
+    var sliderValue: Double {
+        if let selected {
+            if selected.kind.usesStrength { return selected.strength }
+            let box = cropBox, turned = turnedSize
+            let factor = max(box.width, box.height) / max(turned.width, turned.height, 1)
+            return SizeScale.level(share: selected.size / max(factor, 0.000_001), for: selected.kind)
+        }
+        return sliderIsStrength ? strengthLevel : sizeLevel
+    }
+
+    /// Moves the slider (inside a drag: `beginSliding` came first).
+    func setSliderValue(_ value: Double) {
+        guard let kind = sliderKind else { return }
+        if kind.usesStrength { strengthLevel = value } else { sizeLevel = value }
+        guard let index = selectedIndex else { return }
+        if kind.usesStrength {
+            update { $0.markup[index].strength = value }
+        } else {
+            let newSize = size(for: kind)
+            update { $0.markup[index].size = newSize }
         }
     }
 
@@ -812,6 +1059,28 @@ final class StudioModel {
             textBeingTyped = id
         }
         apply({ var copy = edit; copy.markup[index].text = newText; return copy }())
+    }
+
+    /// Backspace or Delete: takes out what the Erase tool chose, or deletes
+    /// the selected mark.
+    func deleteKey() {
+        if eraseArea != nil { eraseSelection() } else { deleteSelected() }
+    }
+
+    /// Whether Backspace has something to do (and isn't a letter being typed).
+    var canDeleteByKey: Bool {
+        if tab != .markup { return false }
+        if eraseArea != nil { return true }
+        if let selected { return selected.kind != .text || tool != .text }
+        return false
+    }
+
+    /// Takes what's inside the chosen box out of the picture, filling it from around.
+    func eraseSelection() {
+        guard let area = eraseArea else { return }
+        eraseArea = nil
+        let erased = Annotation(kind: .erase, points: area, color: .black, size: 0.01)
+        change { $0.markup.append(erased) }
     }
 
     func deleteSelected() {

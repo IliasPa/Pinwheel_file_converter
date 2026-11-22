@@ -99,6 +99,18 @@ of the filters (while you drag a copy, empty ones show, to drop it on). The **an
 work in other apps. The keys, and how many copies to keep (with the room
 they take), are in Settings › Clipboard.
 
+**Screenshots:** ⌥⌘4 drags a box over any part of the screen (⌥⌘5 a
+window, ⌥⌘3 the whole screen, ⌥⌘6 the same area again; ⌥⌘7 copies the
+text in a box), saves it as a PNG, JPEG or HEIC,
+copies it, and opens it in the image editor, or pins it on the screen. The
+screen freezes the moment you press the key. The
+editor (the same one as the ⌥⇧ wheel's Markup) has arrows, lines, boxes (plain,
+rounded, filled), check marks, pen, highlighter, text, numbered steps, blur
+(blocks or smooth), a spotlight, a ruler that snaps to edges, a pixel zoom, a
+color picker with a contrast check, one slider for size or strength, and a
+Copy button. Settings › Screenshots has the keys and what
+happens after.
+
 **Hot corners for apps:** rest the pointer in a corner of the screen and
 an app opens: any app, a different one in each corner. Settings › Hot
 Corners shows your screen; click a corner to choose its app. Corners stay
@@ -197,6 +209,7 @@ in a sidebar with a search field:
 - **Clipboard** (beta): the history on or off, its keys (⌥⌘V), pasting or
   just copying, how a preview opens, the quick buttons, and how many
   copies it keeps.
+- **Screenshots:** the keys for each way to capture, what happens after, and the Screen Recording permission.
 - **Hot Corners:** the app each corner opens, and how long to rest there.
 - **Text Recognition**, **Finder & Shortcuts** (and the `pinwheel`
   command), and **Advanced** (how many files at once, ffmpeg, Reset to

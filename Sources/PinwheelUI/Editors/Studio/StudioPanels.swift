@@ -56,14 +56,17 @@ struct EditSlider: View {
     let model: StudioModel
     /// A value the thumb is pulled to when it comes near (0° for Straighten).
     var magnet: Double? = nil
+    /// More notches than one (the markup Size slider has three).
+    var extraMagnets: [Double] = []
     /// How near counts.
     var magnetPull: Double = 1.5
     let set: @MainActor (Double) -> Void
 
     init(
         title: String, value: Double, range: ClosedRange<Double>, label: @escaping (Double) -> String, model: StudioModel,
-        magnet: Double? = nil, magnetPull: Double = 1.5, set: @escaping @MainActor (Double) -> Void
+        magnet: Double? = nil, extraMagnets: [Double] = [], magnetPull: Double = 1.5, set: @escaping @MainActor (Double) -> Void
     ) {
+        self.extraMagnets = extraMagnets
         self.title = title
         self.value = value
         self.range = range
@@ -80,18 +83,29 @@ struct EditSlider: View {
         return magnet
     }
 
+    /// The nearest of several magnets, if one is near enough.
+    static func attract(_ value: Double, toAny magnets: [Double], within pull: Double) -> Double {
+        guard let nearest = magnets.min(by: { abs($0 - value) < abs($1 - value) }) else { return value }
+        return attract(value, to: nearest, within: pull)
+    }
+
+    private var allMagnets: [Double] { (magnet.map { [$0] } ?? []) + extraMagnets }
+
     /// Where the magnet is along the track, with a notch there.
     @ViewBuilder
     private var notch: some View {
-        if let magnet, range.contains(magnet) {
+        let magnets = allMagnets.filter { range.contains($0) }
+        if !magnets.isEmpty {
             GeometryReader { proxy in
                 // The track starts and ends about half a thumb in.
                 let inset: CGFloat = 8
-                let share = (magnet - range.lowerBound) / (range.upperBound - range.lowerBound)
-                Capsule()
-                    .fill(value == magnet ? Color.accentColor : Color.secondary.opacity(0.6))
-                    .frame(width: 2, height: 5)
-                    .position(x: inset + (proxy.size.width - 2 * inset) * share, y: proxy.size.height / 2)
+                ForEach(magnets, id: \.self) { magnet in
+                    let share = (magnet - range.lowerBound) / (range.upperBound - range.lowerBound)
+                    Capsule()
+                        .fill(value == magnet ? Color.accentColor : Color.secondary.opacity(0.6))
+                        .frame(width: 2, height: 5)
+                        .position(x: inset + (proxy.size.width - 2 * inset) * share, y: proxy.size.height / 2)
+                }
             }
             .frame(height: 5)
             .allowsHitTesting(false)
@@ -109,9 +123,9 @@ struct EditSlider: View {
             }
             Slider(
                 value: Binding(get: { value }, set: { newValue in
-                    let pulled = Self.attract(newValue, to: magnet, within: magnetPull)
+                    let pulled = Self.attract(newValue, toAny: allMagnets, within: magnetPull)
                     // A small tap on the trackpad as it snaps into place.
-                    if pulled == magnet, value != magnet {
+                    if allMagnets.contains(pulled), value != pulled {
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
                     }
                     set(pulled)
@@ -145,13 +159,15 @@ struct EditSlider: View {
 struct ChoiceButton: View {
     let title: String
     var symbol: String? = nil
+    /// A drawn icon, for what no SF Symbol shows (a dashed line).
+    var icon: AnyView? = nil
     let isOn: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                if let symbol { Image(systemName: symbol) }
+                if let icon { icon } else if let symbol { Image(systemName: symbol) }
                 Text(title).lineLimit(1)
             }
             .font(.system(size: 11.5, weight: isOn ? .semibold : .regular))
@@ -504,13 +520,24 @@ private struct MarkupPanel: View {
     private static let tools: [(Annotation.Kind?, String, String)] = [
         (nil, "Select", "cursorarrow"),
         (.arrow, "Arrow", "arrow.up.right"),
+        (.doubleArrow, "Two-Way", "arrow.left.and.right"),
+        (.line, "Line", "line.diagonal"),
+        (.dashedLine, "Dashed", "dashed"),
         (.rectangle, "Box", "rectangle"),
+        (.roundedBox, "Rounded", "app"),
+        (.filledBox, "Filled", "rectangle.fill"),
         (.ellipse, "Oval", "circle"),
+        (.checkmark, "Check", "checkmark"),
+        (.cross, "Cross", "xmark"),
         (.pen, "Pen", "scribble.variable"),
         (.highlighter, "Highlight", "highlighter"),
         (.text, "Text", "textformat"),
         (.number, "Number", "1.circle"),
         (.redact, "Blur Out", "eye.slash"),
+        (.blur, "Soft Blur", "drop.halffull"),
+        (.spotlight, "Spotlight", "rays"),
+        (.measure, "Measure", "ruler"),
+        (.erase, "Erase", "eraser"),
     ]
 
     private let toolColumns = [GridItem(.adaptive(minimum: 76), spacing: 6)]
@@ -519,7 +546,10 @@ private struct MarkupPanel: View {
         PanelSection(title: "Tool") {
             LazyVGrid(columns: toolColumns, spacing: 6) {
                 ForEach(Self.tools, id: \.1) { tool in
-                    ChoiceButton(title: tool.1, symbol: tool.2, isOn: model.tool == tool.0) {
+                    ChoiceButton(
+                        title: tool.1, symbol: tool.2 == "dashed" ? nil : tool.2,
+                        icon: tool.2 == "dashed" ? AnyView(DashedLineIcon()) : nil, isOn: model.tool == tool.0
+                    ) {
                         model.tool = tool.0
                         if tool.0 != nil { model.selection = nil }
                     }
@@ -527,8 +557,28 @@ private struct MarkupPanel: View {
             }
         }
 
+        if model.sliderKind != nil {
+            PanelSection(title: model.sliderIsStrength ? "Strength" : "Size") {
+                EditSlider(
+                    title: model.sliderIsStrength ? strengthName : "Thickness", value: model.sliderValue, range: 0...1,
+                    label: { model.sliderIsStrength ? EditSlider.percent($0) : Self.sizeName($0) }, model: model,
+                    magnet: model.sliderIsStrength ? 0.5 : StudioModel.SizeScale.notches[0],
+                    extraMagnets: model.sliderIsStrength ? [] : Array(StudioModel.SizeScale.notches.dropFirst()),
+                    magnetPull: 0.035, set: model.setSliderValue
+                )
+            }
+        }
+
         PanelSection(title: "Color") {
             HStack(spacing: 7) {
+                Button { model.pickColorFromScreen() } label: {
+                    Image(systemName: "eyedropper")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help("Pick a color from anywhere on the screen. Its code is copied too.")
+                .accessibilityLabel("Pick a color from the screen")
                 ForEach(MarkupColor.palette, id: \.self) { color in
                     let isOn = (model.selected?.color ?? model.color) == color
                     Button { model.setColor(color) } label: {
@@ -544,12 +594,44 @@ private struct MarkupPanel: View {
             }
         }
 
-        PanelSection(title: "Size") {
-            Picker("Size", selection: Binding(get: { model.strokeSize }, set: { model.setStrokeSize($0) })) {
-                ForEach(StudioModel.StrokeSize.allCases) { Text($0.title).tag($0) }
+        if let note = model.colorNote {
+            Text(note).font(.caption).foregroundStyle(.secondary)
+        }
+
+        PanelSection(title: "Contrast") {
+            Button { model.checkContrast() } label: {
+                Label("Check Text Contrast…", systemImage: "circle.lefthalf.filled")
+                    .frame(maxWidth: .infinity)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            .disabled(model.contrastStep != nil)
+            .help("Click a text color and then its background, anywhere on the screen.")
+            if let step = model.contrastStep {
+                Text(step).font(.caption).foregroundStyle(.secondary)
+            } else if let result = model.contrast {
+                HStack(spacing: 8) {
+                    Text("Aa")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(result.text.color)
+                        .frame(width: 38, height: 28)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(result.background.color))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(result.check.ratioText).font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        Text("AA \(result.check.isAA ? "✓" : "✗")  ·  AAA \(result.check.isAAA ? "✓" : "✗")  ·  Large \(result.check.isAALarge ? "✓" : "✗")")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text(result.check.verdict).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+
+        if model.tool == .erase {
+            PanelSection(title: "Erase") {
+                Button { model.eraseSelection() } label: {
+                    Label("Erase Selection", systemImage: "eraser").frame(maxWidth: .infinity)
+                }
+                .disabled(model.eraseArea == nil)
+            }
         }
 
         if model.tool == .text || model.selected?.kind == .text {
@@ -582,6 +664,20 @@ private struct MarkupPanel: View {
             }
         }
 
+        // Backspace (or Delete) erases the chosen box, or deletes the selected mark.
+        // Only while there's something for it to do, so typing text still works.
+        ZStack {
+            Button("", action: model.deleteKey).keyboardShortcut(.delete, modifiers: [])
+            Button("", action: model.deleteKey).keyboardShortcut(.deleteForward, modifiers: [])
+        }
+        .disabled(!model.canDeleteByKey)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+
+        Toggle("Pixel zoom", isOn: Binding(get: { model.pixelZoom }, set: { model.pixelZoom = $0 }))
+            .help("A magnifier follows the pointer, showing each pixel and its color. (Measure shows it anyway.)")
+
         HStack {
             Button("Delete", action: model.deleteSelected)
                 .disabled(model.selection == nil)
@@ -597,13 +693,36 @@ private struct MarkupPanel: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    private var strengthName: String {
+        switch model.sliderKind {
+        case .redact: "Block size"
+        case .blur: "Blur"
+        default: "Dimming"
+        }
+    }
+
+    /// "Small", "Medium", "Large" on a notch, else the size's place between them.
+    static func sizeName(_ level: Double) -> String {
+        if abs(level - 0.25) < 0.001 { return "Small" }
+        if abs(level - 0.5) < 0.001 { return "Medium" }
+        if abs(level - 0.75) < 0.001 { return "Large" }
+        return level < 0.25 ? "Extra small" : (level > 0.75 ? "Extra large" : "Custom")
+    }
+
     private var hint: String {
         switch model.tool {
-        case nil: "Click something to select it, then drag to move it. ⌘⌫ deletes it."
+        case nil: "Click something to select it, then drag to move it. Backspace deletes it."
         case .text: "Click where the text goes, then type it here."
         case .number: "Click to place numbered steps: 1, 2, 3…"
         case .redact: "Drag over anything private (names, faces, numbers) to blur it out."
         case .pen, .highlighter: "Drag to draw."
+        case .blur: "Drag over anything to blur it smoothly."
+        case .spotlight: "Drag around what matters: the rest of the picture is dimmed."
+        case .measure: "Drag to measure: the ends snap to edges. Click to measure the space between the edges around the point (⌥-click for up and down)."
+        case .erase: "Drag around something to take out, then press Backspace. It's filled in from what's around it: best on plain backgrounds."
+        case .filledBox: "Drag to shade an area, so it stands out."
+        case .checkmark, .cross: "Drag a box to put it in."
+        case .doubleArrow, .dashedLine, .roundedBox: "Drag on the picture to draw."
         default: "Drag on the picture to draw."
         }
     }
@@ -725,5 +844,26 @@ private struct WatermarkPanel: View {
                 mark.logoPath = url.path
             }
         }
+    }
+}
+
+extension MarkupColor {
+    /// "#4338CA", for a color picked from the screen.
+    static func hexCode(_ color: NSColor) -> String {
+        func byte(_ value: CGFloat) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
+        return String(format: "#%02X%02X%02X", byte(color.redComponent), byte(color.greenComponent), byte(color.blueComponent))
+    }
+}
+
+/// A diagonal line made of dashes, like the Dashed tool draws.
+struct DashedLineIcon: View {
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            path.move(to: CGPoint(x: 1.5, y: size.height - 1.5))
+            path.addLine(to: CGPoint(x: size.width - 1.5, y: 1.5))
+            context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: 1.6, lineCap: .butt, dash: [3, 2.4]))
+        }
+        .frame(width: 13, height: 13)
     }
 }

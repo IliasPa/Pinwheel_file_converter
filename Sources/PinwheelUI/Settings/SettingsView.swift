@@ -24,6 +24,8 @@ final class SettingsViewState {
     /// The box of the compatibility table under the pointer.
     var tableSpot: CompatibilityPane.Spot?
     let shortcutRecorder = ShortcutRecorder()
+    /// The screenshot shortcut being recorded.
+    var recordingScreenshot: ScreenshotMode?
     var confirmClearClipboard = false
     /// The kind of file Wheels and Compatibility show (one at a time: all of
     /// them at once made those pages slow to open).
@@ -99,7 +101,7 @@ final class ShortcutRecorder {
 
 /// The pages of the Settings window, in the sidebar's order.
 enum SettingsPane: String, CaseIterable, Identifiable {
-    case general, wheel, compatibility, clipboard, hotCorners, textRecognition, finderAndShortcuts, advanced
+    case general, wheel, compatibility, clipboard, screenshots, hotCorners, textRecognition, finderAndShortcuts, advanced
 
     var id: Self { self }
 
@@ -109,6 +111,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .wheel: "Wheels"
         case .compatibility: "Compatibility"
         case .clipboard: "Clipboard"
+        case .screenshots: "Screenshots"
         case .hotCorners: "Hot Corners"
         case .textRecognition: "Text Recognition"
         case .finderAndShortcuts: "Finder & Shortcuts"
@@ -123,6 +126,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .wheel: nil
         case .compatibility: "tablecells"
         case .clipboard: "list.clipboard"
+        case .screenshots: "camera.viewfinder"
         case .hotCorners: "rectangle.inset.topleft.filled"
         case .textRecognition: "text.viewfinder"
         case .finderAndShortcuts: "contextualmenu.and.cursorarrow"
@@ -137,6 +141,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .wheel: Brand.indigo
         case .compatibility: Brand.teal
         case .clipboard: .pink
+        case .screenshots: .blue
         case .hotCorners: .orange
         case .textRecognition: .purple
         case .finderAndShortcuts: .green
@@ -177,6 +182,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
                                                                      "powerpoint", "keynote", "numbers", "subtitles"]
         case .clipboard:
             return ["clipboard", "history", "paste", "copy", "copied", "favorites", "heart", "shortcut", "keys", "pasta", "beta", "preview", "drag", "plain text", "links", "tracking", "buttons", "collections"]
+        case .screenshots:
+            return ["screenshot", "screenshots", "capture", "screen", "area", "window", "pin", "ruler", "measure", "spotlight", "blur", "color picker", "eyedropper", "shottr", "annotate", "markup", "arrow", "delay", "timer", "screen recording"]
         case .hotCorners:
             return ["hot corner", "corners", "launch an app", "pointer", "mouse", "cursor"]
         case .textRecognition:
@@ -233,6 +240,8 @@ struct SettingsView: View {
     var onShowFFmpegHelp: () -> Void
     /// The clipboard history, for its page.
     var clipboard: ClipboardController? = nil
+    /// The screenshot shortcuts, for their page.
+    var screenshots: ScreenshotController? = nil
 
     var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -337,6 +346,8 @@ struct SettingsView: View {
             CompatibilityPane(settings: settings, state: state)
         case .clipboard:
             Form { clipboardSection }
+        case .screenshots:
+            Form { screenshotsSection }
         case .hotCorners:
             Form { hotCornersSection }
         case .textRecognition:
@@ -864,6 +875,205 @@ struct SettingsView: View {
             Text("For any files and folders")
         } footer: {
             Footnote("Also for ones Pinwheel can't convert. Move To… can be undone from the menu bar; ZIP makes one .zip of everything dropped, without the Mac's hidden extras.")
+        }
+    }
+
+    // MARK: - Screenshots
+
+    private var screenshotsSection: some View {
+        let recorder = state.shortcutRecorder
+        let allowed = ScreenshotController.hasPermission
+        return Group {
+            Section {
+                Toggle("Take screenshots with shortcuts", isOn: $settings.screenshotsEnabled)
+                HStack(spacing: 12) {
+                    Image(systemName: allowed ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundStyle(allowed ? .green : .orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(allowed ? "Screen Recording is on" : "Screen Recording permission needed")
+                            .font(.headline)
+                        Text(allowed
+                             ? "Pinwheel can take pictures of your screen. Nothing leaves your Mac."
+                             : "macOS asks before an app may see the screen. Click Allow, switch Pinwheel on in the list, then quit and open Pinwheel again.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    if !allowed {
+                        Button("Allow…") {
+                            CGRequestScreenCaptureAccess()
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            } footer: {
+                Footnote("Or use the menu-bar icon › Screenshot. A picture is saved as a PNG, then opened in the editor (the same one the ⌥⇧ wheel opens on any picture), pinned on the screen, or left alone: you choose below.")
+            }
+
+            Section {
+                ForEach(ScreenshotMode.allCases) { mode in
+                    let shortcut = settings.screenshotShortcuts[mode] ?? mode.defaultShortcut
+                    let isRecording = recorder.isRecording && state.recordingScreenshot == mode
+                    LabeledContent {
+                        HStack(spacing: 8) {
+                            Button {
+                                if isRecording {
+                                    recorder.stop()
+                                } else {
+                                    recorder.start { settings.screenshotShortcuts[mode] = $0 } onRecording: { recording in
+                                        state.recordingScreenshot = recording ? mode : nil
+                                        screenshots?.suspendShortcuts(recording)
+                                    }
+                                }
+                            } label: {
+                                Text(isRecording ? "Press the new keys…" : shortcut.title)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .frame(minWidth: 120)
+                            }
+                            if shortcut != mode.defaultShortcut && !isRecording {
+                                Button("Use \(mode.defaultShortcut.title)") { settings.screenshotShortcuts[mode] = mode.defaultShortcut }
+                            }
+                        }
+                    } label: {
+                        Label(mode.title, systemImage: mode.symbolName)
+                    }
+                    if let problem = screenshots?.problems[mode], settings.screenshotsEnabled {
+                        Label(problem, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
+                    }
+                }
+                if let message = recorder.message, state.recordingScreenshot != nil {
+                    Text(message).font(.callout).foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Shortcuts")
+            } footer: {
+                Footnote("Capturing an area: drag a box (Esc gives up). The same area again repeats the last box without dragging. Copy the text in an area reads the words in the box and copies them: no picture is saved. macOS keeps ⇧⌘3, ⇧⌘4 and ⇧⌘5 for its own screenshots, so these use ⌥⌘.")
+            }
+            .disabled(!settings.screenshotsEnabled)
+
+            Section {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(ScreenshotFormat.allCases) { format in
+                        screenshotFormatCard(format)
+                    }
+                }
+                let chosen = settings.screenshotFormat
+                VStack(alignment: .leading, spacing: 6) {
+                    Label { Text("**Best for:** \(chosen.bestFor)") } icon: { Image(systemName: "hand.thumbsup") }
+                    Label { Text("**Watch out:** \(chosen.watchOut)") } icon: { Image(systemName: "exclamationmark.triangle") }
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Save as")
+            } footer: {
+                Footnote("Not sure? Keep PNG: it never loses anything, and you can make a smaller JPEG or HEIC later from the wheel (hold ⇧ while dragging the file). JPEG and HEIC use the quality set in Wheels. Text read from an area (OCR) is copied, never saved as a picture.")
+            }
+            .disabled(!settings.screenshotsEnabled)
+
+            Section {
+                Picker("After a screenshot", selection: $settings.screenshotAfter) {
+                    ForEach(ScreenshotAfter.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                Toggle("Also copy it, to paste anywhere", isOn: $settings.screenshotCopy)
+                Picker("Wait before taking it", selection: $settings.screenshotDelay) {
+                    ForEach(SettingsStore.screenshotDelays, id: \.self) { Text($0 == 0 ? "No wait" : "\($0) seconds").tag($0) }
+                }
+                Toggle("Keep a window's shadow", isOn: $settings.screenshotWindowShadow)
+                LabeledContent("Save them in") {
+                    HStack(spacing: 8) {
+                        Text(settings.screenshotFolder.lastPathComponent)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Button("Choose…") { chooseScreenshotFolder() }
+                        if !settings.screenshotFolderPath.isEmpty {
+                            Button("Default") { settings.screenshotFolderPath = "" }
+                        }
+                    }
+                }
+            } header: {
+                Text("After capturing")
+            } footer: {
+                Footnote("The screen is frozen the moment you press the shortcut, so what you select is what was there (with a timer set, the picture is taken when it runs out instead). Saving in the editor makes a new picture next to the screenshot; the screenshot itself is never changed. A pinned picture floats above every window: drag it, scroll to resize it, double-click or press Esc to close it, right-click for more.")
+            }
+            .disabled(!settings.screenshotsEnabled)
+
+            Section {
+                ForEach(Self.screenshotTools, id: \.0) { tool in
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(tool.0)
+                            Text(tool.2).font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: tool.1)
+                    }
+                }
+            } header: {
+                Text("In the editor")
+            } footer: {
+                Footnote("These are the editor's Markup tools. They're the same for screenshots and for any picture you edit from the wheel (hold ⌥⇧ while dragging it, then choose Markup).")
+            }
+        }
+    }
+
+    /// One format: its name and a few words, click to choose.
+    private func screenshotFormatCard(_ format: ScreenshotFormat) -> some View {
+        let isOn = settings.screenshotFormat == format
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        return Button { settings.screenshotFormat = format } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(format.title).font(.system(size: 14, weight: .bold))
+                    if format == .png {
+                        Text("Recommended").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                    }
+                }
+                Text(format.tagline).font(.caption).foregroundStyle(.secondary)
+            }
+            .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(shape.fill(isOn ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.045)))
+            .overlay(shape.strokeBorder(isOn ? Color.accentColor.opacity(0.9) : Color.primary.opacity(0.08), lineWidth: isOn ? 1.5 : 1))
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private static let screenshotTools: [(String, String, String)] = [
+        ("Arrows, Lines, Boxes, Ovals", "arrow.up.right", "Arrow, two-way arrow, line, dashed line, box, rounded box, filled box, oval, check mark and cross"),
+        ("One slider for size or strength", "slider.horizontal.3", "Thickness for shapes and text, with notches at Small, Medium and Large; strength for blur, blocks and dimming"),
+        ("Pen and Highlight", "highlighter", "Draw freely, or mark text"),
+        ("Text and Numbers", "textformat", "Notes, and numbered steps 1, 2, 3…"),
+        ("Blur Out and Soft Blur", "eye.slash", "Hide private details: in blocks, or smoothly; faces and text by themselves"),
+        ("Spotlight", "rays", "Dim everything except what matters"),
+        ("Measure", "ruler", "A ruler that snaps to edges and says how many pixels it spans. Click to measure the space around a point"),
+        ("Pixel zoom", "plus.magnifyingglass", "A magnifier that shows each pixel and its color"),
+        ("Color picker and contrast", "eyedropper", "macOS's own picker, and a check of how readable a text color is on its background"),
+        ("Copy", "doc.on.clipboard", "⇧⌘C puts the edited picture on the clipboard without saving it"),
+        ("Text from a screenshot", "text.viewfinder", "⌥⌘7: drag over text anywhere and it's copied (see Text Recognition for Greek)"),
+        ("Crop, Adjust, Background", "crop", "Crop, light and color, a backdrop with a shadow, a watermark"),
+    ]
+
+    private func chooseScreenshotFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.message = "Choose where Pinwheel saves screenshots."
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.screenshotFolderPath = url.path
         }
     }
 
