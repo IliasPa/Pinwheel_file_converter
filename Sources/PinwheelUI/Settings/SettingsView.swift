@@ -952,7 +952,7 @@ struct SettingsView: View {
             } header: {
                 Text("Shortcuts")
             } footer: {
-                Footnote("Capturing an area: drag a box (Esc gives up). The same area again repeats the last box without dragging. Copy the text in an area reads the words in the box and copies them: no picture is saved. macOS keeps ⇧⌘3, ⇧⌘4 and ⇧⌘5 for its own screenshots, so these use ⌥⌘.")
+                Footnote("Capturing an area: drag a box (Esc gives up). The same area again repeats the last box without dragging. Copy the text in an area reads the words in the box and copies them: no picture is saved. A scrolling area: drag a box over what scrolls (a web page, a chat), then scroll it yourself, slowly, from top to bottom; press the shortcut again (or Done) and the pictures are joined into one tall one. Scroll down only; bars that stay put, like a website's header, are kept once. macOS keeps ⇧⌘3, ⇧⌘4 and ⇧⌘5 for its own screenshots, so these use ⌥⌘.")
             }
             .disabled(!settings.screenshotsEnabled)
 
@@ -1061,6 +1061,7 @@ struct SettingsView: View {
         ("Pixel zoom", "plus.magnifyingglass", "A magnifier that shows each pixel and its color"),
         ("Color picker and contrast", "eyedropper", "macOS's own picker, and a check of how readable a text color is on its background"),
         ("Copy", "doc.on.clipboard", "⇧⌘C puts the edited picture on the clipboard without saving it"),
+        ("Scrolling screenshot", "arrow.up.and.down.text.horizontal", "⌥⌘8: drag a box, scroll the page yourself, press the shortcut again: one tall picture"),
         ("Text from a screenshot", "text.viewfinder", "⌥⌘7: drag over text anywhere and it's copied (see Text Recognition for Greek)"),
         ("Crop, Adjust, Background", "crop", "Crop, light and color, a backdrop with a shadow, a watermark"),
     ]

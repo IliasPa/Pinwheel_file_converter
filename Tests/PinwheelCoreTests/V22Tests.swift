@@ -248,3 +248,134 @@ struct V23EraseTests {
         #expect(Fixtures.pixel(image, x: 26, y: 50).r > 200 && Fixtures.pixel(image, x: 174, y: 50).r > 200, "a head at each end")
     }
 }
+
+/// Scrolling capture: joining pictures of a scrolling area.
+struct V23ScrollTests {
+    /// A tall "page": every row different (pseudo-random brightness per block).
+    private func page(width: Int = 320, height: Int = 1600) -> CGImage {
+        var state: UInt64 = 0x9E3779B97F4A7C15
+        func next() -> UInt8 {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return UInt8(truncatingIfNeeded: state >> 33)
+        }
+        var bytes = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            // Paragraph-like rows: blocks of 20 pixels with their own shade, new every 3 rows.
+            if y % 3 == 0 { _ = next() }
+            for x in 0..<width {
+                let shade = UInt8(truncatingIfNeeded: Int(next() >> 2) &+ x / 20 * 17 &+ (y / 3) * 5)
+                let at = (y * width + x) * 4
+                bytes[at] = shade; bytes[at + 1] = shade &+ 20; bytes[at + 2] = shade &+ 40; bytes[at + 3] = 255
+            }
+        }
+        let provider = CGDataProvider(data: Data(bytes) as CFData)!
+        return CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        )!
+    }
+
+    private func same(_ a: CGImage, _ b: CGImage) -> Bool {
+        guard a.width == b.width, a.height == b.height else { return false }
+        for y in stride(from: 0, to: a.height, by: 7) {
+            for x in stride(from: 0, to: a.width, by: 13) {
+                let p = Fixtures.pixel(a, x: x, y: y), q = Fixtures.pixel(b, x: x, y: y)
+                if p.r != q.r || p.g != q.g || p.b != q.b { return false }
+            }
+        }
+        return true
+    }
+
+    @Test func framesJoinIntoTheWholePage() throws {
+        let whole = page()
+        var stitcher = ScrollStitcher()
+        #expect(stitcher.add(try #require(whole.cropping(to: CGRect(x: 0, y: 0, width: 320, height: 400)))) == .started)
+        var offset = 0
+        for step in [90, 130, 60, 200, 120, 150, 40] {
+            offset += step
+            let outcome = stitcher.add(try #require(whole.cropping(to: CGRect(x: 0, y: offset, width: 320, height: 400))))
+            #expect(outcome == .added(step), "scrolled \(step) rows")
+        }
+        let joined = try #require(stitcher.result())
+        #expect(joined.height == offset + 400)
+        #expect(same(joined, try #require(whole.cropping(to: CGRect(x: 0, y: 0, width: 320, height: offset + 400)))))
+    }
+
+    @Test func standingStillOrScrollingBackAddsNothing() throws {
+        let whole = page()
+        func frame(_ y: Int) throws -> CGImage { try #require(whole.cropping(to: CGRect(x: 0, y: y, width: 320, height: 400))) }
+        var stitcher = ScrollStitcher()
+        stitcher.add(try frame(100))
+        #expect(stitcher.add(try frame(100)) == .unchanged)
+        #expect(stitcher.add(try frame(160)) == .added(60))
+        #expect(stitcher.add(try frame(120)) != .added(40), "going back up isn't added")
+        let height = stitcher.resultHeight
+        #expect(stitcher.add(try frame(200)) == .added(40), "and going down again carries on")
+        #expect(stitcher.resultHeight == height + 40)
+        // Jumping further than the picture is tall can't be followed.
+        #expect(stitcher.add(try frame(1000)) == .lost)
+    }
+
+    @Test func aHeaderAndFooterThatStayPutAppearOnce() throws {
+        let whole = page(height: 1400)
+        let ctx = CGContext(
+            data: nil, width: 320, height: 400, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        // A sticky header (rows 0-39) and footer (rows 360-399) painted over each frame.
+        func frame(_ y: Int) throws -> CGImage {
+            ctx.draw(try #require(whole.cropping(to: CGRect(x: 0, y: y, width: 320, height: 400))), in: CGRect(x: 0, y: 0, width: 320, height: 400))
+            ctx.setFillColor(CGColor(red: 0.1, green: 0.2, blue: 0.6, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 360, width: 320, height: 40))   // top in the picture
+            ctx.setFillColor(CGColor(red: 0.8, green: 0.2, blue: 0.1, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: 320, height: 40))     // bottom in the picture
+            ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+            ctx.fill(CGRect(x: 40, y: 372, width: 100, height: 8))   // some "text" in the header
+            ctx.fill(CGRect(x: 40, y: 14, width: 100, height: 8))    // and in the footer
+            return ctx.makeImage()!
+        }
+        var stitcher = ScrollStitcher()
+        stitcher.add(try frame(0))
+        var offset = 0
+        for step in [70, 100, 80] {
+            offset += step
+            #expect(stitcher.add(try frame(offset)) == .added(step))
+        }
+        let joined = try #require(stitcher.result())
+        #expect(joined.height == 400 + offset, "the header and footer aren't repeated")
+        let head = Fixtures.pixel(joined, x: 5, y: 5), foot = Fixtures.pixel(joined, x: 5, y: joined.height - 5)
+        #expect(head.b > 120 && head.r < 60, "the blue header is at the top")
+        #expect(foot.r > 180 && foot.b < 60, "the red footer is at the very bottom")
+        // The middle is the page, with no bars in it.
+        for y in [200, 330, 500, 600] {
+            let p = Fixtures.pixel(joined, x: 5, y: y)
+            let expected = Fixtures.pixel(whole, x: 5, y: y)
+            #expect(p.r == expected.r && p.g == expected.g, "row \(y)")
+        }
+    }
+
+    @Test func aRetinaSizedFrameIsJoinedQuickly() throws {
+        let whole = page(width: 2400, height: 5200)
+        var stitcher = ScrollStitcher()
+        stitcher.add(try #require(whole.cropping(to: CGRect(x: 0, y: 0, width: 2400, height: 1600))))
+        let start = Date()
+        var offset = 0
+        for step in [120, 240, 90, 300] {
+            offset += step
+            #expect(stitcher.add(try #require(whole.cropping(to: CGRect(x: 0, y: offset, width: 2400, height: 1600)))) == .added(step))
+        }
+        let each = Date().timeIntervalSince(start) / 4
+        // A debug build under a full test run is many times slower than the app; this only catches a collapse.
+        #expect(each < 2, "took \(each) s a picture")
+    }
+
+    @Test func aBlankPageCantBeFollowed() throws {
+        let blank = StudioFixtures.solid(0.9, width: 320, height: 400)
+        var stitcher = ScrollStitcher()
+        stitcher.add(blank)
+        let outcome = stitcher.add(blank)
+        #expect(outcome == .unchanged)
+        #expect(stitcher.resultHeight == 400)
+    }
+}

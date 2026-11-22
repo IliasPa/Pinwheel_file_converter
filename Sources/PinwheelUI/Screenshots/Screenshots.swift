@@ -7,7 +7,7 @@ import PinwheelCore
 
 /// The ways to take a screenshot.
 enum ScreenshotMode: String, CaseIterable, Identifiable {
-    case area, window, screen, again, text
+    case area, window, screen, again, text, scrolling
 
     var id: Self { self }
 
@@ -18,6 +18,7 @@ enum ScreenshotMode: String, CaseIterable, Identifiable {
         case .screen: "Capture the whole screen"
         case .again: "Capture the same area again"
         case .text: "Copy the text in an area"
+        case .scrolling: "Capture a scrolling area"
         }
     }
 
@@ -28,6 +29,7 @@ enum ScreenshotMode: String, CaseIterable, Identifiable {
         case .screen: "display"
         case .again: "arrow.counterclockwise"
         case .text: "text.viewfinder"
+        case .scrolling: "arrow.up.and.down.text.horizontal"
         }
     }
 
@@ -39,6 +41,7 @@ enum ScreenshotMode: String, CaseIterable, Identifiable {
         case .window: KeyShortcut(keyCode: UInt16(kVK_ANSI_5), modifiers: [.option, .command], key: "5")
         case .again: KeyShortcut(keyCode: UInt16(kVK_ANSI_6), modifiers: [.option, .command], key: "6")
         case .text: KeyShortcut(keyCode: UInt16(kVK_ANSI_7), modifiers: [.option, .command], key: "7")
+        case .scrolling: KeyShortcut(keyCode: UInt16(kVK_ANSI_8), modifiers: [.option, .command], key: "8")
         }
     }
 }
@@ -118,6 +121,7 @@ final class ScreenshotController {
     @ObservationIgnored private var hotKeys: [ScreenshotMode: GlobalHotKey] = [:]
     @ObservationIgnored private var isSuspended = false
     @ObservationIgnored private var selector: AreaSelector?
+    @ObservationIgnored private var scrolling: ScrollingSession?
     @ObservationIgnored private var pins: [PinnedPicture] = []
     @ObservationIgnored private var isBusy = false
     /// What the area being chosen is for: a picture, or text to read.
@@ -167,7 +171,12 @@ final class ScreenshotController {
     static var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
 
     func capture(_ mode: ScreenshotMode) {
-        guard !isBusy else { return }
+        // Pressing the scrolling shortcut again finishes the one being taken.
+        if mode == .scrolling, let scrolling {
+            scrolling.finish()
+            return
+        }
+        guard !isBusy, scrolling == nil else { return }
         guard Self.hasPermission else {
             CGRequestScreenCaptureAccess()
             onNeedsPermission()
@@ -175,7 +184,7 @@ final class ScreenshotController {
         }
         message = nil
         switch mode {
-        case .area, .text:
+        case .area, .text, .scrolling:
             isBusy = true
             purpose = mode
             chooseArea()
@@ -207,7 +216,8 @@ final class ScreenshotController {
         // select is exactly what was there when the key was pressed (menus,
         // tooltips and video can't change under you). With a timer set, the
         // picture is taken live when it runs out instead.
-        let timed = settings.screenshotDelay > 0
+        // A scrolling area is chosen live (the page has to stay scrollable).
+        let timed = settings.screenshotDelay > 0 || purpose == .scrolling
         Task {
             let frozen = timed ? [] : await AreaSelector.freezeScreens()
             let selector = AreaSelector()
@@ -221,6 +231,10 @@ final class ScreenshotController {
                 }
                 if self.purpose == .area { self.settings.lastScreenshotArea = area }
                 self.isBusy = false
+                if self.purpose == .scrolling {
+                    self.startScrolling(area)
+                    return
+                }
                 if let picture = selector.picture(of: area) {
                     self.save(frozen: picture)
                 } else {
@@ -229,6 +243,18 @@ final class ScreenshotController {
                 }
             }
         }
+    }
+
+    /// Follows what scrolls in the area, until Done.
+    private func startScrolling(_ area: NSRect) {
+        let session = ScrollingSession(area: area)
+        scrolling = session
+        session.onFinish = { [weak self] picture in
+            self?.scrolling = nil
+            guard let picture else { return }
+            self?.save(frozen: picture)
+        }
+        session.begin()
     }
 
     /// Handles a part of the frozen screen (no waiting: it's already taken).

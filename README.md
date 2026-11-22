@@ -101,7 +101,7 @@ they take), are in Settings › Clipboard.
 
 **Screenshots:** ⌥⌘4 drags a box over any part of the screen (⌥⌘5 a
 window, ⌥⌘3 the whole screen, ⌥⌘6 the same area again; ⌥⌘7 copies the
-text in a box), saves it as a PNG, JPEG or HEIC,
+text in a box, ⌥⌘8 joins a page you scroll into one tall picture), saves it as a PNG, JPEG or HEIC,
 copies it, and opens it in the image editor, or pins it on the screen. The
 screen freezes the moment you press the key. The
 editor (the same one as the ⌥⇧ wheel's Markup) has arrows, lines, boxes (plain,

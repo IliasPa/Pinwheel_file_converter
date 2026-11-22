@@ -3,6 +3,23 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.3.1 — 2026-11-21
+
+**New**
+- **Scrolling screenshots** (⌥⌘8, or the menu-bar icon › Screenshot). Drag a
+  box over what scrolls (a web page, a chat, a long document), then scroll it
+  yourself, slowly, from top to bottom. Pinwheel takes pictures as it moves,
+  finds how far it moved each time and joins them into one tall picture; press
+  the shortcut again (or Done) to finish. It then goes where any screenshot
+  goes (saved, copied, edited or pinned).
+  - A bar that stays put while the page scrolls (a website's header or
+    footer) is kept once, not repeated.
+  - Pictures where nothing moved are ignored, and so is scrolling back up.
+  - If you scroll too fast to follow, the box says so: scroll back up a little.
+  - Limits: down only; a blank page can't be followed (nothing to match);
+    video or animation inside the area can leave a mismatch; the picture
+    stops at 30,000 pixels tall.
+
 ## v2.3 — 2026-11-21
 
 **Screenshots** (a new tab in Settings), with the tools of Shottr that
@@ -54,8 +71,8 @@ any picture, so every new tool works there too.
   on plain backgrounds; it can't invent a pattern). Backspace also deletes
   the selected mark.
 - The picture now fills the editor's window, with no border around it.
-- Not in this version: scrolling screenshots, an editor zoom,
-  and a screenshot history.
+- Not in this version: scrolling screenshots (see 2.3.1), an editor zoom, and
+  a screenshot history.
 
 ## v2.2.3 — 2026-11-23
 
