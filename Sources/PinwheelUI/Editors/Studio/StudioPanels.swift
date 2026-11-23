@@ -514,31 +514,59 @@ private struct BackgroundPanel: View {
 
 // MARK: - Markup
 
-private struct MarkupPanel: View {
+/// The Markup tab's tools (not private: tests check the tool grid).
+struct MarkupPanel: View {
     var model: StudioModel
 
-    private static let tools: [(Annotation.Kind?, String, String)] = [
-        (nil, "Select", "cursorarrow"),
-        (.arrow, "Arrow", "arrow.up.right"),
-        (.doubleArrow, "Two-Way", "arrow.left.and.right"),
-        (.line, "Line", "line.diagonal"),
-        (.dashedLine, "Dashed", "dashed"),
-        (.rectangle, "Box", "rectangle"),
-        (.roundedBox, "Rounded", "app"),
-        (.filledBox, "Filled", "rectangle.fill"),
-        (.ellipse, "Oval", "circle"),
-        (.checkmark, "Check", "checkmark"),
-        (.cross, "Cross", "xmark"),
-        (.pen, "Pen", "scribble.variable"),
-        (.highlighter, "Highlight", "highlighter"),
-        (.text, "Text", "textformat"),
-        (.number, "Number", "1.circle"),
-        (.redact, "Blur Out", "eye.slash"),
-        (.blur, "Soft Blur", "drop.halffull"),
-        (.spotlight, "Spotlight", "rays"),
-        (.measure, "Measure", "ruler"),
-        (.erase, "Erase", "eraser"),
+    /// A button in the tool grid: a kind of mark (none: Select), Blur (in
+    /// blocks or smooth), or Pixel Zoom.
+    enum ToolChoice: Hashable {
+        case mark(Annotation.Kind?)
+        case blur
+        case pixelZoom
+    }
+
+    static let tools: [(ToolChoice, String, String)] = [
+        (.mark(nil), "Select", "cursorarrow"),
+        (.mark(.arrow), "Arrow", "arrow.up.right"),
+        (.mark(.doubleArrow), "Two-Way", "arrow.left.and.right"),
+        (.mark(.line), "Line", "line.diagonal"),
+        (.mark(.dashedLine), "Dashed", "dashed"),
+        (.mark(.rectangle), "Box", "rectangle"),
+        (.mark(.roundedBox), "Rounded", "app"),
+        (.mark(.filledBox), "Filled", "rectangle.fill"),
+        (.mark(.ellipse), "Oval", "circle"),
+        (.mark(.checkmark), "Check", "checkmark"),
+        (.mark(.cross), "Cross", "xmark"),
+        (.mark(.pen), "Pen", "scribble.variable"),
+        (.mark(.highlighter), "Highlight", "highlighter"),
+        (.mark(.text), "Text", "textformat"),
+        (.mark(.number), "Number", "1.circle"),
+        (.blur, "Blur", "eye.slash"),
+        (.mark(.spotlight), "Spotlight", "rays"),
+        (.mark(.measure), "Measure", "ruler"),
+        (.pixelZoom, "Pixel Zoom", "plus.magnifyingglass"),
     ]
+
+    static func isOn(_ choice: ToolChoice, in model: StudioModel) -> Bool {
+        switch choice {
+        case .mark(nil): model.tool == nil && !model.pixelZoom
+        case .mark(let kind): model.tool == kind
+        case .blur: model.isBlurTool
+        case .pixelZoom: model.isPixelZoomTool
+        }
+    }
+
+    static func choose(_ choice: ToolChoice, in model: StudioModel) {
+        switch choice {
+        case .mark(let kind):
+            model.pixelZoom = false
+            model.tool = kind
+            if kind != nil { model.selection = nil }
+        case .blur: model.chooseBlurTool()
+        case .pixelZoom: model.choosePixelZoomTool()
+        }
+    }
 
     private let toolColumns = [GridItem(.adaptive(minimum: 76), spacing: 6)]
 
@@ -548,12 +576,23 @@ private struct MarkupPanel: View {
                 ForEach(Self.tools, id: \.1) { tool in
                     ChoiceButton(
                         title: tool.1, symbol: tool.2 == "dashed" ? nil : tool.2,
-                        icon: tool.2 == "dashed" ? AnyView(DashedLineIcon()) : nil, isOn: model.tool == tool.0
+                        icon: tool.2 == "dashed" ? AnyView(DashedLineIcon()) : nil, isOn: Self.isOn(tool.0, in: model)
                     ) {
-                        model.tool = tool.0
-                        if tool.0 != nil { model.selection = nil }
+                        Self.choose(tool.0, in: model)
                     }
                 }
+            }
+        }
+
+        if model.showsBlurSettings {
+            PanelSection(title: "Blur") {
+                Picker("Style", selection: Binding(get: { shownBlurStyle }, set: { model.setBlurStyle($0) })) {
+                    Text("Blocks").tag(Annotation.Kind.redact)
+                    Text("Smooth").tag(Annotation.Kind.blur)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help("Blocks hide it completely; Smooth softens it. A selected blur changes too.")
             }
         }
 
@@ -566,6 +605,29 @@ private struct MarkupPanel: View {
                     extraMagnets: model.sliderIsStrength ? [] : Array(StudioModel.SizeScale.notches.dropFirst()),
                     magnetPull: 0.035, set: model.setSliderValue
                 )
+            }
+        }
+
+        if model.showsBlurSettings {
+            PanelSection(title: "Blur by itself") {
+                ForEach(PrivacyBlur.Kind.allCases, id: \.self) { kind in
+                    Toggle(kind.title, isOn: Binding(
+                        get: { model.isAutoBlurOn(kind) },
+                        set: { model.setAutoBlur(kind, on: $0) }
+                    ))
+                    .disabled(model.isFinding)
+                    .help("Blurs every \(kind.singular) it finds. Each can be moved or deleted on its own; switching off takes them all away.")
+                }
+                if model.isFinding {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Looking…")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else if let note = model.findNote {
+                    Text(note).font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
 
@@ -625,15 +687,6 @@ private struct MarkupPanel: View {
             }
         }
 
-        if model.tool == .erase {
-            PanelSection(title: "Erase") {
-                Button { model.eraseSelection() } label: {
-                    Label("Erase Selection", systemImage: "eraser").frame(maxWidth: .infinity)
-                }
-                .disabled(model.eraseArea == nil)
-            }
-        }
-
         if model.tool == .text || model.selected?.kind == .text {
             PanelSection(title: model.selected?.kind == .text ? "Text" : "Text to place") {
                 TextField("Text", text: Binding(get: { model.text }, set: { model.setText($0) }), axis: .vertical)
@@ -642,29 +695,7 @@ private struct MarkupPanel: View {
             }
         }
 
-        PanelSection(title: "Blur out by itself") {
-            HStack(spacing: 6) {
-                Button { model.blurOut(faces: true, text: false) } label: {
-                    Label("Faces", systemImage: "person.crop.square").frame(maxWidth: .infinity)
-                }
-                Button { model.blurOut(faces: false, text: true) } label: {
-                    Label("Text", systemImage: "text.viewfinder").frame(maxWidth: .infinity)
-                }
-            }
-            .disabled(model.isFinding)
-            if model.isFinding {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Looking…")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else if let note = model.findNote {
-                Text(note).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-
-        // Backspace (or Delete) erases the chosen box, or deletes the selected mark.
+        // Backspace (or Delete) deletes the selected mark.
         // Only while there's something for it to do, so typing text still works.
         ZStack {
             Button("", action: model.deleteKey).keyboardShortcut(.delete, modifiers: [])
@@ -675,22 +706,16 @@ private struct MarkupPanel: View {
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
 
-        Toggle("Pixel zoom", isOn: Binding(get: { model.pixelZoom }, set: { model.pixelZoom = $0 }))
-            .help("A magnifier follows the pointer, showing each pixel and its color. (Measure shows it anyway.)")
-
-        HStack {
-            Button("Delete", action: model.deleteSelected)
-                .disabled(model.selection == nil)
-                .keyboardShortcut(.delete, modifiers: .command)
-            Spacer()
-            Button("Clear All", action: model.clearMarkup)
-                .disabled(model.edit.markup.isEmpty)
-        }
-
         Text(hint)
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Blocks or Smooth: the selected blur's, else the tool's.
+    private var shownBlurStyle: Annotation.Kind {
+        if let kind = model.selected?.kind, kind == .redact || kind == .blur { return kind }
+        return model.blurStyle
     }
 
     private var strengthName: String {
@@ -710,16 +735,17 @@ private struct MarkupPanel: View {
     }
 
     private var hint: String {
-        switch model.tool {
+        if model.isPixelZoomTool {
+            return "Point at the picture to see each pixel. Click to copy the color code of the pixel in the middle."
+        }
+        return switch model.tool {
         case nil: "Click something to select it, then drag to move it. Backspace deletes it."
         case .text: "Click where the text goes, then type it here."
         case .number: "Click to place numbered steps: 1, 2, 3…"
-        case .redact: "Drag over anything private (names, faces, numbers) to blur it out."
+        case .redact, .blur: "Drag over anything private (names, faces, numbers) to blur it. Click a blur to move it; Backspace deletes it."
         case .pen, .highlighter: "Drag to draw."
-        case .blur: "Drag over anything to blur it smoothly."
         case .spotlight: "Drag around what matters: the rest of the picture is dimmed."
         case .measure: "Drag to measure: the ends snap to edges. Click to measure the space between the edges around the point (⌥-click for up and down)."
-        case .erase: "Drag around something to take out, then press Backspace. It's filled in from what's around it: best on plain backgrounds."
         case .filledBox: "Drag to shade an area, so it stands out."
         case .checkmark, .cross: "Drag a box to put it in."
         case .doubleArrow, .dashedLine, .roundedBox: "Drag on the picture to draw."

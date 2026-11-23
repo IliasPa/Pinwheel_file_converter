@@ -43,6 +43,7 @@ final class ClipboardController {
         model.onDragOut = { [weak self] item, view, event in self?.dragOut(item, from: view, event: event) }
         model.onAction = { [weak self] item, action in self?.run(action, on: item) }
         model.onLook = { [weak self] item in self?.look(at: item) }
+        model.onUseScreenshot = { [weak self] entry in self?.use(entry) }
         model.onOpenSettings = { [weak self] in
             self?.hide()
             self?.onOpenSettings()
@@ -170,6 +171,19 @@ final class ClipboardController {
         store.copy(item, to: pasteboard)
         seenChangeCount = pasteboard.changeCount  // not a new copy
         finishChoosing(item.id)
+    }
+
+    /// A screenshot from the strip: the picture goes on the clipboard and is
+    /// pasted like a chosen copy. (It isn't added to the copies.)
+    func use(_ entry: ScreenshotEntry) {
+        guard let history = model.screenshots, history.exists(entry), let picture = NSImage(contentsOf: entry.url) else {
+            model.screenshots?.remove(entry)
+            return
+        }
+        pasteboard.clearContents()
+        pasteboard.writeObjects([picture])
+        seenChangeCount = pasteboard.changeCount
+        finishChoosing(entry.id)
     }
 
     /// A button under a copy: works out what to paste (reading a picture
@@ -458,6 +472,11 @@ final class ClipboardPanelModel {
     var onAction: (ClipItem, ClipAction) -> Void = { _, _ in }
     /// A picture's row came into view: look at it if that hasn't happened.
     var onLook: (ClipItem) -> Void = { _ in }
+    /// The screenshots taken lately, shown under the copies (nil: none shown).
+    var screenshots: ScreenshotHistory?
+    /// A screenshot in the strip was chosen: paste or copy it.
+    var onUseScreenshot: (ScreenshotEntry) -> Void = { _ in }
+    var onEditScreenshot: (ScreenshotEntry) -> Void = { _ in }
 
     init(store: ClipboardStore) {
         self.store = store
@@ -596,6 +615,10 @@ struct ClipboardView: View {
                 empty
             } else {
                 ClipList(shown: shown, model: model, holdPreviews: settings.clipboardPreview.byHolding, showsActions: settings.clipboardActions)
+            }
+            if let history = model.screenshots, !history.entries.isEmpty {
+                Divider()
+                ScreenshotStrip(history: history, onUse: model.onUseScreenshot, onEdit: model.onEditScreenshot)
             }
             Divider()
             footer(shown.count)

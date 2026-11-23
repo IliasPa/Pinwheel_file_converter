@@ -207,28 +207,6 @@ struct StudioSliderAndRulerTests {
         #expect(patch.image.width == StudioModel.zoomPixels)
     }
 
-    @Test func eraseWaitsForBackspace() async throws {
-        let (model, _scratch) = try await model()
-        _ = _scratch
-        model.tool = .erase
-        #expect(!model.sliderIsStrength && model.sliderKind == nil, "no slider for erasing")
-        model.beginMarkup(at: RelativePoint(x: 0.4, y: 0.4))
-        model.continueMarkup(to: RelativePoint(x: 0.6, y: 0.6))
-        model.endMarkup()
-        #expect(model.edit.markup.isEmpty, "choosing a box changes nothing yet")
-        #expect(model.eraseArea != nil && model.canDeleteByKey)
-        model.deleteKey()  // Backspace
-        #expect(model.edit.markup.map(\.kind) == [.erase] && model.eraseArea == nil)
-        model.undo()
-        #expect(model.edit.markup.isEmpty)
-        // A click chooses nothing; switching tools drops the box.
-        model.beginMarkup(at: RelativePoint(x: 0.4, y: 0.4)); model.endMarkup()
-        #expect(model.eraseArea == nil)
-        model.beginMarkup(at: RelativePoint(x: 0.1, y: 0.1)); model.continueMarkup(to: RelativePoint(x: 0.3, y: 0.3)); model.endMarkup()
-        model.tool = .arrow
-        #expect(model.eraseArea == nil && !model.canDeleteByKey)
-    }
-
     @Test func backspaceDeletesTheSelectedMark() async throws {
         let (model, _scratch) = try await model()
         _ = _scratch

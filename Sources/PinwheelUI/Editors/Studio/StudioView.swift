@@ -49,12 +49,33 @@ struct StudioView: View {
             .fixedSize()
             Spacer()
 
+            zoomControls
             CompareButton(model: model)
             Button("Revert All", action: model.revertAll)
                 .disabled(model.edit.isEmpty)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
+    }
+
+    private var zoomControls: some View {
+        HStack(spacing: 2) {
+            Button(action: model.zoomOut) { Image(systemName: "minus.magnifyingglass") }
+                .disabled(!model.isZoomed)
+                .keyboardShortcut("-", modifiers: .command)
+                .help("Zoom out (⌘−)")
+            Button(action: model.zoomToFit) {
+                Text(model.zoomText).font(.system(size: 11).monospacedDigit()).frame(minWidth: 40)
+            }
+            .keyboardShortcut("0", modifiers: .command)
+            .help("Fit the picture in the window (⌘0)")
+            Button(action: model.zoomIn) { Image(systemName: "plus.magnifyingglass") }
+                .disabled(model.zoom >= StudioModel.zoomRange.upperBound)
+                .keyboardShortcut("=", modifiers: .command)
+                .help("Zoom in (⌘+). Pinch, or scroll with ⌘ held, to zoom around the pointer; scroll to move.")
+        }
+        .buttonStyle(.borderless)
+        .font(.system(size: 14))
     }
 
     private var footer: some View {

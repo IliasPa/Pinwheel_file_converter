@@ -11,8 +11,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var showClipboard: @MainActor () -> Void = {}
         var capture: @MainActor (ScreenshotMode) -> Void = { _ in }
         var closePins: @MainActor () -> Void = {}
+        /// A screenshot chosen in Screenshot History: pasted or copied, as from the clipboard window.
+        var useScreenshot: @MainActor (ScreenshotEntry) -> Void = { _ in }
+        /// A screenshot chosen with ⌥ held: opened in the editor.
+        var editScreenshot: @MainActor (ScreenshotEntry) -> Void = { _ in }
         var quit: @MainActor () -> Void
     }
+
+    /// How many screenshots Screenshot History lists (the clipboard window shows them all).
+    static let screenshotsListed = 10
+
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
@@ -26,6 +34,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let clipboardShortcut: @MainActor () -> KeyShortcut?
     private let screenshotShortcuts: @MainActor () -> [ScreenshotMode: KeyShortcut]?
     private let pinCount: @MainActor () -> Int
+    private let screenshotHistory: @MainActor () -> ScreenshotHistory?
 
     init(
         actions: Actions,
@@ -33,6 +42,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         clipboardShortcut: @escaping @MainActor () -> KeyShortcut? = { nil },
         screenshotShortcuts: @escaping @MainActor () -> [ScreenshotMode: KeyShortcut]? = { nil },
         pinCount: @escaping @MainActor () -> Int = { 0 },
+        screenshotHistory: @escaping @MainActor () -> ScreenshotHistory? = { nil },
         recents: RecentsStore,
         history: UndoHistory,
         launch: LaunchAtLogin,
@@ -44,6 +54,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.clipboardShortcut = clipboardShortcut
         self.screenshotShortcuts = screenshotShortcuts
         self.pinCount = pinCount
+        self.screenshotHistory = screenshotHistory
         self.recents = recents
         self.history = history
         self.launch = launch
@@ -93,6 +104,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             }
             menu.addItem(history)
         }
+        if let screenshots = screenshotHistoryItem() {
+            menu.addItem(screenshots)
+        }
         menu.addItem(screenshotItem())
         menu.addItem(.separator())
 
@@ -137,6 +151,82 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         parent.submenu = submenu
         return parent
     }
+
+    /// "Screenshot History ▸": the last screenshots, newest first. Click one
+    /// to paste or copy it (as in the clipboard window); with ⌥ held, each
+    /// one reads "Edit…" and opens in the editor. Not shown while there are
+    /// none and screenshots are off.
+    private func screenshotHistoryItem() -> NSMenuItem? {
+        guard let history = screenshotHistory() else { return nil }
+        let entries = history.entries.filter { history.exists($0) }
+        guard !entries.isEmpty || screenshotShortcuts() != nil else { return nil }
+        let parent = NSMenuItem(title: "Screenshot History", action: nil, keyEquivalent: "")
+        parent.image = NSImage(systemSymbolName: "photo.stack", accessibilityDescription: nil)
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        guard !entries.isEmpty else {
+            let take = screenshotShortcuts()?[.area].map { " (\($0.title))" } ?? ""
+            submenu.addItem(hint("No screenshots yet: capture an area\(take) to start"))
+            parent.submenu = submenu
+            return parent
+        }
+        let dates = RelativeDateTimeFormatter()
+        dates.unitsStyle = .full
+        for entry in entries.prefix(Self.screenshotsListed) {
+            let when = dates.localizedString(for: entry.date, relativeTo: Date()).capitalizedFirst
+            let subtitle = entry.app.isEmpty ? when : "\(when) · \(entry.app)"
+            let thumbnail = history.thumbnail(of: entry).map(Self.menuThumbnail)
+
+            let use = item(entry.url.lastPathComponent, #selector(useScreenshot(_:)))
+            use.representedObject = entry
+            use.subtitle = subtitle
+            use.image = thumbnail
+            use.toolTip = "Click to paste or copy it. Hold ⌥ Option to edit it."
+            use.keyEquivalentModifierMask = []  // so the ⌥ line below takes its place
+            submenu.addItem(use)
+
+            let edit = item("Edit \(entry.url.lastPathComponent)…", #selector(editScreenshot(_:)))
+            edit.representedObject = entry
+            edit.subtitle = subtitle
+            edit.image = thumbnail
+            edit.isAlternate = true
+            edit.keyEquivalentModifierMask = .option
+            submenu.addItem(edit)
+        }
+        submenu.addItem(.separator())
+        if entries.count > Self.screenshotsListed, clipboardShortcut() != nil {
+            submenu.addItem(item("Show All \(entries.count) in Clipboard History", #selector(showClipboard)))
+        }
+        submenu.addItem(hint("Hold ⌥ Option to edit one"))
+        submenu.addItem(item("Clear Screenshot History", #selector(clearScreenshots)))
+        parent.submenu = submenu
+        return parent
+    }
+
+    /// A screenshot's thumbnail at menu size (48 × 30 points at most, its shape kept).
+    static func menuThumbnail(_ picture: NSImage) -> NSImage {
+        let box = NSSize(width: 48, height: 30)
+        let scale = min(box.width / max(picture.size.width, 1), box.height / max(picture.size.height, 1))
+        let size = NSSize(width: max(1, (picture.size.width * scale).rounded()), height: max(1, (picture.size.height * scale).rounded()))
+        return NSImage(size: size, flipped: false) { rect in
+            NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).addClip()
+            picture.draw(in: rect)
+            return true
+        }
+    }
+
+    @objc private func useScreenshot(_ sender: NSMenuItem) {
+        guard let entry = sender.representedObject as? ScreenshotEntry else { return }
+        // Let the menu close first, so the paste goes to the app in front.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [actions] in actions.useScreenshot(entry) }
+    }
+
+    @objc private func editScreenshot(_ sender: NSMenuItem) {
+        guard let entry = sender.representedObject as? ScreenshotEntry else { return }
+        actions.editScreenshot(entry)
+    }
+
+    @objc private func clearScreenshots() { screenshotHistory()?.removeAll() }
 
     @objc private func capture(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let mode = ScreenshotMode(rawValue: raw) else { return }

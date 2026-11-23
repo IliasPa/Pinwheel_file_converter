@@ -126,10 +126,51 @@ final class StudioModel {
 
     // Markup
     var tool: Annotation.Kind? = .arrow {
-        didSet { if tool != oldValue && tool != .erase { eraseArea = nil } }
+        didSet {
+            // Pixel Zoom is a tool of its own: choosing another one ends it.
+            if tool != oldValue { pixelZoom = false }
+            if tool == .redact || tool == .blur, let tool { blurStyle = tool }
+        }
     }
-    /// The box chosen with the Erase tool, waiting for Delete (two corners).
-    private(set) var eraseArea: [RelativePoint]?
+    /// The Blur tool's style: in blocks (`.redact`) or smooth (`.blur`). New
+    /// blurs, drawn or found by themselves, get it.
+    private(set) var blurStyle: Annotation.Kind = .redact
+
+    /// Whether the Blur tool is chosen (in either style).
+    var isBlurTool: Bool { tool == .redact || tool == .blur }
+
+    /// Whether the Blur tool's settings show: it's chosen, or a blur is selected.
+    var showsBlurSettings: Bool {
+        isBlurTool || selected?.kind == .redact || selected?.kind == .blur
+    }
+
+    /// The tools panel's Blur button: the style used last.
+    func chooseBlurTool() {
+        tool = blurStyle
+        selection = nil
+    }
+
+    /// Blocks or smooth: for the next blurs, and the selected blur changes too.
+    func setBlurStyle(_ style: Annotation.Kind) {
+        guard style == .redact || style == .blur else { return }
+        blurStyle = style
+        if isBlurTool { tool = style }
+        if let index = selectedIndex, edit.markup[index].kind == .redact || edit.markup[index].kind == .blur,
+           edit.markup[index].kind != style {
+            change { $0.markup[index].kind = style }
+        }
+    }
+
+    /// The Pixel Zoom tool: a magnifier follows the pointer; a click copies
+    /// the color code of the pixel under it.
+    var isPixelZoomTool: Bool { tool == nil && pixelZoom }
+
+    func choosePixelZoomTool() {
+        tool = nil
+        selection = nil
+        pixelZoom = true
+    }
+
     private(set) var color = MarkupColor.red
     /// The Size slider's place for lines, shapes and text.
     private(set) var sizeLevel = 0.5
@@ -271,6 +312,7 @@ final class StudioModel {
         subject = .idle
         selection = nil
         draft = nil
+        zoomToFit()
         let url = file.url
         let current = generation
         loadTask = Task {
@@ -445,6 +487,85 @@ final class StudioModel {
                 subject = .failed(error.localizedDescription)
             }
         }
+    }
+
+    // MARK: - Zoom
+
+    /// How far the picture is enlarged: 1 fits it in the window.
+    private(set) var zoom: CGFloat = 1
+    /// How far the picture's middle is from the window's middle, in points.
+    private(set) var pan: CGSize = .zero
+    /// The picture area's size (the canvas reports it), for zooming around a point.
+    var canvasSize: CGSize = .zero
+    static let zoomRange: ClosedRange<CGFloat> = 1...8
+
+    var isZoomed: Bool { zoom > 1.001 }
+    var zoomText: String { "\(Int((zoom * 100).rounded()))%" }
+
+    /// Where the picture is drawn inside an area of `size` points.
+    func imageRect(in size: CGSize) -> CGRect {
+        guard let image = preview else { return .zero }
+        let margin = StudioCanvas.margin(for: tab)
+        let area = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
+        let base = StudioCanvas.fit(CGSize(width: image.width, height: image.height), in: area)
+        let (width, height) = (base.width * zoom, base.height * zoom)
+        let moved = Self.clamped(pan, picture: CGSize(width: width, height: height), in: area.size)
+        return CGRect(x: area.midX + moved.width - width / 2, y: area.midY + moved.height - height / 2, width: width, height: height)
+    }
+
+    /// A shift that leaves no gap between the picture and the window's edges
+    /// (a picture smaller than the window stays in the middle).
+    static func clamped(_ pan: CGSize, picture: CGSize, in area: CGSize) -> CGSize {
+        let limitX = max(0, (picture.width - area.width) / 2)
+        let limitY = max(0, (picture.height - area.height) / 2)
+        return CGSize(width: min(max(pan.width, -limitX), limitX), height: min(max(pan.height, -limitY), limitY))
+    }
+
+    /// Zooms to `level` keeping the spot under `point` (view coordinates;
+    /// nil: the middle) where it is.
+    func setZoom(_ level: CGFloat, around point: CGPoint? = nil) {
+        let new = min(max(level, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
+        guard new != zoom else { return }
+        let size = canvasSize
+        let old = imageRect(in: size)
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let spot = point ?? center
+        let ratio = new / zoom
+        // The picture's middle moves away from (or toward) the spot.
+        let middle = CGPoint(x: old.midX, y: old.midY)
+        let moved = CGPoint(x: spot.x + (middle.x - spot.x) * ratio, y: spot.y + (middle.y - spot.y) * ratio)
+        zoom = new
+        pan = CGSize(width: moved.x - center.x, height: moved.y - center.y)
+        pan = Self.pan(of: imageRect(in: size), in: size)
+        if !isZoomed { pan = .zero }
+    }
+
+    /// How far a drawn picture's middle is from the middle of its area.
+    private static func pan(of rect: CGRect, in size: CGSize) -> CGSize {
+        CGSize(width: rect.midX - size.width / 2, height: rect.midY - size.height / 2)
+    }
+
+    func zoomIn() { setZoom(zoom * 1.25) }
+    func zoomOut() { setZoom(zoom / 1.25) }
+    func zoomToFit() {
+        zoom = 1
+        pan = .zero
+    }
+
+    /// Actual pixels: one picture pixel per screen pixel (as far as the preview allows).
+    func zoomToActualSize(scale: CGFloat) {
+        guard let image = preview, canvasSize.width > 0 else { return }
+        let fit = StudioCanvas.fit(CGSize(width: image.width, height: image.height), in: CGRect(origin: .zero, size: canvasSize)).width
+        guard fit > 0 else { return }
+        setZoom(CGFloat(image.width) / scale / fit)
+    }
+
+    /// Scrolls the picture by `delta` points (when it's bigger than the window).
+    func panBy(_ delta: CGSize) {
+        guard isZoomed else { return }
+        let moved = CGSize(width: pan.width + delta.width, height: pan.height + delta.height)
+        pan = moved
+        pan = Self.pan(of: imageRect(in: canvasSize), in: canvasSize)
     }
 
     // MARK: - Sizes
@@ -775,7 +896,7 @@ final class StudioModel {
 
     /// Where the pointer is over the picture, 0...1 of what's shown (nil: off it).
     var hover: CGPoint?
-    /// Always show the pixel zoom (the Measure tool shows it anyway).
+    /// Show the pixel zoom: the Pixel Zoom tool (the Measure tool shows it anyway).
     var pixelZoom = false
     var showsZoom: Bool { (pixelZoom || tool == .measure) && hover != nil && tab == .markup }
     /// The zoom takes this many pixels across.
@@ -832,12 +953,18 @@ final class StudioModel {
         isMarking = true
         gestureNeedsCheckpoint = true
         moveDrag = nil
+        if isPixelZoomTool {
+            copyColor(at: point)
+            return
+        }
+        // The Blur tool picks up a blur that's there (to move it, or delete it
+        // with Backspace), so blurs found by themselves can go one by one.
+        if isBlurTool, let hit = annotation(at: point), hit.kind == .redact || hit.kind == .blur {
+            selection = hit.id
+            moveDrag = (hit.id, point, hit.points)
+            return
+        }
         if let tool {
-            if tool == .erase {
-                selection = nil
-                eraseArea = [point, point]
-                return
-            }
             if tool.isPlaced {
                 place(tool, at: point)
                 return
@@ -859,10 +986,6 @@ final class StudioModel {
     }
 
     func continueMarkup(to point: RelativePoint) {
-        if tool == .erase, eraseArea != nil {
-            eraseArea?[1] = point
-            return
-        }
         if var current = draft {
             if current.kind == .measure, let start = measureStart {
                 current.points = snappedRuler(from: start, to: point)
@@ -883,11 +1006,6 @@ final class StudioModel {
         isMarking = false
         gestureNeedsCheckpoint = false
         moveDrag = nil
-        if tool == .erase, let area = eraseArea {
-            // A click, not a drag, chooses nothing.
-            if hypot(area[0].x - area[1].x, area[0].y - area[1].y) < 0.004 { eraseArea = nil }
-            return
-        }
         guard let finished = draft else { return }
         draft = nil
         let first = finished.points[0], last = finished.points[finished.points.count - 1]
@@ -936,14 +1054,29 @@ final class StudioModel {
                 guard let self, let rgb = picked.usingColorSpace(.sRGB) else { return }
                 self.setColor(MarkupColor(Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent)))
                 let code = MarkupColor.hexCode(rgb)
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(code, forType: .string)
+                self.pasteboard.clearContents()
+                self.pasteboard.setString(code, forType: .string)
                 self.colorNote = "Picked \(code) (copied)."
             }
         }
     }
 
-    /// What the color picker did last.
+    /// The Pixel Zoom tool's click: the code of the pixel under the pointer is copied.
+    private func copyColor(at point: RelativePoint) {
+        let shown = shownPoint(point)
+        let saved = hover
+        hover = shown
+        defer { hover = saved }
+        guard let code = zoomPatch?.hex, !code.isEmpty else { return }
+        self.pasteboard.clearContents()
+        self.pasteboard.setString(code, forType: .string)
+        colorNote = "Copied \(code)."
+    }
+
+    /// Where copies go (tests use one of their own).
+    @ObservationIgnored var pasteboard = NSPasteboard.general
+
+    /// What the color picker or Pixel Zoom did last.
     private(set) var colorNote: String?
 
     /// The last contrast check: the text color, the background, and how readable it is.
@@ -999,8 +1132,8 @@ final class StudioModel {
                     try StudioExporter.export(url, edit: current, format: .png, destination: temp, options: ConversionOptions())
                 }
                 guard let picture = NSImage(contentsOf: temp) else { throw CocoaError(.fileReadCorruptFile) }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.writeObjects([picture])
+                self.pasteboard.clearContents()
+                self.pasteboard.writeObjects([picture])
                 copyNote = "Copied to the clipboard."
             } catch {
                 copyNote = "Couldn't copy: \(error.localizedDescription)"
@@ -1011,7 +1144,7 @@ final class StudioModel {
     /// The kind the Size slider is for: the selected one's, else the tool's.
     var sliderKind: Annotation.Kind? {
         let kind = selected?.kind ?? tool
-        return kind == .erase ? nil : kind  // erasing has nothing to size
+        return kind == .erase ? nil : kind  // an erase (made before 2.3.2) has nothing to size
     }
 
     /// True when the slider is a strength (blur, pixel blocks, dimming), not a size.
@@ -1061,26 +1194,14 @@ final class StudioModel {
         apply({ var copy = edit; copy.markup[index].text = newText; return copy }())
     }
 
-    /// Backspace or Delete: takes out what the Erase tool chose, or deletes
-    /// the selected mark.
-    func deleteKey() {
-        if eraseArea != nil { eraseSelection() } else { deleteSelected() }
-    }
+    /// Backspace or Delete: deletes the selected mark.
+    func deleteKey() { deleteSelected() }
 
     /// Whether Backspace has something to do (and isn't a letter being typed).
     var canDeleteByKey: Bool {
         if tab != .markup { return false }
-        if eraseArea != nil { return true }
         if let selected { return selected.kind != .text || tool != .text }
         return false
-    }
-
-    /// Takes what's inside the chosen box out of the picture, filling it from around.
-    func eraseSelection() {
-        guard let area = eraseArea else { return }
-        eraseArea = nil
-        let erased = Annotation(kind: .erase, points: area, color: .black, size: 0.01)
-        change { $0.markup.append(erased) }
     }
 
     func deleteSelected() {
@@ -1089,55 +1210,66 @@ final class StudioModel {
         self.selection = nil
     }
 
-    func clearMarkup() {
-        change { $0.markup = [] }
-        selection = nil
-    }
-
-    // MARK: - Blurring out faces and text
+    // MARK: - Blurring out faces and text by themselves
 
     private(set) var isFinding = false
     /// What finding faces or text came to.
     private(set) var findNote: String?
 
-    /// Finds faces or text in the picture and blurs them out, as Blur Out
-    /// markup (each can then be moved or deleted; Undo takes them all back).
-    func blurOut(faces: Bool, text: Bool) {
-        guard let source, !isFinding else { return }
+    /// Tests put marks in without a picture being found.
+    func beginMarkupForTesting(_ marks: [Annotation]) {
+        change { $0.markup = marks }
+    }
+
+    /// Whether blurring this kind out by itself is on: its marks are in the picture.
+    func isAutoBlurOn(_ kind: PrivacyBlur.Kind) -> Bool {
+        edit.markup.contains { $0.auto == kind.rawValue }
+    }
+
+    /// The Blur tool's switches: faces, e-mail addresses, numbers or all
+    /// text. On: finds them and blurs each out in the chosen style, as marks
+    /// that can be moved or deleted one by one. Off: takes all of that kind
+    /// away (Undo brings them back).
+    func setAutoBlur(_ kind: PrivacyBlur.Kind, on: Bool) {
+        if !on {
+            change { $0.markup.removeAll { $0.auto == kind.rawValue } }
+            selection = nil
+            findNote = nil
+            return
+        }
+        guard let source, !isFinding, !isAutoBlurOn(kind) else { return }
         isFinding = true
         findNote = nil
         var turn = ImageEdit()
         turn.mirrored = edit.mirrored
         turn.quarterTurns = edit.quarterTurns
         turn.straighten = edit.straighten
-        let request = FindRequest(source: source, turn: turn, faces: faces, text: text)
+        let request = FindRequest(source: source, turn: turn, kinds: [kind])
+        let style = blurStyle
         Task {
-            let found = await Self.find(request)
+            let result = await Self.find(request)
             isFinding = false
-            guard let regions = found.regions else {
-                findNote = found.error
+            guard let items = result.items else {
+                findNote = result.error
                 return
             }
-            guard !regions.isEmpty else {
-                findNote = faces ? "No faces were found." : "No text was found."
+            guard !items.isEmpty else {
+                findNote = "No \(kind.noun) found."
                 return
             }
-            change { $0.markup += PrivacyBlur.annotations(for: regions) }
-            tool = nil
-            let what = faces ? (regions.count == 1 ? "face" : "faces") : (regions.count == 1 ? "line of text" : "lines of text")
-            findNote = "\(regions.count) \(what) blurred out."
+            change { $0.markup += PrivacyBlur.annotations(for: items, style: style) }
+            findNote = "\(items.count) \(items.count == 1 ? kind.singular : kind.noun) blurred out. Click one and press Backspace to keep it visible."
         }
     }
 
     private struct FindRequest: @unchecked Sendable {
         let source: StudioSource
         let turn: ImageEdit
-        let faces: Bool
-        let text: Bool
+        let kinds: Set<PrivacyBlur.Kind>
     }
 
     private struct Found: Sendable {
-        var regions: [RelativeRect]?
+        var items: [PrivacyBlur.Found]?
         var error: String?
     }
 
@@ -1151,7 +1283,7 @@ final class StudioModel {
                 return try writeForReading(turned)
             }
             defer { try? FileManager.default.removeItem(at: file) }
-            return Found(regions: try await PictureReader.shared.regions(in: file, faces: request.faces, text: request.text))
+            return Found(items: try await PictureReader.shared.found(in: file, kinds: request.kinds))
         } catch {
             return Found(error: error.localizedDescription)
         }

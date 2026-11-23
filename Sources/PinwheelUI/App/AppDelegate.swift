@@ -47,12 +47,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 showClipboard: { [weak self] in self?.clipboard.show() },
                 capture: { [weak self] mode in self?.screenshots.capture(mode) },
                 closePins: { [weak self] in self?.screenshots.closePins() },
+                useScreenshot: { [weak self] entry in self?.clipboard.use(entry) },
+                editScreenshot: { [weak self] entry in self?.editors.open(.markup, files: [SourceFile(url: entry.url)]) },
                 quit: { NSApp.terminate(nil) }
             ),
             shelfCount: { [weak self] in self?.shelf.model.items.count ?? 0 },
             clipboardShortcut: { settings.clipboardEnabled ? settings.clipboardShortcut : nil },
             screenshotShortcuts: { settings.screenshotsEnabled ? settings.screenshotShortcuts : nil },
             pinCount: { [weak self] in self?.screenshots.pinCount ?? 0 },
+            screenshotHistory: { [weak self] in self?.screenshots.history },
             recents: recents,
             history: history,
             launch: launch,
@@ -143,6 +146,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboard.apply()
         // Screenshots: the shortcuts, and the editor they open (the wheel's own).
         screenshots.onEdit = { [weak self] url in self?.editors.open(.markup, files: [SourceFile(url: url)]) }
+        clipboard.model.screenshots = screenshots.history
+        clipboard.model.onEditScreenshot = { [weak self] entry in
+            self?.clipboard.hide()
+            self?.editors.open(.markup, files: [SourceFile(url: entry.url)])
+        }
         screenshots.onNeedsPermission = { [weak self] in self?.showSettings(pane: .screenshots) }
         settings.onScreenshotChange = { [weak self] in self?.screenshots.apply() }
         screenshots.apply()

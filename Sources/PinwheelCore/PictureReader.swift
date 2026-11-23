@@ -37,6 +37,11 @@ public actor PictureReader {
         try await ask(ReaderRequest(picture: picture, want: .regions, faces: faces, textBoxes: text)).regions ?? []
     }
 
+    /// Faces, e-mail addresses and numbers, each box with what it is.
+    public func found(in picture: URL, kinds: Set<PrivacyBlur.Kind>) async throws -> [PrivacyBlur.Found] {
+        try await ask(ReaderRequest(picture: picture, want: .found, kinds: kinds.map(\.rawValue).sorted())).found ?? []
+    }
+
     /// Whether the helper is running now (it stops `keepAlive` after its last answer).
     public var isRunning: Bool { helper?.isRunning == true }
 
@@ -176,7 +181,7 @@ final class LineSplitter: @unchecked Sendable {
 /// A question for the reader, one line of JSON.
 public struct ReaderRequest: Codable, Sendable {
     public enum Want: String, Codable, Sendable {
-        case text, codes, regions
+        case text, codes, regions, found
     }
 
     public var id = UUID()
@@ -185,8 +190,11 @@ public struct ReaderRequest: Codable, Sendable {
     public var recognition: TextRecognition?
     public var faces = true
     public var textBoxes = true
+    /// For `.found`: "faces", "emails", "numbers".
+    public var kinds: [String]?
 
-    public init(picture: URL, want: Want, recognition: TextRecognition? = nil, faces: Bool = true, textBoxes: Bool = true) {
+    public init(picture: URL, want: Want, recognition: TextRecognition? = nil, faces: Bool = true, textBoxes: Bool = true, kinds: [String]? = nil) {
+        self.kinds = kinds
         self.picture = picture
         self.want = want
         self.recognition = recognition
@@ -201,9 +209,11 @@ public struct ReaderAnswer: Codable, Sendable {
     public var text: String?
     public var codes: [ReadCode]?
     public var regions: [RelativeRect]?
+    public var found: [PrivacyBlur.Found]?
     public var problem: String?
 
-    public init(id: UUID, text: String? = nil, codes: [ReadCode]? = nil, regions: [RelativeRect]? = nil, problem: String? = nil) {
+    public init(id: UUID, text: String? = nil, codes: [ReadCode]? = nil, regions: [RelativeRect]? = nil, found: [PrivacyBlur.Found]? = nil, problem: String? = nil) {
+        self.found = found
         self.id = id
         self.text = text
         self.codes = codes
@@ -233,6 +243,10 @@ public enum PictureReading {
                 let image = try await Blocking.run { _ in try TextExtractor.picture(request.picture) }
                 let regions = try await PrivacyBlur.find(in: image, faces: request.faces, text: request.textBoxes)
                 return ReaderAnswer(id: request.id, regions: regions)
+            case .found:
+                let image = try await Blocking.run { _ in try TextExtractor.picture(request.picture) }
+                let kinds = Set((request.kinds ?? []).compactMap(PrivacyBlur.Kind.init(rawValue:)))
+                return ReaderAnswer(id: request.id, found: try await PrivacyBlur.find(kinds: kinds, inAsync: image))
             }
         } catch {
             return ReaderAnswer(id: request.id, problem: error.localizedDescription)

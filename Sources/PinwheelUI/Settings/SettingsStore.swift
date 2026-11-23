@@ -83,7 +83,7 @@ final class SettingsStore {
         case clipboardEnabled, clipboardShortcut, clipboardLimit, clipboardPastes, clipboardPreview, clipboardActions
         case jpegBackground, subtitleTimes
         case hotCornersEnabled, hotCornerApps, hotCornerDelay, hotCornersSkipFullScreen
-        case screenshotsEnabled, screenshotShortcuts, screenshotAfter, screenshotCopy, screenshotFormat, screenshotDelay, screenshotFolder, screenshotWindowShadow
+        case screenshotsEnabled, screenshotShortcuts, screenshotAfter, screenshotCopy, screenshotFormat, screenshotDelay, screenshotFolder, screenshotWindowShadow, screenshotCursor, screenshotFullResolution
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -222,6 +222,10 @@ final class SettingsStore {
     var screenshotFolderPath: String { didSet { save(screenshotFolderPath, .screenshotFolder) } }
     /// A window's soft shadow comes along.
     var screenshotWindowShadow: Bool { didSet { save(screenshotWindowShadow, .screenshotWindowShadow) } }
+    /// Draw the mouse pointer in screenshots.
+    var screenshotCursor: Bool { didSet { save(screenshotCursor, .screenshotCursor) } }
+    /// Keep a Retina screen's full pixels (off: 1×, the size you see on screen).
+    var screenshotFullResolution: Bool { didSet { save(screenshotFullResolution, .screenshotFullResolution) } }
     /// Shortcuts follow their settings at once.
     @ObservationIgnored var onScreenshotChange: () -> Void = {}
 
@@ -323,6 +327,8 @@ final class SettingsStore {
             .screenshotDelay: 0,
             .screenshotFolder: "",
             .screenshotWindowShadow: false,
+            .screenshotCursor: false,
+            .screenshotFullResolution: true,
         ]
     }
 
@@ -393,6 +399,8 @@ final class SettingsStore {
         screenshotDelay = defaults.integer(forKey: Key.screenshotDelay.rawValue)
         screenshotFolderPath = string(.screenshotFolder)
         screenshotWindowShadow = defaults.bool(forKey: Key.screenshotWindowShadow.rawValue)
+        screenshotCursor = defaults.bool(forKey: Key.screenshotCursor.rawValue)
+        screenshotFullResolution = defaults.bool(forKey: Key.screenshotFullResolution.rawValue)
         placeNewTools()
     }
 
@@ -611,6 +619,8 @@ final class SettingsStore {
         screenshotDelay = fresh.screenshotDelay
         screenshotFolderPath = fresh.screenshotFolderPath
         screenshotWindowShadow = fresh.screenshotWindowShadow
+        screenshotCursor = fresh.screenshotCursor
+        screenshotFullResolution = fresh.screenshotFullResolution
     }
 
     /// The last watermark saved from the image editor, offered again next time.

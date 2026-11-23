@@ -912,7 +912,7 @@ struct SettingsView: View {
                     }
                 }
             } footer: {
-                Footnote("Or use the menu-bar icon › Screenshot. A picture is saved as a PNG, then opened in the editor (the same one the ⌥⇧ wheel opens on any picture), pinned on the screen, or left alone: you choose below.")
+                Footnote("Or use the menu-bar icon › Screenshot. Your last screenshots are in the menu-bar icon › Screenshot History and under the clipboard history. A picture is saved as a PNG, then opened in the editor (the same one the ⌥⇧ wheel opens on any picture), pinned on the screen, or left alone: you choose below.")
             }
 
             Section {
@@ -952,7 +952,7 @@ struct SettingsView: View {
             } header: {
                 Text("Shortcuts")
             } footer: {
-                Footnote("Capturing an area: drag a box (Esc gives up). The same area again repeats the last box without dragging. Copy the text in an area reads the words in the box and copies them: no picture is saved. A scrolling area: drag a box over what scrolls (a web page, a chat), then scroll it yourself, slowly, from top to bottom; press the shortcut again (or Done) and the pictures are joined into one tall one. Scroll down only; bars that stay put, like a website's header, are kept once. macOS keeps ⇧⌘3, ⇧⌘4 and ⇧⌘5 for its own screenshots, so these use ⌥⌘.")
+                Footnote("Capturing an area: drag a box (Esc gives up). The same area again repeats the last box without dragging. Copy the text or code in an area reads the words in the box, and any QR code or barcode, and copies them: no picture is saved. Files are named after the app in front and the time, like Safari_20261123_1430. Full Retina resolution off saves the picture at the size you see on screen (half the width and height on a Retina Mac). A scrolling area: drag a box over what scrolls (a web page, a chat), then scroll it yourself, slowly, from top to bottom; press the shortcut again (or Done) and the pictures are joined into one tall one. Scroll down only; bars that stay put, like a website's header, are kept once. macOS keeps ⇧⌘3, ⇧⌘4 and ⇧⌘5 for its own screenshots, so these use ⌥⌘.")
             }
             .disabled(!settings.screenshotsEnabled)
 
@@ -986,6 +986,8 @@ struct SettingsView: View {
                     ForEach(SettingsStore.screenshotDelays, id: \.self) { Text($0 == 0 ? "No wait" : "\($0) seconds").tag($0) }
                 }
                 Toggle("Keep a window's shadow", isOn: $settings.screenshotWindowShadow)
+                Toggle("Show the mouse pointer", isOn: $settings.screenshotCursor)
+                Toggle("Full Retina resolution", isOn: $settings.screenshotFullResolution)
                 LabeledContent("Save them in") {
                     HStack(spacing: 8) {
                         Text(settings.screenshotFolder.lastPathComponent)
@@ -1055,10 +1057,10 @@ struct SettingsView: View {
         ("One slider for size or strength", "slider.horizontal.3", "Thickness for shapes and text, with notches at Small, Medium and Large; strength for blur, blocks and dimming"),
         ("Pen and Highlight", "highlighter", "Draw freely, or mark text"),
         ("Text and Numbers", "textformat", "Notes, and numbered steps 1, 2, 3…"),
-        ("Blur Out and Soft Blur", "eye.slash", "Hide private details: in blocks, or smoothly; faces and text by themselves"),
+        ("Blur", "eye.slash", "Hide private details, in blocks or smoothly; switches blur faces, e-mail addresses, numbers or all text by themselves"),
         ("Spotlight", "rays", "Dim everything except what matters"),
         ("Measure", "ruler", "A ruler that snaps to edges and says how many pixels it spans. Click to measure the space around a point"),
-        ("Pixel zoom", "plus.magnifyingglass", "A magnifier that shows each pixel and its color"),
+        ("Pixel Zoom", "plus.magnifyingglass", "A magnifier that shows each pixel and its color; click to copy its code"),
         ("Color picker and contrast", "eyedropper", "macOS's own picker, and a check of how readable a text color is on its background"),
         ("Copy", "doc.on.clipboard", "⇧⌘C puts the edited picture on the clipboard without saving it"),
         ("Scrolling screenshot", "arrow.up.and.down.text.horizontal", "⌥⌘8: drag a box, scroll the page yourself, press the shortcut again: one tall picture"),

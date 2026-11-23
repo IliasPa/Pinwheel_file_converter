@@ -288,10 +288,14 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
     public var text: String
     /// 0...1 for the tools that blur or dim (0.5 is the standard look).
     public var strength: Double
+    /// Set on marks the editor placed by itself ("faces", "emails",
+    /// "numbers"): switching that kind off takes them away again. "" for
+    /// anything drawn by hand.
+    public var auto: String
 
     public init(
         id: UUID = UUID(), kind: Kind, points: [RelativePoint], color: MarkupColor, size: Double, text: String = "",
-        strength: Double = 0.5
+        strength: Double = 0.5, auto: String = ""
     ) {
         self.id = id
         self.kind = kind
@@ -300,9 +304,10 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
         self.size = size
         self.text = text
         self.strength = strength
+        self.auto = auto
     }
 
-    private enum CodingKeys: String, CodingKey { case id, kind, points, color, size, text, strength }
+    private enum CodingKeys: String, CodingKey { case id, kind, points, color, size, text, strength, auto }
 
     /// Edits saved before 2.2 have no strength.
     public init(from decoder: Decoder) throws {
@@ -314,6 +319,7 @@ public struct Annotation: Codable, Sendable, Equatable, Identifiable {
         size = try values.decode(Double.self, forKey: .size)
         text = try values.decode(String.self, forKey: .text)
         strength = try values.decodeIfPresent(Double.self, forKey: .strength) ?? 0.5
+        auto = try values.decodeIfPresent(String.self, forKey: .auto) ?? ""
     }
 
     /// Roughly the area it covers (0...1 of the turned picture), for clicking on it.

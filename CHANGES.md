@@ -3,6 +3,48 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.3.2 — 2026-11-23
+
+**Screenshots**
+- **Screenshot history**, in two places. The menu-bar icon › **Screenshot
+  History**, right under Clipboard History: the last 10, each with a small
+  picture, its name, when it was taken and in which app (hold ⌥ Option and
+  each reads **Edit…**; **Clear Screenshot History** empties the list). And
+  under the clipboard history (⌥⌘V): the last 40 as small pictures
+  (right-click one to edit it, show it in Finder or take it off the list).
+  Click one, in either place, to paste it where you were typing (or copy
+  it). The files themselves are never touched.
+- **Show the mouse pointer** and **Full Retina resolution** switches
+  (Settings › Screenshots). With the second off, a screenshot is saved at the
+  size you see on screen (half the width and height on a Retina Mac).
+- **Names that say what it is:** the app that was in front and the time,
+  like `Safari_20261123_1430.png` (`_2`, `_3`… if you take several in the
+  same minute).
+- **Copy the text or code in an area** now also reads **QR codes and
+  barcodes**. A code's text (or link) is copied after any words found.
+
+**Image editor**
+- **Zoom:** the − and + buttons, ⌘− / ⌘+ / ⌘0 (fit), a pinch, or ⌘ or ⌥ with
+  the scroll wheel (around the pointer). Scroll to move a zoomed picture.
+  The picture shown is a copy of up to 1800 pixels, so beyond that zoom
+  shows its pixels (use Pixel Zoom to read colors).
+- **One Blur tool:** Blur Out and Soft Blur are now one tool, **Blur**, with
+  **Blocks** or **Smooth** in its settings (a selected blur changes with
+  it). With Blur chosen, a click on a blur picks it up: drag to move it,
+  Backspace deletes it.
+- **Blur by itself**, in the Blur tool's settings: switches for **Faces**,
+  **E-mail addresses**, **Numbers** (four digits or more: phone, card and
+  account numbers) and **All text**. Each one found becomes a blur, in the
+  chosen style, that you can move, resize or delete. Switching one off takes
+  away what it added, and nothing you drew.
+- **Pixel Zoom is a tool** (it was a switch): a magnifier follows the
+  pointer, and a click copies the color code of the pixel in the middle.
+  Measure still shows it too.
+- **Fewer buttons:** the **Erase** tool, and the **Delete**, **Erase
+  Selection** and **Clear All** buttons, are gone. Select a mark and press
+  Backspace or Delete; **Revert All** takes everything back. (A picture
+  edited with Erase before still opens as it was.)
+
 ## v2.3.1 — 2026-11-21
 
 **New**

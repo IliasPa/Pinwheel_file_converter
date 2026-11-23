@@ -17,7 +17,7 @@ enum ScreenshotMode: String, CaseIterable, Identifiable {
         case .window: "Capture a window"
         case .screen: "Capture the whole screen"
         case .again: "Capture the same area again"
-        case .text: "Copy the text in an area"
+        case .text: "Copy the text or code in an area"
         case .scrolling: "Capture a scrolling area"
         }
     }
@@ -126,6 +126,12 @@ final class ScreenshotController {
     @ObservationIgnored private var isBusy = false
     /// What the area being chosen is for: a picture, or text to read.
     @ObservationIgnored private var purpose = ScreenshotMode.area
+    /// The app that was in front when the shortcut was pressed (it names the file).
+    @ObservationIgnored private var frontApp = ""
+    /// How many pixels a point is, on the screen being captured (for 1×).
+    @ObservationIgnored private var pixelsPerPoint: CGFloat = 1
+    /// The screenshots taken lately (shown under the clipboard).
+    let history = ScreenshotHistory()
 
     /// Shortcuts macOS wouldn't give us (another app has them).
     private(set) var problems: [ScreenshotMode: String] = [:]
@@ -183,6 +189,7 @@ final class ScreenshotController {
             return
         }
         message = nil
+        noteFrontApp()
         switch mode {
         case .area, .text, .scrolling:
             isBusy = true
@@ -205,6 +212,7 @@ final class ScreenshotController {
             isBusy = true
             purpose = .area
             var arguments = ["-x", "-i", "-W", "-t", "png"]
+            if settings.screenshotCursor { arguments.append("-C") }
             if !settings.screenshotWindowShadow { arguments.append("-o") }
             if settings.screenshotDelay > 0 { arguments += ["-T", String(settings.screenshotDelay)] }
             Task { await finish(arguments, waiting: 0) }
@@ -219,7 +227,7 @@ final class ScreenshotController {
         // A scrolling area is chosen live (the page has to stay scrollable).
         let timed = settings.screenshotDelay > 0 || purpose == .scrolling
         Task {
-            let frozen = timed ? [] : await AreaSelector.freezeScreens()
+            let frozen = timed ? [] : await AreaSelector.freezeScreens(cursor: settings.screenshotCursor)
             let selector = AreaSelector()
             self.selector = selector
             selector.start(frozen: frozen) { [weak self] area in
@@ -286,7 +294,9 @@ final class ScreenshotController {
         // screencapture counts from the top of the main screen.
         let top = NSScreen.screens.first?.frame.maxY ?? area.maxY
         let spot = "\(Int(area.minX.rounded())),\(Int((top - area.maxY).rounded())),\(Int(area.width.rounded())),\(Int(area.height.rounded()))"
-        Task { await finish(["-x", "-t", "png", "-R", spot], waiting: waiting + Double(settings.screenshotDelay)) }
+        var arguments = ["-x", "-t", "png", "-R", spot]
+        if settings.screenshotCursor { arguments.append("-C") }
+        Task { await finish(arguments, waiting: waiting + Double(settings.screenshotDelay)) }
     }
 
     private func finish(_ arguments: [String], waiting: Double) async {
@@ -318,6 +328,9 @@ final class ScreenshotController {
     /// Moves the picture to its folder, in the format chosen in Settings.
     private func store(_ raw: URL) async throws -> URL {
         let format = settings.screenshotFormat
+        if !settings.screenshotFullResolution, pixelsPerPoint > 1 {
+            Self.reduce(raw, by: pixelsPerPoint)
+        }
         let target = nextFile(extension: format.outputFormat.fileExtension)
         if format == .png {
             try FileManager.default.moveItem(at: raw, to: target)
@@ -329,27 +342,50 @@ final class ScreenshotController {
         return target
     }
 
-    /// Reads the words in the area and copies them (Settings › Text Recognition
-    /// says how: Apple's, or Tesseract for Greek).
+    /// Reads the words in the area, and any QR code or barcode, and copies
+    /// them (Settings › Text Recognition says how the words are read: Apple's,
+    /// or Tesseract for Greek).
     private func readText(in picture: URL) async {
         let recognition = settings.resolvedTextRecognition
         do {
             let text = try await PictureReader.shared.text(in: picture, recognition: recognition)
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                Toast.show("No text found in that area")
+            // A picture with no code is no error here.
+            let codes = (try? await PictureReader.shared.codes(in: picture)) ?? []
+            guard let copied = Self.copied(text: text, codes: codes) else {
+                Toast.show("No text or code found in that area")
                 return
             }
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(trimmed, forType: .string)
-            let first = trimmed.split(separator: "\n").first.map(String.init) ?? trimmed
-            Toast.show("Copied \(trimmed.count) characters", detail: first)
+            NSPasteboard.general.setString(copied.text, forType: .string)
+            Toast.show(copied.title, detail: copied.detail)
         } catch {
             Toast.show("Couldn't read the text: \(error.localizedDescription)")
         }
     }
 
+    /// What goes on the clipboard for the words and codes found (nil: nothing).
+    /// Words first, then each code on its own line.
+    static func copied(text: String, codes: [ReadCode]) -> (text: String, title: String, detail: String)? {
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var seen: Set<String> = []
+        let payloads = codes.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        guard !words.isEmpty || !payloads.isEmpty else { return nil }
+        let first = (payloads.first ?? words.split(separator: "\n").first.map(String.init) ?? words)
+        if payloads.isEmpty {
+            return (words, "Copied \(words.count) characters", first)
+        }
+        let kind = codes.first?.kind ?? "code"
+        let what = payloads.count == 1 ? "a \(kind)" : "\(payloads.count) codes"
+        let joined = payloads.joined(separator: "\n")
+        if words.isEmpty {
+            return (joined, "Copied \(what)", first)
+        }
+        return (words + "\n\n" + joined, "Copied the text and \(what)", first)
+    }
+
     private func saved(_ url: URL) {
+        history.add(url, app: frontApp)
         let picture = NSImage(contentsOf: url)
         if settings.screenshotCopy, let picture {
             NSPasteboard.general.clearContents()
@@ -377,20 +413,64 @@ final class ScreenshotController {
 
     // MARK: - Where they go
 
-    /// Screenshot 2026-11-21 at 09.30.12.png (and " 2", " 3"… if it exists).
-    private func nextFile(extension ext: String) -> URL {
-        let folder = settings.screenshotFolder
+    /// The app in front now and the screen the pointer is on, noted before
+    /// our own windows come forward.
+    private func noteFrontApp() {
+        let app = NSWorkspace.shared.frontmostApplication
+        let isUs = app?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        frontApp = isUs ? "" : (app?.localizedName ?? "")
+        let pointer = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main
+        pixelsPerPoint = screen?.backingScaleFactor ?? 1
+    }
+
+    /// Safari_20261121_0930.png (and "_2", "_3"… if the minute has one already).
+    /// Without an app in front: Screenshot_20261121_0930.
+    static func fileName(app: String, date: Date, extension ext: String, exists: (String) -> Bool) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        let base = "Screenshot \(formatter.string(from: Date()))"
-        var url = folder.appendingPathComponent("\(base).\(ext)")
+        formatter.dateFormat = "yyyyMMdd_HHmm"
+        let clean = app.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = "\(clean.isEmpty ? "Screenshot" : clean)_\(formatter.string(from: date))"
+        var name = "\(base).\(ext)"
         var number = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = folder.appendingPathComponent("\(base) \(number).\(ext)")
+        while exists(name) {
+            name = "\(base)_\(number).\(ext)"
             number += 1
         }
-        return url
+        return name
+    }
+
+    private func nextFile(extension ext: String) -> URL {
+        let folder = settings.screenshotFolder
+        let name = Self.fileName(app: frontApp, date: Date(), extension: ext) {
+            FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path)
+        }
+        return folder.appendingPathComponent(name)
+    }
+
+    /// Shrinks a picture taken on a Retina screen to the size it has on
+    /// screen (1×), in place.
+    @discardableResult
+    static func reduce(_ url: URL, by scale: CGFloat) -> Bool {
+        guard scale > 1, let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let small = reduced(image, by: scale) else { return false }
+        return writePNG(small, to: url)
+    }
+
+    static func reduced(_ image: CGImage, by scale: CGFloat) -> CGImage? {
+        let width = max(1, Int((CGFloat(image.width) / scale).rounded()))
+        let height = max(1, Int((CGFloat(image.height) / scale).rounded()))
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     // MARK: - Pinning
@@ -439,7 +519,7 @@ final class AreaSelector {
     private var anchorFrame: NSRect?
 
     /// Photographs every screen, right now. Empty if macOS won't (no permission).
-    static func freezeScreens() async -> [FrozenScreen] {
+    static func freezeScreens(cursor: Bool = false) async -> [FrozenScreen] {
         guard let content = try? await SCShareableContent.current else { return [] }
         var shots: [FrozenScreen] = []
         for screen in NSScreen.screens {
@@ -448,7 +528,7 @@ final class AreaSelector {
             let configuration = SCStreamConfiguration()
             configuration.width = Int((CGFloat(display.width) * screen.backingScaleFactor).rounded())
             configuration.height = Int((CGFloat(display.height) * screen.backingScaleFactor).rounded())
-            configuration.showsCursor = false
+            configuration.showsCursor = cursor
             let filter = SCContentFilter(display: display, excludingWindows: [])
             if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) {
                 shots.append(FrozenScreen(frame: screen.frame, image: image))

@@ -13,11 +13,10 @@ struct StudioCanvas: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let area = CGRect(origin: .zero, size: geometry.size).insetBy(dx: Self.margin(for: model.tab), dy: Self.margin(for: model.tab))
             ZStack {
                 Self.background
                 if let image = model.preview {
-                    let rect = Self.fit(CGSize(width: image.width, height: image.height), in: area)
+                    let rect = model.imageRect(in: geometry.size)
                     if StudioRenderer.hasAlpha(image) {
                         Checkerboard()
                             .frame(width: rect.width, height: rect.height)
@@ -25,7 +24,7 @@ struct StudioCanvas: View {
                     }
                     Image(decorative: image, scale: 1)
                         .resizable()
-                        .interpolation(.high)
+                        .interpolation(model.zoom > 3 ? .none : .high)
                         .frame(width: rect.width, height: rect.height)
                         .position(x: rect.midX, y: rect.midY)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
@@ -49,6 +48,12 @@ struct StudioCanvas: View {
                         .padding(.top, 10)
                 }
             }
+            .onGeometryChange(for: CGSize.self, of: { $0.size }) { model.canvasSize = $0 }
+            .background(ScrollAndPinch(
+                onScroll: { delta in model.panBy(delta) },
+                onZoomScroll: { delta, point in model.setZoom(model.zoom * exp(delta / 200), around: point) },
+                onPinch: { change, point in model.setZoom(model.zoom * (1 + change), around: point) }
+            ))
         }
         .clipped()
     }
@@ -209,16 +214,6 @@ private struct MarkupOverlay: View {
                 Path { $0.addRect(rect) }
                     .stroke(Color.white.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4], dashPhase: 4.5))
             }
-            if let area = model.eraseArea {
-                let a = model.shownPoint(area[0]), b = model.shownPoint(area[1])
-                let rect = CGRect(
-                    x: imageRect.minX + min(a.x, b.x) * imageRect.width, y: imageRect.minY + min(a.y, b.y) * imageRect.height,
-                    width: abs(a.x - b.x) * imageRect.width, height: abs(a.y - b.y) * imageRect.height
-                )
-                Path { $0.addRect(rect) }.fill(Color.white.opacity(0.12))
-                Path { $0.addRect(rect) }.stroke(Color.black, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                Path { $0.addRect(rect) }.stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4], dashPhase: 4.5))
-            }
             if model.showsZoom, let hover = model.hover, let patch = model.zoomPatch {
                 PixelLoupe(patch: patch)
                     .position(Self.loupePosition(
@@ -250,8 +245,12 @@ private struct MarkupOverlay: View {
                     x: min(max((location.x - imageRect.minX) / max(imageRect.width, 1), 0), 1),
                     y: min(max((location.y - imageRect.minY) / max(imageRect.height, 1), 0), 1)
                 )
-                if model.tool == nil {
+                if model.isPixelZoomTool {
+                    NSCursor.crosshair.set()
+                } else if model.tool == nil {
                     (model.annotation(at: point(location)) != nil ? NSCursor.openHand : NSCursor.arrow).set()
+                } else if model.isBlurTool, let hit = model.annotation(at: point(location)), hit.kind == .redact || hit.kind == .blur {
+                    NSCursor.openHand.set()  // the Blur tool picks up a blur that's there
                 } else {
                     (model.tool == .text ? NSCursor.iBeam : NSCursor.crosshair).set()
                 }
@@ -323,5 +322,63 @@ struct PixelLoupe: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.7), lineWidth: 1))
         .shadow(color: .black.opacity(0.5), radius: 6)
+    }
+}
+
+/// Two-finger scrolling moves a zoomed picture; ⌘ or ⌥ with it, or a pinch,
+/// zooms around the pointer. (Reads the scroll and pinch events over its
+/// own area, whatever view is on top.)
+struct ScrollAndPinch: NSViewRepresentable {
+    /// Scrolled by this many points.
+    var onScroll: (CGSize) -> Void
+    /// ⌘ or ⌥ scrolling: how far, and where (in the view, y down).
+    var onZoomScroll: (CGFloat, CGPoint) -> Void
+    /// A pinch: the change in size (0.1 = 10% bigger), and where.
+    var onPinch: (CGFloat, CGPoint) -> Void
+
+    func makeNSView(context: Context) -> CatcherView {
+        let view = CatcherView()
+        view.owner = self
+        return view
+    }
+
+    func updateNSView(_ view: CatcherView, context: Context) { view.owner = self }
+
+    final class CatcherView: NSView {
+        var owner: ScrollAndPinch?
+        private var monitor: Any?
+
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { [weak self] event in
+                guard let self, self.handle(event) else { return event }
+                return nil
+            }
+        }
+
+        private func handle(_ event: NSEvent) -> Bool {
+            guard let window, event.window === window, let owner else { return false }
+            let point = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(point) else { return false }
+            switch event.type {
+            case .magnify:
+                owner.onPinch(event.magnification, point)
+            case .scrollWheel:
+                let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 8
+                if !event.modifierFlags.intersection([.command, .option]).isEmpty {
+                    owner.onZoomScroll(event.scrollingDeltaY * scale, point)
+                } else {
+                    owner.onScroll(CGSize(width: event.scrollingDeltaX * scale, height: event.scrollingDeltaY * scale))
+                }
+            default:
+                return false
+            }
+            return true
+        }
     }
 }
