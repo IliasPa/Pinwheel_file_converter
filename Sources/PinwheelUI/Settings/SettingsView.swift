@@ -872,7 +872,7 @@ struct SettingsView: View {
     private var hotCornersSection: some View {
         Group {
             Section {
-                Toggle("Open an app from a screen corner", isOn: $settings.hotCornersEnabled)
+                Toggle("Open an app or folder from a screen corner", isOn: $settings.hotCornersEnabled)
                 Picker("Open it", selection: $settings.hotCornerDelay) {
                     ForEach(HotCornerDelay.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
@@ -880,7 +880,7 @@ struct SettingsView: View {
                 Toggle("Not in games and full-screen apps", isOn: $settings.hotCornersSkipFullScreen)
                     .disabled(!settings.hotCornersEnabled)
             } footer: {
-                Footnote("Move the pointer into a corner and rest it there; the app opens (or comes to the front if it's already open). Move away and back to open it again. Nothing opens while a mouse button is held, so dragging files to a corner is safe. With \"Not in games and full-screen apps\" on, corners stay quiet while a game, a full-screen app or a full-screen video is in front.")
+                Footnote("Move the pointer into a corner and rest it there; the app opens (or comes to the front if it's already open), or the folder opens in Finder. Move away and back to open it again. Nothing opens while a mouse button is held, so dragging files to a corner is safe. With \"Not in games and full-screen apps\" on, corners stay quiet while a game, a full-screen app or a full-screen video is in front.")
             }
             Section {
                 HotCornerPicker(settings: settings)
@@ -1308,7 +1308,7 @@ struct HotCornerPicker: View {
                 .fill(Color.primary.opacity(0.05))
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1.5)
-            Text("Your screen")
+            Text("Your screen: each corner opens an app or a folder")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
             ForEach(ScreenCorner.allCases) { corner in
@@ -1335,7 +1335,8 @@ struct HotCornerPicker: View {
     private func chip(_ corner: ScreenCorner) -> some View {
         let app = settings.hotCornerApps[corner]
         return Menu {
-            Button("Choose App…") { choose(for: corner) }
+            Button("Choose App…") { choose(for: corner, folder: false) }
+            Button("Choose Folder…") { choose(for: corner, folder: true) }
             if app != nil {
                 Button("Remove", role: .destructive) { settings.hotCornerApps[corner] = nil }
             }
@@ -1370,22 +1371,29 @@ struct HotCornerPicker: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("\(corner.title) corner")
-        .accessibilityValue(app.map(Self.name(of:)) ?? "No app")
+        .accessibilityValue(app.map(Self.name(of:)) ?? "Nothing")
     }
 
     static func name(of app: URL) -> String {
         FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
     }
 
-    private func choose(for corner: ScreenCorner) {
+    private func choose(for corner: ScreenCorner, folder: Bool) {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.application]
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        if folder {
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+            panel.message = "Choose the folder the \(corner.title.lowercased()) corner opens in Finder."
+        } else {
+            panel.allowedContentTypes = [.application]
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.directoryURL = URL(fileURLWithPath: "/Applications")
+            panel.message = "Choose the app the \(corner.title.lowercased()) corner opens."
+        }
         panel.allowsMultipleSelection = false
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.prompt = "Choose"
-        panel.message = "Choose the app the \(corner.title.lowercased()) corner opens."
         if panel.runModal() == .OK, let url = panel.url {
             settings.hotCornerApps[corner] = url
         }

@@ -3,6 +3,12 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.2.3 — 2026-11-23
+
+- **A hot corner can open a folder**, not only an app. In Settings › Hot
+  Corners, the button in each corner now offers **Choose App…** and
+  **Choose Folder…**; a folder opens in Finder.
+
 ## v2.2 — 2026-11-21
 
 **New**

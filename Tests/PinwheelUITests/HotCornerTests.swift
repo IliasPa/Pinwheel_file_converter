@@ -38,6 +38,21 @@ struct HotCornerTests {
         #expect(HotCornerApps(stored: ["nowhere": "/x", "topLeft": ""]).isEmpty)
     }
 
+    @Test func aCornerCanOpenAFolder() {
+        let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
+        var apps = HotCornerApps()
+        apps[.bottomLeft] = folder
+        #expect(HotCornerApps(stored: apps.stored)[.bottomLeft] == folder)
+        let monitor = HotCornerMonitor()
+        monitor.isFullScreenInFront = { false }
+        monitor.apps = { apps }
+        monitor.delay = { .instant }
+        var opened: [URL] = []
+        monitor.open = { opened.append($0) }
+        monitor.update(corner: .bottomLeft, buttonsDown: false)
+        #expect(opened == [folder])
+    }
+
     @Test func settingsKeepTheCorners() {
         let name = "PinwheelTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
