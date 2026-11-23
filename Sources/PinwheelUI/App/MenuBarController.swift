@@ -2,6 +2,8 @@ import AppKit
 
 /// Owns the menu-bar icon and rebuilds its menu each time it opens.
 final class MenuBarController: NSObject, NSMenuDelegate {
+    /// Whether the screen is being recorded (Record becomes Stop).
+    var isRecording: () -> Bool = { false }
     struct Actions {
         var showSettings: @MainActor () -> Void
         var showProgress: @MainActor () -> Void
@@ -20,7 +22,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     /// How many screenshots Screenshot History lists (the clipboard window shows them all).
     static let screenshotsListed = 10
-
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
@@ -108,6 +109,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(screenshots)
         }
         menu.addItem(screenshotItem())
+        menu.addItem(recordItem())
         menu.addItem(.separator())
 
         menu.addItem(item("Settings…", #selector(showSettings), key: ","))
@@ -127,21 +129,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: - Screenshots
 
     /// "Screenshot ▸" with each way to take one (and the keys), and Close Pins.
+    /// Recording has its own line in the menu, under it.
     private func screenshotItem() -> NSMenuItem {
         let parent = NSMenuItem(title: "Screenshot", action: nil, keyEquivalent: "")
         parent.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: nil)
         let submenu = NSMenu()
         submenu.autoenablesItems = false
-        let shortcuts = screenshotShortcuts()
-        for mode in ScreenshotMode.allCases {
-            let entry = item(mode.title, #selector(capture(_:)))
-            entry.representedObject = mode.rawValue
-            entry.image = NSImage(systemSymbolName: mode.symbolName, accessibilityDescription: nil)
-            if let shortcut = shortcuts?[mode], shortcut.key.count == 1 {
-                entry.keyEquivalent = shortcut.key.lowercased()
-                entry.keyEquivalentModifierMask = shortcut.modifiers.eventFlags
-            }
-            submenu.addItem(entry)
+        for mode in ScreenshotMode.allCases where mode != .record {
+            submenu.addItem(captureItem(mode))
         }
         let pins = pinCount()
         if pins > 0 {
@@ -150,6 +145,24 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         parent.submenu = submenu
         return parent
+    }
+
+    /// "Record the screen" (⌥⌘9), or "Stop Recording" while it records.
+    private func recordItem() -> NSMenuItem {
+        captureItem(.record)
+    }
+
+    /// One way to take a screenshot, with its icon and its shortcut beside it.
+    private func captureItem(_ mode: ScreenshotMode) -> NSMenuItem {
+        let entry = item(mode == .record && isRecording() ? "Stop Recording" : mode.title, #selector(capture(_:)))
+        entry.representedObject = mode.rawValue
+        entry.image = NSImage(systemSymbolName: mode == .record && isRecording() ? "stop.circle" : mode.symbolName,
+                              accessibilityDescription: nil)
+        if let shortcut = screenshotShortcuts()?[mode], shortcut.key.count == 1 {
+            entry.keyEquivalent = shortcut.key.lowercased()
+            entry.keyEquivalentModifierMask = shortcut.modifiers.eventFlags
+        }
+        return entry
     }
 
     /// "Screenshot History ▸": the last screenshots, newest first. Click one

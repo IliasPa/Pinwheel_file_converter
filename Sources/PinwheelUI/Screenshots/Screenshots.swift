@@ -7,7 +7,7 @@ import PinwheelCore
 
 /// The ways to take a screenshot.
 enum ScreenshotMode: String, CaseIterable, Identifiable {
-    case area, window, screen, again, text, scrolling
+    case area, window, screen, again, text, scrolling, record
 
     var id: Self { self }
 
@@ -19,6 +19,7 @@ enum ScreenshotMode: String, CaseIterable, Identifiable {
         case .again: "Capture the same area again"
         case .text: "Copy the text or code in an area"
         case .scrolling: "Capture a scrolling area"
+        case .record: "Record the screen"
         }
     }
 
@@ -30,6 +31,7 @@ enum ScreenshotMode: String, CaseIterable, Identifiable {
         case .again: "arrow.counterclockwise"
         case .text: "text.viewfinder"
         case .scrolling: "arrow.up.and.down.text.horizontal"
+        case .record: "record.circle"
         }
     }
 
@@ -42,6 +44,7 @@ enum ScreenshotMode: String, CaseIterable, Identifiable {
         case .again: KeyShortcut(keyCode: UInt16(kVK_ANSI_6), modifiers: [.option, .command], key: "6")
         case .text: KeyShortcut(keyCode: UInt16(kVK_ANSI_7), modifiers: [.option, .command], key: "7")
         case .scrolling: KeyShortcut(keyCode: UInt16(kVK_ANSI_8), modifiers: [.option, .command], key: "8")
+        case .record: KeyShortcut(keyCode: UInt16(kVK_ANSI_9), modifiers: [.option, .command], key: "9")
         }
     }
 }
@@ -122,6 +125,9 @@ final class ScreenshotController {
     @ObservationIgnored private var isSuspended = false
     @ObservationIgnored private var selector: AreaSelector?
     @ObservationIgnored private var scrolling: ScrollingSession?
+    @ObservationIgnored private var recording: RecordingSession?
+    /// Whether the screen is being recorded now (the menu offers Stop).
+    private(set) var isRecording = false
     @ObservationIgnored private var pins: [PinnedPicture] = []
     @ObservationIgnored private var isBusy = false
     /// What the area being chosen is for: a picture, or text to read.
@@ -140,6 +146,8 @@ final class ScreenshotController {
 
     /// Opens a saved screenshot in the editor.
     @ObservationIgnored var onEdit: (URL) -> Void = { _ in }
+    /// Opens a saved recording in the video editor.
+    @ObservationIgnored var onEditRecording: (URL) -> Void = { _ in }
     /// Screen Recording isn't allowed yet: the app shows how to.
     @ObservationIgnored var onNeedsPermission: () -> Void = {}
 
@@ -182,7 +190,12 @@ final class ScreenshotController {
             scrolling.finish()
             return
         }
-        guard !isBusy, scrolling == nil else { return }
+        // And the recording shortcut stops a recording.
+        if mode == .record, let recording {
+            recording.stop()
+            return
+        }
+        guard !isBusy, scrolling == nil, recording == nil else { return }
         guard Self.hasPermission else {
             CGRequestScreenCaptureAccess()
             onNeedsPermission()
@@ -191,7 +204,7 @@ final class ScreenshotController {
         message = nil
         noteFrontApp()
         switch mode {
-        case .area, .text, .scrolling:
+        case .area, .text, .scrolling, .record:
             isBusy = true
             purpose = mode
             chooseArea()
@@ -225,10 +238,12 @@ final class ScreenshotController {
         // tooltips and video can't change under you). With a timer set, the
         // picture is taken live when it runs out instead.
         // A scrolling area is chosen live (the page has to stay scrollable).
-        let timed = settings.screenshotDelay > 0 || purpose == .scrolling
+        let timed = settings.screenshotDelay > 0 || purpose == .scrolling || purpose == .record
         Task {
             let frozen = timed ? [] : await AreaSelector.freezeScreens(cursor: settings.screenshotCursor)
             let selector = AreaSelector()
+            // A click (no drag) records the whole screen it's on.
+            selector.clickPicksScreen = self.purpose == .record
             self.selector = selector
             selector.start(frozen: frozen) { [weak self] area in
                 guard let self else { return }
@@ -241,6 +256,10 @@ final class ScreenshotController {
                 self.isBusy = false
                 if self.purpose == .scrolling {
                     self.startScrolling(area)
+                    return
+                }
+                if self.purpose == .record {
+                    self.startRecording(area)
                     return
                 }
                 if let picture = selector.picture(of: area) {
@@ -264,6 +283,52 @@ final class ScreenshotController {
         }
         session.begin()
     }
+
+    /// Records the area until Stop (or the shortcut again).
+    private func startRecording(_ area: NSRect) {
+        let options = RecordingOptions(
+            framesPerSecond: settings.recordingFramesPerSecond, sound: settings.recordingSound,
+            microphone: settings.recordingMicrophone, showsClicks: settings.recordingShowsClicks,
+            showsPointer: true
+        )
+        let session = RecordingSession(area: area, options: options)
+        recording = session
+        isRecording = true
+        session.onFinish = { [weak self] file in
+            guard let self else { return }
+            self.recording = nil
+            self.isRecording = false
+            guard let file else { return }
+            self.keepRecording(file)
+        }
+        session.begin()
+    }
+
+    /// Moves the finished video to the screenshot folder and does what
+    /// Settings says (the editor here is the video editor: trim, GIF…).
+    private func keepRecording(_ file: URL) {
+        let target = nextFile(extension: "mp4")
+        do {
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: file, to: target)
+        } catch {
+            Toast.show("The recording couldn't be saved: \(error.localizedDescription)")
+            return
+        }
+        if settings.screenshotCopy {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([target as NSURL])
+        }
+        switch settings.screenshotAfter {
+        case .edit: onEditRecording(target)
+        case .pin: NSWorkspace.shared.activateFileViewerSelecting([target])
+        case .nothing: NSSound(named: "Pop")?.play()
+        }
+        Toast.show("Recording saved", detail: target.lastPathComponent)
+    }
+
+    /// Stops the recording (the menu bar's Stop Recording).
+    func stopRecording() { recording?.stop() }
 
     /// Handles a part of the frozen screen (no waiting: it's already taken).
     private func save(frozen picture: CGImage) {
@@ -504,6 +569,8 @@ final class AreaSelector {
     private(set) var area: NSRect?
     /// Called once, with the box or nil. (Tests set it to try the box without windows.)
     var completion: ((NSRect?) -> Void)?
+    /// A click without a drag chooses the whole screen it's on (recording).
+    var clickPicksScreen = false
 
     /// A photograph of a screen, taken before the dimming began.
     struct FrozenScreen {
@@ -587,6 +654,11 @@ final class AreaSelector {
 
     func end() {
         guard let area, area.width >= 4, area.height >= 4 else {
+            if clickPicksScreen, let anchor,
+               let screen = NSScreen.screens.first(where: { $0.frame.insetBy(dx: -1, dy: -1).contains(anchor) }) {
+                finish(screen.frame)
+                return
+            }
             finish(nil)
             return
         }

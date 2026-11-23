@@ -84,6 +84,7 @@ final class SettingsStore {
         case jpegBackground, subtitleTimes
         case hotCornersEnabled, hotCornerApps, hotCornerDelay, hotCornersSkipFullScreen
         case screenshotsEnabled, screenshotShortcuts, screenshotAfter, screenshotCopy, screenshotFormat, screenshotDelay, screenshotFolder, screenshotWindowShadow, screenshotCursor, screenshotFullResolution
+        case recordingFramesPerSecond, recordingSound, recordingMicrophone, recordingShowsClicks
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -226,6 +227,13 @@ final class SettingsStore {
     var screenshotCursor: Bool { didSet { save(screenshotCursor, .screenshotCursor) } }
     /// Keep a Retina screen's full pixels (off: 1×, the size you see on screen).
     var screenshotFullResolution: Bool { didSet { save(screenshotFullResolution, .screenshotFullResolution) } }
+    /// Screen recordings: 30 or 60 frames a second.
+    var recordingFramesPerSecond: Int { didSet { save(recordingFramesPerSecond, .recordingFramesPerSecond) } }
+    /// Record the Mac's own sound.
+    var recordingSound: Bool { didSet { save(recordingSound, .recordingSound) } }
+    var recordingMicrophone: Bool { didSet { save(recordingMicrophone, .recordingMicrophone) } }
+    /// A ring where you click.
+    var recordingShowsClicks: Bool { didSet { save(recordingShowsClicks, .recordingShowsClicks) } }
     /// Shortcuts follow their settings at once.
     @ObservationIgnored var onScreenshotChange: () -> Void = {}
 
@@ -329,6 +337,10 @@ final class SettingsStore {
             .screenshotWindowShadow: false,
             .screenshotCursor: false,
             .screenshotFullResolution: true,
+            .recordingFramesPerSecond: 30,
+            .recordingSound: false,
+            .recordingMicrophone: false,
+            .recordingShowsClicks: true,
         ]
     }
 
@@ -401,6 +413,11 @@ final class SettingsStore {
         screenshotWindowShadow = defaults.bool(forKey: Key.screenshotWindowShadow.rawValue)
         screenshotCursor = defaults.bool(forKey: Key.screenshotCursor.rawValue)
         screenshotFullResolution = defaults.bool(forKey: Key.screenshotFullResolution.rawValue)
+        recordingFramesPerSecond = [30, 60].contains(defaults.integer(forKey: Key.recordingFramesPerSecond.rawValue))
+            ? defaults.integer(forKey: Key.recordingFramesPerSecond.rawValue) : 30
+        recordingSound = defaults.bool(forKey: Key.recordingSound.rawValue)
+        recordingMicrophone = defaults.bool(forKey: Key.recordingMicrophone.rawValue)
+        recordingShowsClicks = defaults.bool(forKey: Key.recordingShowsClicks.rawValue)
         placeNewTools()
     }
 
@@ -621,6 +638,10 @@ final class SettingsStore {
         screenshotWindowShadow = fresh.screenshotWindowShadow
         screenshotCursor = fresh.screenshotCursor
         screenshotFullResolution = fresh.screenshotFullResolution
+        recordingFramesPerSecond = fresh.recordingFramesPerSecond
+        recordingSound = fresh.recordingSound
+        recordingMicrophone = fresh.recordingMicrophone
+        recordingShowsClicks = fresh.recordingShowsClicks
     }
 
     /// The last watermark saved from the image editor, offered again next time.

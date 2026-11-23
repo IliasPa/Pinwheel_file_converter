@@ -146,6 +146,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboard.apply()
         // Screenshots: the shortcuts, and the editor they open (the wheel's own).
         screenshots.onEdit = { [weak self] url in self?.editors.open(.markup, files: [SourceFile(url: url)]) }
+        menuBar?.isRecording = { [weak self] in self?.screenshots.isRecording ?? false }
+        screenshots.onEditRecording = { [weak self] url in self?.editors.open(.trim, files: [SourceFile(url: url)]) }
         clipboard.model.screenshots = screenshots.history
         clipboard.model.onEditScreenshot = { [weak self] entry in
             self?.clipboard.hide()

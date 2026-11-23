@@ -3,6 +3,28 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.4 — 2026-11-23
+
+**Screen recording**, to MP4, with drawing on the screen while it records.
+- **Record the screen** (⌥⌘9, or the menu-bar icon › **Record the screen**,
+  its own line under Screenshot; it reads **Stop Recording** while it
+  records): drag a box, or click once for the whole screen. A red outline shows what's recorded
+  and a small bar shows the time. Press ⌥⌘9 again, or **Stop**, to finish
+  (**Cancel** throws it away).
+- **Draw live:** the bar has a pen, an arrow, a box and a highlighter, in five
+  colors. Marks fade a few seconds after you draw them, or stay if you pin
+  them; the bin takes them all away. Choose the pointer again to go back to
+  using your apps. The drawing is in the video; the bar and the outline
+  aren't.
+- **Clicks show** as a yellow ring that grows and fades (switch it off in
+  Settings › Screenshots › Screen recordings).
+- **Settings:** 30 or 60 frames a second, the Mac's sound, the microphone
+  (macOS asks the first time). The pointer is always in the video.
+- The MP4 (H.264, Retina-sharp) is saved with your screenshots, named like
+  them (`Safari_20261123_1430.mp4`). With "Open it in the editor" it opens in
+  Pinwheel's video editor, to trim it or make a GIF; with "Pin it" it's
+  shown in Finder. "Also copy it" puts the file on the clipboard.
+
 ## v2.3.2 — 2026-11-23
 
 **Screenshots**

@@ -912,7 +912,7 @@ struct SettingsView: View {
                     }
                 }
             } footer: {
-                Footnote("Or use the menu-bar icon › Screenshot. Your last screenshots are in the menu-bar icon › Screenshot History and under the clipboard history. A picture is saved as a PNG, then opened in the editor (the same one the ⌥⇧ wheel opens on any picture), pinned on the screen, or left alone: you choose below.")
+                Footnote("Or use the menu-bar icon › Screenshot (and Record the screen, under it). Your last screenshots are in the menu-bar icon › Screenshot History and under the clipboard history. A picture is saved as a PNG, then opened in the editor (the same one the ⌥⇧ wheel opens on any picture), pinned on the screen, or left alone: you choose below.")
             }
 
             Section {
@@ -1004,6 +1004,21 @@ struct SettingsView: View {
                 Text("After capturing")
             } footer: {
                 Footnote("The screen is frozen the moment you press the shortcut, so what you select is what was there (with a timer set, the picture is taken when it runs out instead). Saving in the editor makes a new picture next to the screenshot; the screenshot itself is never changed. A pinned picture floats above every window: drag it, scroll to resize it, double-click or press Esc to close it, right-click for more.")
+            }
+            .disabled(!settings.screenshotsEnabled)
+
+            Section {
+                Picker("Smoothness", selection: $settings.recordingFramesPerSecond) {
+                    Text("30 frames a second").tag(30)
+                    Text("60 frames a second").tag(60)
+                }
+                Toggle("Record the Mac's sound", isOn: $settings.recordingSound)
+                Toggle("Record the microphone", isOn: $settings.recordingMicrophone)
+                Toggle("Show a ring where you click", isOn: $settings.recordingShowsClicks)
+            } header: {
+                Text("Screen recordings")
+            } footer: {
+                Footnote("Record the screen (⌥⌘9): drag a box, or click once for the whole screen. While it records, draw on the screen with the bar's pen, arrow, box or highlighter (choose the pointer again to use your apps); marks fade after a few seconds unless you pin them. The drawing and the click rings are in the video; the bar and the red outline aren't. Press ⌥⌘9 again, or Stop, to finish: an MP4 is saved with your screenshots and, with \"Open it in the editor\", opens in the video editor (trim it, or make a GIF). 60 frames a second makes bigger files: keep 30 for tutorials.")
             }
             .disabled(!settings.screenshotsEnabled)
 
