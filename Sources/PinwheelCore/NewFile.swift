@@ -84,6 +84,34 @@ public enum NewFileMaker {
         return url
     }
 
+    /// The words a name for new files can use: the Rename window's pattern
+    /// words that mean something for a file that's only being made.
+    public static let nameTokens: [(token: String, title: String)] = [
+        ("{name}", "Usual Name"), ("{today}", "Today"), ("{folder}", "Folder"),
+    ]
+
+    /// A new file's name, without its extension: `usual` ("New Word Document",
+    /// or your template's name), or one name for every new file
+    /// (Settings › New File menu). That name is a pattern, as in the Rename
+    /// window: {name} is the usual name, {today} today's date (2026-11-23),
+    /// {folder} the folder's name. / and : (not allowed in names) become -,
+    /// a dot at the start (it would hide the file) goes; nothing left gives
+    /// the usual name.
+    public static func baseName(pattern: String, usual: String, fileExtension: String, folder: URL, now: Date = Date()) -> String {
+        guard !pattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return usual }
+        var rule = RenameRule(.pattern)
+        rule.text = pattern
+        var name = FileName(base: usual, ext: fileExtension)
+        let info = RenameFileInfo(created: now, modified: now, folder: folder.lastPathComponent)
+        rule.apply(to: &name, context: RenameContext(index: 0, original: name, info: info, now: now))
+        var base = name.base.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        while base.hasPrefix(".") { base = String(base.dropFirst()).trimmingCharacters(in: .whitespaces) }
+        // Room for " 99" and the extension, inside the 255-byte limit.
+        while base.utf8.count > 255 - fileExtension.utf8.count - 8 { base.removeLast() }
+        return base.isEmpty ? usual : base
+    }
+
     /// Writes an empty file of this kind. Never replaces a file that's there.
     public static func write(_ kind: NewFileKind, to url: URL) throws {
         guard !kind.needsApp else { throw ConversionError.failed("\(kind.title)s are made by their own app.") }

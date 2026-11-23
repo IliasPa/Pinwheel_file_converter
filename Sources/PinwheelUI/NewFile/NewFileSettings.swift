@@ -44,6 +44,21 @@ struct NewFileMenuSettings: View {
                 status.refresh()
             }
 
+            TextField("Name new files", text: $settings.newFileName, prompt: Text("The usual names"))
+            HStack(spacing: 4) {
+                ForEach(NewFileMaker.nameTokens, id: \.token) { token in
+                    Button(token.title) { addToName(token.token) }
+                        .controlSize(.small)
+                        .help("Adds \(token.token), as in Rename")
+                }
+                Spacer()
+                Text(nameExample)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
             ForEach(Array(settings.newFileMenu.enumerated()), id: \.element.id) { index, entry in
                 row(entry, at: index)
             }
@@ -59,7 +74,7 @@ struct NewFileMenuSettings: View {
         } header: {
             Text("New File menu")
         } footer: {
-            Footnote("Like Windows' right-click › New: makes an empty file in that folder, selected and ready to name. Switch items on or off and move them up or down; the menu follows at once. Your own template is any file (a letterhead, an invoice, a form): New File makes a copy of it. Pages, Numbers and Keynote make their first empty file themselves (the app opens for a moment); after that it's instant. Items for apps that aren't on this Mac are left out.")
+            Footnote("Like Windows' right-click › New: makes an empty file in that folder, selected and ready to name. Name new files gives every new file one name (Untitled makes Untitled.docx, Untitled.xlsx…), with today's date or the folder's name if you like, as in Rename; leave it empty for the usual names. Switch items on or off and move them up or down; the menu follows at once. Your own template is any file (a letterhead, an invoice, a form): New File makes a copy of it. Pages, Numbers and Keynote make their first empty file themselves (the app opens for a moment); after that it's instant. Items for apps that aren't on this Mac are left out.")
         }
     }
 
@@ -96,6 +111,21 @@ struct NewFileMenuSettings: View {
                 .help("Move down")
         }
         .accessibilityElement(children: .contain)
+    }
+
+    /// A pattern word goes at the end, after a space.
+    private func addToName(_ token: String) {
+        let name = settings.newFileName
+        settings.newFileName = name + (name.isEmpty || name.hasSuffix(" ") ? "" : " ") + token
+    }
+
+    /// How a new Word document in Desktop would be named.
+    private var nameExample: String {
+        let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop", isDirectory: true)
+        let base = NewFileMaker.baseName(
+            pattern: settings.newFileName, usual: NewFileKind.word.baseName, fileExtension: NewFileKind.word.fileExtension, folder: desktop
+        )
+        return "For example: \(base).\(NewFileKind.word.fileExtension)"
     }
 
     private func subtitle(_ entry: NewFileEntry) -> String {

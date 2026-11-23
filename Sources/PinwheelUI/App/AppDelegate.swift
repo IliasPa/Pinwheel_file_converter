@@ -159,6 +159,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         screenshots.apply()
         // Finder's right-click › New File: the extension asks, Pinwheel makes the file.
         newFiles.entries = { settings.newFileMenu }
+        newFiles.name = { settings.newFileName }
         settings.onNewFileMenuChange = { [weak self] in self?.newFiles.writeMenu() }
         newFiles.start()
         commands.recipes = { settings.recipes }

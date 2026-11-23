@@ -58,6 +58,8 @@ final class NewFileService {
 
     /// The menu, in order (Settings).
     var entries: () -> [NewFileEntry] = { NewFileEntry.starting }
+    /// One name for every new file, a Rename pattern (Settings); empty: the usual names.
+    var name: () -> String = { "" }
     /// Where the extension reads the menu (tests use their own).
     var menuFile = NewFileService.defaultMenuFile
     /// Where Pages, Numbers and Keynote's empty files are kept once made.
@@ -138,7 +140,9 @@ final class NewFileService {
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
             throw ConversionError.failed("\(folder.lastPathComponent) isn't a folder.")
         }
-        let baseName = entry.kind?.baseName ?? (entry.menuTitle)
+        let baseName = NewFileMaker.baseName(
+            pattern: name(), usual: entry.kind?.baseName ?? entry.menuTitle, fileExtension: entry.fileExtension, folder: folder
+        )
         let target = NewFileMaker.freeURL(in: folder, baseName: baseName, fileExtension: entry.fileExtension)
         if let path = entry.path {
             try FileManager.default.copyItem(at: URL(fileURLWithPath: path), to: target)

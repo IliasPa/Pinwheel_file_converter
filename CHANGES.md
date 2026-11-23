@@ -3,6 +3,18 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.5.1 — 2026-11-23
+
+**New File**
+- **One name for every new file** (Settings › Finder & Shortcuts › New File
+  menu › **Name new files**). Type **Untitled** and New File makes
+  `Untitled.docx`, `Untitled.xlsx`, `Untitled.md`… (then `Untitled 2`), your
+  own templates too. It uses the Rename window's pattern words: the
+  **Usual Name**, **Today** and **Folder** buttons add `{name}`, `{today}`
+  (2026-11-23) and `{folder}`, so `{today} Notes` makes
+  `2026-11-23 Notes.docx`. A line under it shows how a Word document would
+  be named. Leave it empty for the usual names ("New Word Document").
+
 ## v2.5 — 2026-11-23
 
 **New File in Finder's right-click menu**, like Windows' New.

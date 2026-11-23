@@ -85,6 +85,7 @@ final class SettingsStore {
         case hotCornersEnabled, hotCornerApps, hotCornerDelay, hotCornersSkipFullScreen
         case screenshotsEnabled, screenshotShortcuts, screenshotAfter, screenshotCopy, screenshotFormat, screenshotDelay, screenshotFolder, screenshotWindowShadow, screenshotCursor, screenshotFullResolution
         case recordingFramesPerSecond, recordingSound, recordingMicrophone, recordingShowsClicks
+        case newFileName
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -164,6 +165,9 @@ final class SettingsStore {
         }
     }
     @ObservationIgnored var onNewFileMenuChange: () -> Void = {}
+    /// One name for every new file, as a Rename pattern ("Untitled",
+    /// "{today} Notes"); empty: each kind's usual name.
+    var newFileName: String { didSet { save(newFileName, .newFileName) } }
 
     // The clipboard history
     var clipboardEnabled: Bool {
@@ -324,6 +328,7 @@ final class SettingsStore {
             .wheelKeys: stored(.standard),
             .keepWheelOpen: false,
             .terminalApp: TerminalApp.terminal.rawValue,
+            .newFileName: "",
             .textRecognition: TextRecognitionChoice.automatic.rawValue,
             .clipboardEnabled: true,
             .clipboardShortcut: KeyShortcut.clipboard.stored,
@@ -401,6 +406,7 @@ final class SettingsStore {
         recipes = Self.loadJSON(defaults, Self.recipesKey) ?? []
         renamePresets = Self.loadJSON(defaults, Self.renamePresetsKey) ?? []
         newFileMenu = (Self.loadJSON(defaults, Self.newFileMenuKey) as [NewFileEntry]?).map(NewFileEntry.completed) ?? NewFileEntry.starting
+        newFileName = string(.newFileName)
         textRecognition = TextRecognitionChoice(rawValue: string(.textRecognition)) ?? .automatic
         clipboardEnabled = defaults.bool(forKey: Key.clipboardEnabled.rawValue)
         clipboardShortcut = KeyShortcut(stored: defaults.dictionary(forKey: Key.clipboardShortcut.rawValue)) ?? .clipboard
@@ -626,6 +632,7 @@ final class SettingsStore {
         wheelKeys = fresh.wheelKeys
         keepWheelOpen = fresh.keepWheelOpen
         terminalApp = fresh.terminalApp
+        newFileName = fresh.newFileName
         textRecognition = fresh.textRecognition
         clipboardEnabled = fresh.clipboardEnabled
         clipboardShortcut = fresh.clipboardShortcut
