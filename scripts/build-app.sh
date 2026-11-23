@@ -18,6 +18,11 @@ cp "$BIN_DIR/Pinwheel" "$APP/Contents/MacOS/Pinwheel"
 cp "$BIN_DIR/PinwheelWorker" "$APP/Contents/MacOS/PinwheelWorker"
 # The `pinwheel` command for Terminal and Shortcuts.
 cp "$BIN_DIR/PinwheelCLI" "$APP/Contents/Helpers/pinwheel"
+# Finder's right-click › New File (an extension: Finder runs it, sandboxed).
+APPEX="$APP/Contents/PlugIns/PinwheelFinder.appex"
+mkdir -p "$APPEX/Contents/MacOS"
+cp "$BIN_DIR/PinwheelFinder" "$APPEX/Contents/MacOS/PinwheelFinder"
+cp Support/PinwheelFinder-Info.plist "$APPEX/Contents/Info.plist"
 cp Support/Info.plist "$APP/Contents/Info.plist"
 cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
@@ -25,13 +30,15 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 if [ "$CONFIG" = "release" ]; then
     # Leave out the debugging names: about half the size. The full versions
     # stay in the build folder ($BIN_DIR) for reading crash reports.
-    strip -S -x "$APP/Contents/MacOS/Pinwheel" "$APP/Contents/MacOS/PinwheelWorker" "$APP/Contents/Helpers/pinwheel"
+    strip -S -x "$APP/Contents/MacOS/Pinwheel" "$APP/Contents/MacOS/PinwheelWorker" "$APP/Contents/Helpers/pinwheel" \
+        "$APPEX/Contents/MacOS/PinwheelFinder"
 fi
 
-# Signs the worker and the command first, then the app around them.
+# Signs the worker, the command and the Finder extension first, then the app around them.
 sign_with() {
     codesign --force --sign "$1" --identifier "$BUNDLE_ID.worker" "$APP/Contents/MacOS/PinwheelWorker" &&
         codesign --force --sign "$1" --identifier "$BUNDLE_ID.cli" "$APP/Contents/Helpers/pinwheel" &&
+        codesign --force --sign "$1" --identifier "$BUNDLE_ID.NewFile" --entitlements Support/PinwheelFinder.entitlements "$APPEX" &&
         codesign --force --sign "$1" --identifier "$BUNDLE_ID" "$APP"
 }
 

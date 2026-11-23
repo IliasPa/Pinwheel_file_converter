@@ -23,6 +23,13 @@ let package = Package(
         .executableTarget(name: "PinwheelWorker", dependencies: ["PinwheelCore"], swiftSettings: smallInRelease),
         // The `pinwheel` command (Terminal, Shortcuts): asks the app to do a job.
         .executableTarget(name: "PinwheelCLI", swiftSettings: smallInRelease),
+        // Finder's right-click › New File: an extension Finder loads (it starts
+        // at NSExtensionMain). Packed into the app's PlugIns by build-app.sh.
+        .executableTarget(
+            name: "PinwheelFinder",
+            swiftSettings: [.swiftLanguageMode(.v5)] + smallInRelease,
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"]), .linkedFramework("FinderSync")]
+        ),
         .testTarget(name: "PinwheelCoreTests", dependencies: ["PinwheelCore"]),
         .testTarget(name: "PinwheelUITests", dependencies: ["PinwheelUI", "PinwheelCore"], swiftSettings: mainActorByDefault),
     ]

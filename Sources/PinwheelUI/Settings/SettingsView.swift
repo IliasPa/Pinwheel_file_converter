@@ -189,7 +189,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .textRecognition:
             return ["ocr", "get text", "searchable", "tesseract", "greek", "language", "apple"]
         case .finderAndShortcuts:
-            return ["services", "right-click", "quick action", "command", "terminal", "shell", "pinwheel"]
+            return ["services", "right-click", "quick action", "command", "terminal", "shell", "pinwheel",
+                    "new file", "new document", "template", "word", "excel", "powerpoint", "pages", "numbers", "keynote"]
         case .advanced:
             return ["same time", "files at once", "speed", "ffmpeg", "pngquant", "cwebp", "webp", "homebrew", "brew", "reset", "defaults"]
         }
@@ -353,7 +354,10 @@ struct SettingsView: View {
         case .textRecognition:
             Form { textRecognition }
         case .finderAndShortcuts:
-            Form { finderAndShortcuts }
+            Form {
+                NewFileMenuSettings(settings: settings)
+                finderAndShortcuts
+            }
         case .advanced:
             Form {
                 performance

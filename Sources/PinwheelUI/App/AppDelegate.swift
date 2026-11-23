@@ -22,6 +22,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var shelf = ShelfController(settings: settings)
     private lazy var clipboard = ClipboardController(settings: settings)
     private lazy var screenshots = ScreenshotController(settings: settings)
+    private let newFiles = NewFileService()
     private var settingsState: SettingsViewState?
     private var menuBar: MenuBarController?
     private var settingsWindow: SettingsWindowController?
@@ -156,6 +157,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         screenshots.onNeedsPermission = { [weak self] in self?.showSettings(pane: .screenshots) }
         settings.onScreenshotChange = { [weak self] in self?.screenshots.apply() }
         screenshots.apply()
+        // Finder's right-click › New File: the extension asks, Pinwheel makes the file.
+        newFiles.entries = { settings.newFileMenu }
+        settings.onNewFileMenuChange = { [weak self] in self?.newFiles.writeMenu() }
+        newFiles.start()
         commands.recipes = { settings.recipes }
         commands.availability = availability
         commands.start()
@@ -185,6 +190,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationWillTerminate(_ notification: Notification) {
         dragMonitor.stop()
         hotCorners.stop()
+        newFiles.stop()
     }
 
     // MARK: - Private

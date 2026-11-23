@@ -3,6 +3,31 @@
 What changed in each version of Pinwheel. Newest first. Each version has a
 matching git tag (for example `v0.4`).
 
+## v2.5 — 2026-11-23
+
+**New File in Finder's right-click menu**, like Windows' New.
+- Right-click an empty part of a Finder window (or a folder) › **New File** ›
+  Word Document, Excel Workbook, PowerPoint Presentation, Pages Document,
+  Numbers Spreadsheet, Keynote Presentation, Text File, Markdown File… The
+  file appears in that folder ("New Word Document.docx", then "… 2"),
+  selected, with its name ready to type (when Pinwheel may press keys:
+  Settings › General › Accessibility).
+- **Your menu, your order** (Settings › Finder & Shortcuts › New File menu):
+  switch each item on or off and move it up or down. Also there, off at
+  first: Rich Text, Web Page (HTML), CSV, JSON, Python and Shell scripts (made
+  ready to run) and OpenDocument Text.
+- **Your own templates:** add any file (a letterhead, an invoice, a form) and
+  New File makes a copy of it.
+- Word, Excel and PowerPoint files are written by Pinwheel (Office doesn't
+  need to be installed). Pages, Numbers and Keynote make their first empty
+  file themselves (the app opens for a moment); Pinwheel keeps it and copies
+  it after that. Apps that aren't on the Mac are left out of the menu.
+- It's a Finder extension: switch on **Pinwheel New File** once in System
+  Settings › General › Login Items & Extensions (the Settings page has a
+  button that goes there). The extension can only read its menu: Apple keeps
+  Finder extensions out of your folders, so it asks Pinwheel to make the
+  file. Pinwheel has to be running.
+
 ## v2.4 — 2026-11-23
 
 **Screen recording**, to MP4, with drawing on the screen while it records.

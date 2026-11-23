@@ -156,6 +156,14 @@ final class SettingsStore {
     var recipes: [Recipe] { didSet { saveJSON(recipes, Self.recipesKey) } }
     /// Rename rules saved under a name.
     var renamePresets: [RenamePreset] { didSet { saveJSON(renamePresets, Self.renamePresetsKey) } }
+    /// Finder's right-click › New File: what's in it, in order.
+    var newFileMenu: [NewFileEntry] {
+        didSet {
+            saveJSON(newFileMenu, Self.newFileMenuKey)
+            onNewFileMenuChange()
+        }
+    }
+    @ObservationIgnored var onNewFileMenuChange: () -> Void = {}
 
     // The clipboard history
     var clipboardEnabled: Bool {
@@ -392,6 +400,7 @@ final class SettingsStore {
         terminalApp = string(.terminalApp)
         recipes = Self.loadJSON(defaults, Self.recipesKey) ?? []
         renamePresets = Self.loadJSON(defaults, Self.renamePresetsKey) ?? []
+        newFileMenu = (Self.loadJSON(defaults, Self.newFileMenuKey) as [NewFileEntry]?).map(NewFileEntry.completed) ?? NewFileEntry.starting
         textRecognition = TextRecognitionChoice(rawValue: string(.textRecognition)) ?? .automatic
         clipboardEnabled = defaults.bool(forKey: Key.clipboardEnabled.rawValue)
         clipboardShortcut = KeyShortcut(stored: defaults.dictionary(forKey: Key.clipboardShortcut.rawValue)) ?? .clipboard
@@ -675,6 +684,7 @@ final class SettingsStore {
 
     private static let feedbackEmailKey = "feedbackEmail"
     private static let recipesKey = "recipes"
+    private static let newFileMenuKey = "newFileMenu"
     private static let renamePresetsKey = "renamePresets"
 
     // MARK: - Custom actions
