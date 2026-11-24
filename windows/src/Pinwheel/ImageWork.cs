@@ -148,10 +148,46 @@ static class ImageWork
         var bgra = Bgra(picture);
         var transparent = HasTransparency(bgra);
         var flat = Flatten(bgra, Colors.White);
-        var colors = new BitmapPalette(flat, transparent ? 255 : 256).Colors.ToList();
-        if (transparent) colors.Add(Color.FromArgb(0, 255, 255, 255));
-        var indexed = new FormatConvertedBitmap(transparent ? bgra : flat, PixelFormats.Indexed8, new BitmapPalette(colors), transparent ? 50 : 0);
-        return Encode(new GifBitmapEncoder(), indexed);
+        if (!transparent)
+            return Encode(new GifBitmapEncoder(), new FormatConvertedBitmap(flat, PixelFormats.Indexed8, new BitmapPalette(flat, 256), 0));
+
+        // Windows' color reduction ignores see-through pixels, so: 255 colors
+        // for the picture, and the last palette entry for what's see-through.
+        var colors = new BitmapPalette(flat, 255).Colors.ToList();
+        var indexed = new FormatConvertedBitmap(flat, PixelFormats.Indexed8, new BitmapPalette(colors), 0);
+        int width = bgra.PixelWidth, height = bgra.PixelHeight;
+        var indices = new byte[width * height];
+        indexed.CopyPixels(indices, width, 0);
+        var clear = (byte)colors.Count;
+        var row = new byte[width * 4];
+        for (var y = 0; y < height; y++)
+        {
+            bgra.CopyPixels(new Int32Rect(0, y, width, 1), row, width * 4, 0);
+            for (var x = 0; x < width; x++)
+            {
+                if (row[x * 4 + 3] < 128) indices[y * width + x] = clear;
+            }
+        }
+        colors.Add(Color.FromArgb(0, 255, 255, 255));
+        var frame = BitmapSource.Create(width, height, Dpi(picture.DpiX), Dpi(picture.DpiY), PixelFormats.Indexed8, new BitmapPalette(colors), indices, width);
+        var encoder = new GifBitmapEncoder();
+        BitmapMetadata? metadata = null;
+        try
+        {
+            // The GIF's own word for "this color is see-through".
+            metadata = new BitmapMetadata("gif");
+            metadata.SetQuery("/grctlext/TransparencyFlag", true);
+            metadata.SetQuery("/grctlext/TransparentColorIndex", clear);
+        }
+        catch (Exception exception) when (exception is NotSupportedException or InvalidOperationException or ArgumentException
+                                          or System.Runtime.InteropServices.COMException)
+        {
+            metadata = null;
+        }
+        encoder.Frames.Add(BitmapFrame.Create(frame, null, metadata, null));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return stream.ToArray();
     }
 
     /// <summary>An icon with every size up to 256 (or the picture's own size), each a square PNG.</summary>
