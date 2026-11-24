@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Windows;
@@ -102,7 +103,7 @@ public class PictureConversionTests
         Assert.Null(result.Problem);
         Assert.Equal(scratch.File($"photo (converted).{extension}"), result.Output);
         if (format == OutputFormat.Ico) return;  // its sizes are checked below
-        var (width, height, right, corner) = await Sta.Run(() =>
+        var (width, height, right, corner) = await Sta.Run<(int, int, (byte R, byte G, byte B, byte A), (byte R, byte G, byte B, byte A))>(() =>
         {
             var (picture, _) = ImageWork.Load(result.Output!);
             return (picture.PixelWidth, picture.PixelHeight, Pictures.Pixel(picture, 100, 60), Pictures.Pixel(picture, 5, 5));
