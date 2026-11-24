@@ -64,7 +64,8 @@ public class OutputNamingTests
         // Reserved but not written yet: the next job gets the next name.
         Assert.Equal(Path.Combine(folder, "photo (converted 3).png"), naming.Reserve(folder, "photo", "converted", "png"));
         naming.Release(first);
-        Assert.Equal(first, naming.Reserve(folder, "Photo", "converted", "PNG"));
+        // Windows ignores case: "Photo … .PNG" is the same name, free again.
+        Assert.Equal(first, naming.Reserve(folder, "Photo", "converted", "PNG"), ignoreCase: true);
         Assert.Equal(Path.Combine(folder, "backup (extracted)"), naming.Reserve(folder, "backup", "extracted", null));
     }
 }
