@@ -15,7 +15,7 @@ partial class SettingsWindow : Window
 {
     readonly App app;
 
-    public SettingsWindow(App app, bool welcome)
+    internal SettingsWindow(App app, bool welcome)
     {
         this.app = app;
         InitializeComponent();
