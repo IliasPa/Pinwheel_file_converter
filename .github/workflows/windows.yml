@@ -1,0 +1,86 @@
+name: Windows
+
+# Builds Pinwheel for Windows, runs its tests on Windows, tries the finished
+# Pinwheel.exe, and keeps the zips (and pictures of the wheel) for download.
+on:
+  push:
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  pull_request:
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and pack
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      # The tests also convert video and sound, which needs ffmpeg.
+      - name: Install ffmpeg
+        run: |
+          choco install ffmpeg -y --no-progress
+          ffmpeg -hide_banner -version | Select-Object -First 1
+
+      - name: Test the core
+        run: dotnet test windows/tests/Pinwheel.Core.Tests -c Release --logger "console;verbosity=normal"
+
+      - name: Test on Windows (pictures, video, sound, archives, the wheel)
+        env:
+          PINWHEEL_SNAPSHOTS: ${{ runner.temp }}\snapshots
+        run: dotnet test windows/tests/Pinwheel.Tests -c Release --logger "console;verbosity=normal"
+
+      - name: Keep the pictures of the wheel
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-snapshots
+          path: ${{ runner.temp }}\snapshots
+          if-no-files-found: ignore
+
+      - name: Publish Pinwheel.exe (x64 and Arm64)
+        run: |
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            dotnet publish windows/src/Pinwheel/Pinwheel.csproj -c Release -r $rid --self-contained `
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
+              -p:DebugType=none -o "out/$rid"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Get-ChildItem out -Recurse | Format-Table FullName, Length
+
+      # The finished program, from the command line: a PNG into a JPEG and an MP3.
+      - name: Try the published Pinwheel.exe
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "try"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          ffmpeg -hide_banner -loglevel error -f lavfi -i "testsrc=size=64x48:duration=1" -frames:v 1 (Join-Path $dir "sample.png")
+          ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=duration=1" (Join-Path $dir "tone.wav")
+          $exe = Resolve-Path out/win-x64/Pinwheel.exe
+          $png = Start-Process -FilePath $exe -ArgumentList @('convert', 'jpg', (Join-Path $dir 'sample.png')) -Wait -PassThru
+          $wav = Start-Process -FilePath $exe -ArgumentList @('convert', 'mp3', (Join-Path $dir 'tone.wav')) -Wait -PassThru
+          Get-ChildItem $dir | Format-Table Name, Length
+          if ($png.ExitCode -ne 0 -or -not (Test-Path (Join-Path $dir 'sample (converted).jpg'))) { throw "PNG into JPEG failed ($($png.ExitCode))" }
+          if ($wav.ExitCode -ne 0 -or -not (Test-Path (Join-Path $dir 'tone (converted).mp3'))) { throw "WAV into MP3 failed ($($wav.ExitCode))" }
+
+      - name: Pack the zips
+        run: |
+          Compress-Archive -Path out/win-x64/Pinwheel.exe -DestinationPath Pinwheel-Windows-x64.zip
+          Compress-Archive -Path out/win-arm64/Pinwheel.exe -DestinationPath Pinwheel-Windows-Arm64.zip
+          Get-FileHash Pinwheel-Windows-*.zip -Algorithm SHA256 | Format-Table Hash, Path -AutoSize
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pinwheel-Windows
+          path: Pinwheel-Windows-*.zip

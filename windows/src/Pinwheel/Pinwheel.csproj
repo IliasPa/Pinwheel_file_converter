@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <!-- Only for the tray icon (NotifyIcon). -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- WPF and Windows Forms both have Application, Point, Color…: each file says which it means. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Pinwheel</AssemblyName>
+    <RootNamespace>Pinwheel</RootNamespace>
+    <StartupObject>Pinwheel.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Pinwheel.ico</ApplicationIcon>
+    <!-- ThemeMode (Windows 11's look for Settings) is marked experimental. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Pinwheel.Core\Pinwheel.Core.csproj" />
+    <EmbeddedResource Include="Assets\Pinwheel.ico" LogicalName="Pinwheel.ico" />
+    <InternalsVisibleTo Include="Pinwheel.Tests" />
+  </ItemGroup>
+</Project>

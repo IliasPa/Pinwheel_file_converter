@@ -4,7 +4,10 @@ name: Tests
 on:
   push:
     branches: ["**"]  # not for version tags: their commit was already tested
+    # Pinwheel for Windows has its own workflow (windows.yml).
+    paths-ignore: ["windows/**", ".github/workflows/windows.yml"]
   pull_request:
+    paths-ignore: ["windows/**", ".github/workflows/windows.yml"]
   workflow_dispatch:
 
 concurrency:

@@ -1,0 +1,92 @@
+<Window x:Class="Pinwheel.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Pinwheel Settings" Width="580" SizeToContent="Height" MaxHeight="900"
+        ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen" ThemeMode="System">
+  <Window.Resources>
+    <Style x:Key="Heading" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,22,0,8" />
+    </Style>
+    <Style x:Key="Note" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Opacity" Value="0.72" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="0,4,0,0" />
+    </Style>
+  </Window.Resources>
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="26,18,26,24">
+      <Border x:Name="Welcome" Visibility="Collapsed" CornerRadius="8" Padding="16,12" Margin="0,6,0,0" Background="#223355E8">
+        <StackPanel>
+          <TextBlock FontSize="17" FontWeight="SemiBold" Text="Welcome to Pinwheel" />
+          <TextBlock TextWrapping="Wrap" Margin="0,6,0,0"
+                     Text="Pinwheel lives by the clock: click ^ there if you don't see its icon. Start dragging files in File Explorer, hold Shift, and a wheel of formats appears under the pointer. Drop the files on one: the new files appear beside the originals, which stay as they are." />
+        </StackPanel>
+      </Border>
+
+      <TextBlock Style="{StaticResource Heading}" Text="The wheel" />
+      <CheckBox x:Name="ShiftDrag" Margin="0,3" Content="Show the wheel when I hold Shift while dragging files in File Explorer" />
+      <CheckBox x:Name="SendTo" Margin="0,3" Content="Add Pinwheel to right-click › Send to (a click on a format chooses)" />
+      <CheckBox x:Name="SignIn" Margin="0,3" Content="Start Pinwheel when I sign in" />
+      <TextBlock Style="{StaticResource Note}"
+                 Text="New files are named like photo (converted).png and never replace anything. The tray icon's menu also has Convert Files…" />
+
+      <TextBlock Style="{StaticResource Heading}" Text="Pictures" />
+      <DockPanel LastChildFill="True">
+        <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Width="120" Text="JPEG quality" />
+        <TextBlock x:Name="QualityValue" DockPanel.Dock="Right" VerticalAlignment="Center" Width="40" TextAlignment="Right" />
+        <Slider x:Name="Quality" Minimum="50" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+      </DockPanel>
+      <TextBlock Style="{StaticResource Note}" Text="Higher keeps more detail in bigger files. 85 suits photos; see-through parts become white." />
+
+      <TextBlock Style="{StaticResource Heading}" Text="GIFs from videos" />
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="12" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="12" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0">
+          <TextBlock Text="Width" Margin="0,0,0,4" />
+          <ComboBox x:Name="GifWidth" />
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Text="Frames a second" Margin="0,0,0,4" />
+          <ComboBox x:Name="GifFps" />
+        </StackPanel>
+        <StackPanel Grid.Column="4">
+          <TextBlock Text="At most" Margin="0,0,0,4" />
+          <ComboBox x:Name="GifSeconds" />
+        </StackPanel>
+      </Grid>
+
+      <TextBlock Style="{StaticResource Heading}" Text="ffmpeg: video, sound, WebP and AVIF" />
+      <TextBlock x:Name="FfmpegStatus" TextWrapping="Wrap" />
+      <StackPanel x:Name="FfmpegInstall" Margin="0,8,0,0">
+        <TextBlock TextWrapping="Wrap" Text="ffmpeg is free. To install it, open Terminal (right-click Start › Terminal) and run:" />
+        <DockPanel Margin="0,6,0,0">
+          <Button x:Name="CopyCommand" DockPanel.Dock="Right" Content="Copy" Margin="8,0,0,0" Padding="14,4" />
+          <TextBox x:Name="InstallCommand" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas" Text="winget install Gyan.FFmpeg" VerticalContentAlignment="Center" />
+        </DockPanel>
+        <TextBlock Style="{StaticResource Note}" Text="Pinwheel finds it as soon as it's installed." />
+      </StackPanel>
+      <TextBlock Text="Or choose ffmpeg.exe yourself" Margin="0,12,0,4" />
+      <DockPanel>
+        <Button x:Name="ChooseFfmpeg" DockPanel.Dock="Right" Content="Choose…" Margin="8,0,0,0" Padding="14,4" />
+        <TextBox x:Name="FfmpegPath" VerticalContentAlignment="Center" />
+      </DockPanel>
+      <TextBlock Style="{StaticResource Note}" Text="Leave it empty and Pinwheel looks where winget, Chocolatey and Scoop put it." />
+
+      <TextBlock Margin="0,26,0,0" Style="{StaticResource Note}">
+        <Run x:Name="VersionText" Text="Pinwheel for Windows" />
+        <Run Text=" · " />
+        <Hyperlink x:Name="GitHubLink">Pinwheel on GitHub</Hyperlink>
+      </TextBlock>
+    </StackPanel>
+  </ScrollViewer>
+</Window>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- What Pinwheel knows that isn't tied to Windows: formats, names, the
+       wheel's shape, ffmpeg's settings, and the PDF and icon writers. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Pinwheel.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pinwheel.Core.Tests" />
+  </ItemGroup>
+</Project>
